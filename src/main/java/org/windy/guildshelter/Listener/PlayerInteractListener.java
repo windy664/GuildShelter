@@ -1,21 +1,20 @@
 package org.windy.guildshelter.Listener;
 
-import net.neoforged.bus.api.Event;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.bukkit.event.Listener;
-import org.bukkit.plugin.java.JavaPlugin;
+public class PlayerInteractListener {
 
-public class PlayerInteractListener extends JavaPlugin implements Listener {
     private static final Logger LOGGER = LogManager.getLogger();
+
+
     @SubscribeEvent
     public void onPlayerInteract(PlayerInteractEvent event) {
-
         LOGGER.info("PlayerInteractEvent 触发");
 
         String deplayer = event.getEntity().getName().toString();
+
         // 检查实体的名字是否包含特定的子字符串
         if (deplayer.contains("AS-FAKEPLAYER") ||
                 deplayer.contains("[MINECRAFT]") ||
@@ -30,5 +29,8 @@ public class PlayerInteractListener extends JavaPlugin implements Listener {
             LOGGER.info("假玩家" + deplayer + " 触发了 PlayerInteractEvent");
             return;
         }
+
+        // 正常处理事件（如果需要）
+        LOGGER.info("玩家 " + deplayer + " 进行了交互！");
     }
 }
