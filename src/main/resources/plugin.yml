@@ -1,0 +1,4 @@
+name: GuildShelter
+main: org.windy.guildshelter.plugin
+version: $version
+api-version: 1.21
