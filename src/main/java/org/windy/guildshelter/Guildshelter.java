@@ -1,4 +1,4 @@
-4package org.windy.guildshelter;
+package org.windy.guildshelter;
 
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
