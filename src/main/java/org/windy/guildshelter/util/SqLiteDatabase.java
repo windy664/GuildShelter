@@ -33,73 +33,34 @@ public class SqLiteDatabase {
         }
     }
 
-    // 创建表格
-    public void createTable() {
-        String sql = "CREATE TABLE IF NOT EXISTS guilds (" +
+    // 创建 plot 表
+    public void createPlotTable() {
+        String sql = "CREATE TABLE IF NOT EXISTS plot (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                "guild_name TEXT NOT NULL, " +
-                "leader_name TEXT NOT NULL);";
+                "x INTEGER NOT NULL, " +
+                "y INTEGER NOT NULL, " +
+                "player TEXT NOT NULL, " +
+                "guild TEXT NOT NULL);";
         try (Statement stmt = connection.createStatement()) {
             stmt.executeUpdate(sql);
-            plugin.LOGGER.info("数据库表格已创建！");
+            plugin.LOGGER.info("plot 表格已创建！");
         } catch (SQLException e) {
-            plugin.LOGGER.error("无法创建表格: " + e.getMessage());
+            plugin.LOGGER.error("无法创建 plot 表格: " + e.getMessage());
         }
     }
 
-    // 插入数据
-    public void insertGuild(String guildName, String leaderName) {
-        String sql = "INSERT INTO guilds(guild_name, leader_name) VALUES(?, ?)";
+    // 插入 plot 数据
+    public void insertPlot(int x, int y, String player, String guild) {
+        String sql = "INSERT INTO plot (x, y, player, guild) VALUES (?, ?, ?, ?)";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, guildName);
-            pstmt.setString(2, leaderName);
+            pstmt.setInt(1, x);
+            pstmt.setInt(2, y);
+            pstmt.setString(3, player);
+            pstmt.setString(4, guild);
             pstmt.executeUpdate();
-            plugin.LOGGER.info("公会数据已插入: " + guildName);
+            plugin.LOGGER.info("已插入 plot 数据: (" + x + ", " + y + ") 玩家: " + player + " 公会: " + guild);
         } catch (SQLException e) {
-            plugin.LOGGER.error("插入公会数据失败: " + e.getMessage());
-        }
-    }
-
-    // 查询数据
-    public String selectGuilds() {
-        StringBuilder result = new StringBuilder();
-        String sql = "SELECT * FROM guilds";
-        try (Statement stmt = connection.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-
-            while (rs.next()) {
-                String guildName = rs.getString("guild_name");
-                String leaderName = rs.getString("leader_name");
-                result.append("公会: ").append(guildName).append(", 领袖: ").append(leaderName).append("\n");
-            }
-        } catch (SQLException e) {
-            plugin.LOGGER.error("查询公会数据失败: " + e.getMessage());
-        }
-        return result.toString();
-    }
-
-    // 删除公会数据
-    public void deleteGuild(String guildName) {
-        String sql = "DELETE FROM guilds WHERE guild_name = ?";
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, guildName);
-            pstmt.executeUpdate();
-            plugin.LOGGER.info("已删除公会: " + guildName);
-        } catch (SQLException e) {
-            plugin.LOGGER.error("删除公会数据失败: " + e.getMessage());
-        }
-    }
-
-    // 更新公会数据
-    public void updateGuildLeader(String guildName, String newLeader) {
-        String sql = "UPDATE guilds SET leader_name = ? WHERE guild_name = ?";
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, newLeader);
-            pstmt.setString(2, guildName);
-            pstmt.executeUpdate();
-            plugin.LOGGER.info("公会 " + guildName + " 的领袖已更新为: " + newLeader);
-        } catch (SQLException e) {
-            plugin.LOGGER.error("更新公会领袖失败: " + e.getMessage());
+            plugin.LOGGER.error("插入 plot 数据失败: " + e.getMessage());
         }
     }
 }

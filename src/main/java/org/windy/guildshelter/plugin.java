@@ -29,14 +29,9 @@ public class plugin extends JavaPlugin {
         // 初始化数据库
         sqLiteDatabase = new SqLiteDatabase();
         sqLiteDatabase.connect();
-        sqLiteDatabase.createTable();
-
-        // 插入测试数据
-        sqLiteDatabase.insertGuild("KnightsOfHonor", "PlayerOne");
-
-        // 查询并输出数据
-        String guilds = sqLiteDatabase.selectGuilds();
-        LOGGER.info("当前公会数据: \n" + guilds);
+        // 创建 plot 表格
+        sqLiteDatabase.connect();
+        sqLiteDatabase.createPlotTable();
 
         //依赖注册
         try {
