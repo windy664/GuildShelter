@@ -4,6 +4,7 @@ import com.bekvon.bukkit.residence.Residence;
 import com.bekvon.bukkit.residence.protection.ResidenceManager;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.Marker;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -107,9 +108,9 @@ public class GenerateGuildBase {
             return;
         }
         String House_Number_Name = guildName+i+"号";
+        LOGGER.info(House_Number_Name);
         // 使用 addResidence 方法创建地块
         boolean success = residenceManager.addResidence(player, playerName, House_Number_Name, loc1, loc2, true);
-
         if (success) {
             LOGGER.info("Residence created successfully!");
         } else {

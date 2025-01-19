@@ -17,7 +17,7 @@ public class GuildShelterCommand implements CommandExecutor, TabCompleter {
 
     private final JavaPlugin plugin;
 
-    // 构造函数，接收插件实例
+    // 构造函数，接收插件实
     public GuildShelterCommand(JavaPlugin plugin) {
         this.plugin = plugin;
     }
