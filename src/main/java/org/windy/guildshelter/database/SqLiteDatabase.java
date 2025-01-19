@@ -13,33 +13,33 @@ public class SqLiteDatabase {
     private static final String DB_URL = "jdbc:sqlite:" + plugin.getPlugin(plugin.class).getDataFolder() + "/database.db";
     private Connection connection;
 
-    // 连接数据库
+    // Connect to the database
     public void connect() {
         try {
             if (connection == null || connection.isClosed()) {
                 connection = DriverManager.getConnection(DB_URL);
-                plugin.LOGGER.info("SQLite数据库连接成功！");
+                plugin.LOGGER.info("SQLite database connection successful!");
             }
         } catch (SQLException e) {
-            plugin.LOGGER.error("无法连接到SQLite数据库: " + e.getMessage());
+            plugin.LOGGER.error("Unable to connect to SQLite database: " + e.getMessage());
         }
     }
 
-
-    // 断开数据库连接
+    // Disconnect from the database
     public void disconnect() {
         try {
             if (connection != null && !connection.isClosed()) {
                 connection.close();
-                plugin.LOGGER.info("SQLite数据库连接已关闭！");
+                plugin.LOGGER.info("SQLite database connection closed!");
             }
         } catch (SQLException e) {
-            plugin.LOGGER.error("无法关闭SQLite数据库连接: " + e.getMessage());
+            plugin.LOGGER.error("Unable to close SQLite database connection: " + e.getMessage());
         }
     }
 
-    // 创建 plot 表
+    // Create the plot table
     public void createPlotTable() {
+        connect();  // Ensure connection to the database
         String sql = "CREATE TABLE IF NOT EXISTS plot (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
                 "x INTEGER NOT NULL, " +
@@ -49,27 +49,32 @@ public class SqLiteDatabase {
                 "guild TEXT NOT NULL);";
         try (Statement stmt = connection.createStatement()) {
             stmt.executeUpdate(sql);
-            plugin.LOGGER.info("plot 表格已创建！");
+            plugin.LOGGER.info("Plot table created successfully!");
         } catch (SQLException e) {
-            plugin.LOGGER.error("无法创建 plot 表格: " + e.getMessage());
+            plugin.LOGGER.error("Failed to create plot table: " + e.getMessage());
         }
     }
 
-    // 插入 plot 数据
-    public void insertPlot(int x, int y, String player, String truster ,String guild) {
-        String sql = "INSERT INTO plot (x, y, player, truster,guild) VALUES (?, ?, ?,?,?)";
+    // Insert plot data
+    public void insertPlot(int x, int y, String player, String truster, String guild) {
+        connect();  // Ensure connection to the database
+        String sql = "INSERT INTO plot (x, y, player, truster, guild) VALUES (?, ?, ?, ?, ?)";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, x);
             pstmt.setInt(2, y);
             pstmt.setString(3, player);
-            pstmt.setString(4, guild);
+            pstmt.setString(4, truster);
+            pstmt.setString(5, guild);  // Corrected parameter binding
             pstmt.executeUpdate();
-            plugin.LOGGER.info("已插入 plot 数据: (" + x + ", " + y + ") 玩家: " + player + " 公会: " + guild);
+            plugin.LOGGER.info("Plot data inserted: (" + x + ", " + y + ") Player: " + player + " Guild: " + guild);
         } catch (SQLException e) {
-            plugin.LOGGER.error("插入 plot 数据失败: " + e.getMessage());
+            plugin.LOGGER.error("Failed to insert plot data: " + e.getMessage());
         }
     }
+
+    // Get all plots by a specific player
     public List<PlotData> getPlotsByPlayer(String playerName) {
+        connect();  // Ensure connection to the database
         List<PlotData> plots = new ArrayList<>();
         String sql = "SELECT * FROM plot WHERE player = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
@@ -77,7 +82,7 @@ public class SqLiteDatabase {
             ResultSet rs = pstmt.executeQuery();
 
             while (rs.next()) {
-                // 提取数据并加入返回列表
+                // Extract data and add to the return list
                 plots.add(new PlotData(
                         rs.getInt("x"),
                         rs.getInt("y"),
@@ -87,32 +92,29 @@ public class SqLiteDatabase {
                 ));
             }
         } catch (SQLException e) {
-            plugin.LOGGER.error("查询 plot 数据失败: " + e.getMessage());
+            plugin.LOGGER.error("Failed to query plot data: " + e.getMessage());
         }
-        return plots;  // 返回所有该玩家的 plot
+        return plots;  // Return all plots of the specified player
     }
+
+    // Update the truster for a specific plot
     public void updateTruster(int x, int y, String truster) {
+        connect();  // Ensure connection to the database
         String sql = "UPDATE plot SET truster = ? WHERE x = ? AND y = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, truster);
             pstmt.setInt(2, x);
             pstmt.setInt(3, y);
             pstmt.executeUpdate();
-            plugin.LOGGER.info("已更新 plot 数据: (" + x + ", " + y + ") 设置 truster 为: " + truster);
+            plugin.LOGGER.info("Plot data updated: (" + x + ", " + y + ") Set truster to: " + truster);
         } catch (SQLException e) {
-            plugin.LOGGER.error("更新 plot 数据失败: " + e.getMessage());
+            plugin.LOGGER.error("Failed to update plot data: " + e.getMessage());
         }
     }
-    public static void updatePlotTrusterByPlayer(String playerName, String truster) {
-        // 获取该玩家所有的 plot 数据
-        List<PlotData> plots = sqLiteDatabase.getPlotsByPlayer(playerName);
 
-        // 遍历每个 plot，更新 truster
-        for (PlotData plot : plots) {
-            sqLiteDatabase.updateTruster(plot.getX(), plot.getY(), truster);
-        }
-    }
+    // Get plot data by coordinates
     public PlotData getPlotByCoordinates(int plotX, int plotY) {
+        connect();  // Ensure connection to the database
         String sql = "SELECT * FROM plot WHERE x = ? AND y = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, plotX);
@@ -120,7 +122,7 @@ public class SqLiteDatabase {
             ResultSet rs = pstmt.executeQuery();
 
             if (rs.next()) {
-                // 提取数据并返回一个 PlotData 对象
+                // Extract data and return a PlotData object
                 return new PlotData(
                         rs.getInt("x"),
                         rs.getInt("y"),
@@ -130,12 +132,13 @@ public class SqLiteDatabase {
                 );
             }
         } catch (SQLException e) {
-            plugin.LOGGER.error("查询 plot 数据失败: " + e.getMessage());
+            plugin.LOGGER.error("Failed to query plot data: " + e.getMessage());
         }
-        return null;  // 如果没有找到数据，返回 null
-    }
-    public Connection getConnection() {
-        return connection;  // 返回数据库连接
+        return null;  // Return null if no data is found
     }
 
+    // Get the database connection
+    public Connection getConnection() {
+        return connection;  // Return the database connection
+    }
 }
