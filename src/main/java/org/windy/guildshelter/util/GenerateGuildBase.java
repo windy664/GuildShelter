@@ -52,7 +52,7 @@ public class GenerateGuildBase {
                 System.out.println("Point: (" + x + ", " + y + ")");  // 打印每个点的信息到控制台
 
                 // 将生成的坐标信息插入到数据库中
-                sqLiteDatabase.insertPlot(x, y, player.getName(), "noene",guildName);
+                sqLiteDatabase.insertPlot(x, y, "test", "noene",guildName);
 
                 plot_count++;  // 每生成一个点，计数器加 1
                 x += step;  // 横坐标增加步长

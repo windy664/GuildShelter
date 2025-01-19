@@ -25,6 +25,7 @@ public class SqLiteDatabase {
         }
     }
 
+
     // 断开数据库连接
     public void disconnect() {
         try {
@@ -44,7 +45,7 @@ public class SqLiteDatabase {
                 "x INTEGER NOT NULL, " +
                 "y INTEGER NOT NULL, " +
                 "player TEXT NOT NULL, " +
-                "truster TEXT NOT NULL" +
+                "truster TEXT NOT NULL, " +
                 "guild TEXT NOT NULL);";
         try (Statement stmt = connection.createStatement()) {
             stmt.executeUpdate(sql);

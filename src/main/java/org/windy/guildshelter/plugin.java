@@ -33,6 +33,8 @@ public class plugin extends JavaPlugin {
         sqLiteDatabase.connect();
         sqLiteDatabase.createPlotTable();
 
+
+
         //依赖注册
         try {
             Class.forName("com.sk89q.worldedit.WorldEdit");
