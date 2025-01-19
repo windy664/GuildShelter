@@ -1,35 +1,37 @@
 package org.windy.guildshelter.listener.neoforge;
 
+import net.minecraft.world.entity.player.Player;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.windy.guildshelter.util.PermissionCheck;
+
 public class BlockInteractListener {
 
     private static final Logger LOGGER = LogManager.getLogger();
 
 
+    // 左键点击方块事件
     @SubscribeEvent
     public void onPlayerInteract(PlayerInteractEvent.LeftClickBlock event) {
         LOGGER.info("PlayerInteractEvent 触发");
 
-        String deplayer = event.getEntity().getName().toString();
+        Player player = event.getEntity();  // 获取玩家对象
+        int playerX = player.getBlockX();  // 获取玩家的 x 坐标
+        int playerZ = player.getBlockZ();  // 获取玩家的 z 坐标
 
-        // 检查实体的名字是否包含特定的子字符串
-        if (deplayer.contains("AS-FAKEPLAYER") ||
-                deplayer.contains("[MINECRAFT]") ||
-                deplayer.contains("[MEKANISM]") ||
-                deplayer.contains("[IF]") ||
-                deplayer.contains("[IntegratedTunnels]") ||
-                deplayer.contains("KILLER JOE") ||
-                deplayer.contains("[DEPOLYER]") ||
-                deplayer.contains("[XU2FAKEPLAYER]") ||
-                deplayer.contains("[MODULAR ROUTERS]")) {
-            // 如果玩家名字匹配条件，返回，不处理事件
-            LOGGER.info("假玩家" + deplayer + " 触发了 PlayerInteractEvent");
-            return;
+        // 假设 plot 的半径是 50
+        int radius = 50;
+
+        // 使用 PermissionCheck 判断玩家是否有权限
+        boolean hasPermission = PermissionCheck.checkPlayerInPlotArea(player, playerX, playerZ, radius);
+
+        if (!hasPermission) {
+            // 如果没有权限，取消事件
+            event.setCanceled(true);
+            LOGGER.info(player.getName().getString() + " 尝试在没有权限的区域进行操作，事件已取消。");
         }
-        event.setCanceled(true);
     }
 
     @SubscribeEvent

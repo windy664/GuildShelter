@@ -111,5 +111,30 @@ public class SqLiteDatabase {
             sqLiteDatabase.updateTruster(plot.getX(), plot.getY(), truster);
         }
     }
+    public PlotData getPlotByCoordinates(int plotX, int plotY) {
+        String sql = "SELECT * FROM plot WHERE x = ? AND y = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, plotX);
+            pstmt.setInt(2, plotY);
+            ResultSet rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                // 提取数据并返回一个 PlotData 对象
+                return new PlotData(
+                        rs.getInt("x"),
+                        rs.getInt("y"),
+                        rs.getString("player"),
+                        rs.getString("truster"),
+                        rs.getString("guild")
+                );
+            }
+        } catch (SQLException e) {
+            plugin.LOGGER.error("查询 plot 数据失败: " + e.getMessage());
+        }
+        return null;  // 如果没有找到数据，返回 null
+    }
+    public Connection getConnection() {
+        return connection;  // 返回数据库连接
+    }
 
 }
