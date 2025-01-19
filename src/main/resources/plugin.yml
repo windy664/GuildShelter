@@ -1,7 +1,9 @@
 name: GuildShelter
 main: org.windy.guildshelter.plugin
-version: $version
+version: ${mod_version}
 api-version: 1.21
+depend:
+  - Residence
 commands:
   gs:
     description: GuildShelter插件命令

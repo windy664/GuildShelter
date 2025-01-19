@@ -25,11 +25,11 @@ public class BlockInteractListener {
         int radius = 50;
 
         // 使用 PermissionCheck 判断玩家是否有权限
-        boolean hasPermission = PermissionCheck.checkPlayerInPlotArea(player, playerX, playerZ, radius);
+        boolean hasPermission = PermissionCheck.checkPlayerInPlotArea(player, playerX, playerZ, 50);
 
         if (!hasPermission) {
             // 如果没有权限，取消事件
-            event.setCanceled(true);
+          //  event.setCanceled(true);
             LOGGER.info(player.getName().getString() + " 尝试在没有权限的区域进行操作，事件已取消。");
         }
     }
