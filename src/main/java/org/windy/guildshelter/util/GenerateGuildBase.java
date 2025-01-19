@@ -17,17 +17,11 @@ public class GenerateGuildBase {
         this.plugin = plugin;
         sqLiteDatabase = new SqLiteDatabase();  // 初始化静态字段
     }
-
-
-    private int Total_length;
-    private int Total_width;
-    private int Plot_radius;
-    private static int Road_width;
     public static int centerX;
     public static int centerZ;
-    private static int radius;
+    public static int radius;
 
-    public void createPlatform(int centerX, int centerY, int centerZ, int radius) {
+    public void createPlatform(int centerX, int centerY, int centerZ, int radius,int Total_length,int Total_width,int Road_width,int Plot_radius) {
         Bukkit.getScheduler().runTask(plugin, () -> {
             for (int x = centerX - radius; x <= centerX + radius; x++) {
                 for (int z = centerZ - radius; z <= centerZ + radius; z++) {
@@ -39,8 +33,6 @@ public class GenerateGuildBase {
                 }
             }
         });
-
-
         Bukkit.getScheduler().runTask(plugin, () -> {
             int plot_count = fill_area(Total_length, Total_width, Plot_radius, Road_width);
             System.out.println("Total number of plots: " + plot_count);

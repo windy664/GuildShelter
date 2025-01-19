@@ -28,6 +28,5 @@ public class GuildCreateListener implements Listener {
 
         // 创建 GenerateGuildBase 实例并调用 createPlatform
         GenerateGuildBase generator = new GenerateGuildBase(plugin);
-        generator.createPlatform(0, 80, 0, 75);  // 在坐标 (0, 80, 0) 生成一个半径为 75 的平台
     }
 }
