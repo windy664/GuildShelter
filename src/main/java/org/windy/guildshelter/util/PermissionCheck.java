@@ -1,11 +1,11 @@
 package org.windy.guildshelter.util;
 
-
 import net.minecraft.world.entity.player.Player;
 import org.windy.guildshelter.database.SqLiteDatabase;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 
 public class PermissionCheck {
 
@@ -14,13 +14,12 @@ public class PermissionCheck {
         // 获取玩家的名字
         String playerName = player.getName().getString();  // 获取玩家名称
 
-        // 创建 SqLiteDatabase 实例并连接数据库
-        SqLiteDatabase sqLiteDatabase = new SqLiteDatabase();
-        sqLiteDatabase.connect();  // 确保已经连接到数据库
+        // 获取已经建立的数据库连接
+        try (Statement stmt = SqLiteDatabase.getConnection().createStatement()) {
+            // 执行 SQL 查询，获取所有 plot 数据
+            String query = "SELECT * FROM plot";
+            ResultSet resultSet = stmt.executeQuery(query);
 
-        // 执行 SQL 查询，获取所有 plot 数据
-        String query = "SELECT * FROM plot";
-        try (ResultSet resultSet = sqLiteDatabase.getConnection().createStatement().executeQuery(query)) {
             while (resultSet.next()) {
                 // 获取数据库中的 plot 坐标和玩家信息
                 int plotX = resultSet.getInt("x");
@@ -40,8 +39,6 @@ public class PermissionCheck {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            sqLiteDatabase.disconnect();  // 断开数据库连接
         }
 
         return false;  // 玩家没有权限

@@ -28,9 +28,8 @@ public class plugin extends JavaPlugin {
         FileConfiguration langConfig = getLangConfig();
         // 初始化数据库
         sqLiteDatabase = new SqLiteDatabase();
-        sqLiteDatabase.connect();
+        SqLiteDatabase.connect();
         // 创建 plot 表格
-        sqLiteDatabase.connect();
         sqLiteDatabase.createPlotTable();
 
 

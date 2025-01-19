@@ -11,10 +11,11 @@ import static org.windy.guildshelter.util.GenerateGuildBase.sqLiteDatabase;
 public class SqLiteDatabase {
 
     private static final String DB_URL = "jdbc:sqlite:" + plugin.getPlugin(plugin.class).getDataFolder() + "/database.db";
-    private Connection connection;
+    private static Connection connection;
 
     // Connect to the database
-    public void connect() {
+    // 连接数据库
+    public static void connect() {
         try {
             if (connection == null || connection.isClosed()) {
                 connection = DriverManager.getConnection(DB_URL);
@@ -25,8 +26,9 @@ public class SqLiteDatabase {
         }
     }
 
-    // Disconnect from the database
-    public void disconnect() {
+
+    // 断开数据库连接
+    public static void disconnect() {
         try {
             if (connection != null && !connection.isClosed()) {
                 connection.close();
@@ -138,7 +140,11 @@ public class SqLiteDatabase {
     }
 
     // Get the database connection
-    public Connection getConnection() {
-        return connection;  // Return the database connection
+    // 获取数据库连接
+    public static Connection getConnection() {
+        if (connection == null) {
+            connect();  // 如果连接为空，则尝试连接数据库
+        }
+        return connection;
     }
 }
