@@ -53,10 +53,11 @@ public class GenerateGuildBase {
             int[][] result = fillArea(A, B, l_a, l_b, d, x0, y0);
             int plotCount = countPlots(A, B, l_a, l_b, d);
             System.out.println("Total number of plots: " + plotCount);
+            int i=1;
             for (int[] plot : result) {
-                int i=1;
                 System.out.println("(" + plot[0] + ", " + plot[1] + ") - (" + plot[2] + ", " + plot[3] + ")");
                 createResidence(plot[0], plot[1], plot[2], plot[3], "Vespera","world",i,"愿听风止");
+                i++;
             }
         });
     }
