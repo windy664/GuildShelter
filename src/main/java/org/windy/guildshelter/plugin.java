@@ -25,7 +25,7 @@ import java.io.File;
 import static net.neoforged.neoforge.common.NeoForge.EVENT_BUS;
 
 public class plugin extends JavaPlugin {
-    private ResidenceManager residenceManager;
+
     public static final Logger LOGGER = LogManager.getLogger();
     private SqLiteDatabase sqLiteDatabase;
 
@@ -59,12 +59,7 @@ public class plugin extends JavaPlugin {
         this.getCommand("gs").setExecutor(new GuildShelterCommand(this));
         this.getCommand("gs").setTabCompleter(new GuildShelterCommand(this));
 
-        // 获取 Residence 插件实例
-        Residence residencePlugin = (Residence) Bukkit.getServer().getPluginManager().getPlugin("Residence");
 
-        // 获取 ResidenceManager 实例
-        residenceManager = residencePlugin.getResidenceManager();
-        createResidence();
     }
 
 
@@ -94,32 +89,5 @@ public class plugin extends JavaPlugin {
     private FileConfiguration getLangConfig() {
         return YamlConfiguration.loadConfiguration(new File(getDataFolder(), "lang.yml"));
     }
-    public void createResidence() {
-        // 获取目标世界
-        World world = Bukkit.getWorld("world"); // 假设世界名称是 "world"
-        if (world == null) {
-            getLogger().warning("World not found.");
-            return;
-        }
 
-        // 定义两个对角点
-        Location loc1 = new Location(world, 0, 90, 0);  // 第一个坐标点
-        Location loc2 = new Location(world, 43, 90, 10);  // 第二个坐标点
-
-        // 获取玩家对象
-        Player player = Bukkit.getPlayer("Vespera"); // 获取玩家 "verpa"
-        if (player == null) {
-            getLogger().warning("Player not found.");
-            return;
-        }
-
-        // 使用 addResidence 方法创建地块
-        boolean success = residenceManager.addResidence(player, "Vespera", "MyNewResidence", loc1, loc2, true);
-
-        if (success) {
-            getLogger().info("Residence created successfully!");
-        } else {
-            getLogger().warning("Failed to create residence.");
-        }
-    }
 }
