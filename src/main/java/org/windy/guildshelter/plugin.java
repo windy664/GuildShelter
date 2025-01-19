@@ -8,7 +8,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.windy.guildshelter.command.GuildShelterCommand;
 import org.windy.guildshelter.listener.GuildCreateListener;
 import org.windy.guildshelter.listener.neoforge.BlockInteractListener;
-import org.windy.guildshelter.util.SqLiteDatabase;
+import org.windy.guildshelter.database.SqLiteDatabase;
 import java.io.File;
 import static net.neoforged.neoforge.common.NeoForge.EVENT_BUS;
 
