@@ -80,6 +80,3 @@ side = "BOTH"
 
 
 
-# 这个mod是面向服务器的
-[dependencies]
-neoForge="*"

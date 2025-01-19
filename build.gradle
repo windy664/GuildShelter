@@ -16,6 +16,9 @@ repositories {
         url = "https://hub.spigotmc.org/nexus/content/repositories/snapshots/"
     }
     maven { url 'https://maven.izzel.io/releases' }
+    maven {
+        url = 'https://repo.extendedclip.com/content/repositories/placeholderapi/'
+    }
 }
 
 base {
@@ -123,8 +126,8 @@ dependencies {
     // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
     compileOnly("org.spigotmc:spigot-api:1.21.1-R0.1-SNAPSHOT")
-
-
+    compileOnly fileTree("./libs")
+    compileOnly 'me.clip:placeholderapi:2.11.5'
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

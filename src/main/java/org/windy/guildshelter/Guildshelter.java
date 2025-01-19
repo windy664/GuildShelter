@@ -3,11 +3,9 @@ package org.windy.guildshelter;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
-import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -23,12 +21,12 @@ import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import org.slf4j.Logger;
+import org.windy.guildshelter.listener.neoforge.BlockInteractListener;
 
 // 标注mod的ID，NeoForge会根据此ID来识别该mod
 @Mod(Guildshelter.MODID)
@@ -58,16 +56,10 @@ public class Guildshelter {
         // 注册commonSetup方法，用于通用的mod初始化
         modEventBus.addListener(this::commonSetup);
 
-        // 将所有的注册操作注册到事件总线上
-        BLOCKS.register(modEventBus);
-        ITEMS.register(modEventBus);
-        CREATIVE_MODE_TABS.register(modEventBus);
 
         // 注册NeoForge的事件总线，允许此类直接处理事件
         NeoForge.EVENT_BUS.register(this);
-
-        // 注册creative模式的物品tab
-        modEventBus.addListener(this::addCreative);
+        NeoForge.EVENT_BUS.register(new BlockInteractListener());
 
         // 注册mod的配置
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
@@ -88,11 +80,6 @@ public class Guildshelter {
         Config.items.forEach((item) -> LOGGER.info("ITEM >> {}", item.toString()));
     }
 
-    // 向创造模式的建筑方块tab中添加example_block_item
-    private void addCreative(BuildCreativeModeTabContentsEvent event) {
-        if (event.getTabKey() == CreativeModeTabs.BUILDING_BLOCKS)
-            event.accept(EXAMPLE_BLOCK_ITEM);
-    }
 
     // 处理服务器启动事件
     @SubscribeEvent

@@ -2,3 +2,17 @@ name: GuildShelter
 main: org.windy.guildshelter.plugin
 version: $version
 api-version: 1.21
+commands:
+  gs:
+    description: GuildShelter插件命令
+    usage: /gs <debug|spawn|setspawn>
+    subcommands:
+      debug:
+        description: 调试命令
+        usage: /gs debug <genplat>
+      spawn:
+        description: 设置或传送到公会出生点
+        usage: /gs spawn
+      setspawn:
+        description: 设置公会出生点
+        usage: /gs setspawn
