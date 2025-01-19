@@ -38,7 +38,8 @@ public class GenerateGuildBase {
             System.out.println("Total number of plots: " + plot_count);
         });
     }
-
+    //废了，一切都废了！用res作为我们的选区
+/*
     public static int fill_area(int width, int height, int r, int d) {
         int step = 2 * r + d;  // 计算步长
         int x = centerX - radius;  // 初始化横坐标
@@ -62,4 +63,6 @@ public class GenerateGuildBase {
         }
         return plot_count;
     }
+
+ */
 }
