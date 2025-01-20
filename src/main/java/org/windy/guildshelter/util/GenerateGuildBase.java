@@ -63,7 +63,7 @@ public class GenerateGuildBase {
             }
             if (lastPlot != null) {
                 System.out.println("Last plot coordinates: (" + lastPlot[0] + ", " + lastPlot[1] + ") - (" + lastPlot[2] + ", " + lastPlot[3] + ")");
-                sqLiteDatabase.insertGuildShelterArea(x0,Az,lastPlot[2],lastPlot[3],"愿听风止");
+                sqLiteDatabase.insertGuildShelterArea(x0,Az,lastPlot[2],lastPlot[3],guildName,world);
             }
         });
     }

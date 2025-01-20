@@ -75,29 +75,33 @@ public class SqLiteDatabase {
                 "z1 INTEGER NOT NULL, " +
                 "x2 INTEGER NOT NULL, " +
                 "z2 INTEGER NOT NULL, " +
-                "guild TEXT NOT NULL);";
+                "guild TEXT NOT NULL, " +
+                "world TEXT NOT NULL);";  // 添加 world 列
         try (Statement stmt = connection.createStatement()) {
             stmt.executeUpdate(sql);
-            plugin.LOGGER.info("Guild plot table created successfully!");
+            plugin.LOGGER.info("Guild shelter area table created successfully!");
         } catch (SQLException e) {
-            plugin.LOGGER.error("Failed to create guild plot table: " + e.getMessage());
+            plugin.LOGGER.error("Failed to create guild shelter area table: " + e.getMessage());
         }
     }
-    public void insertGuildShelterArea(int x1, int z1, int x2, int z2, String guild) {
+
+    public void insertGuildShelterArea(int x1, int z1, int x2, int z2, String guild, String world) {
         connect();  // Ensure connection to the database
-        String sql = "INSERT INTO guild_shelter_area (x1, z1, x2, z2, guild) VALUES (?,?,?,?,?)";
+        String sql = "INSERT INTO guild_shelter_area (x1, z1, x2, z2, guild, world) VALUES (?,?,?,?,?,?)";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, x1);
             pstmt.setInt(2, z1);
             pstmt.setInt(3, x2);
             pstmt.setInt(4, z2);
             pstmt.setString(5, guild);
+            pstmt.setString(6, world);  // 插入 world 值
             pstmt.executeUpdate();
-            plugin.LOGGER.info("Guild shelter area inserted: (" + x1 + ", " + z1 + ") to (" + x2 + ", " + z2 + ") Guild: " + guild);
+            plugin.LOGGER.info("Guild shelter area inserted: (" + x1 + ", " + z1 + ") to (" + x2 + ", " + z2 + ") Guild: " + guild + " World: " + world);
         } catch (SQLException e) {
             plugin.LOGGER.error("Failed to insert guild shelter area: " + e.getMessage());
         }
     }
+
     // Insert plot data
     public void insertPlot(int x1, int z1, int x2, int z2, String owner, String member, String levels, String guild, String state) {
         connect();  // Ensure connection to the database
@@ -236,7 +240,7 @@ public class SqLiteDatabase {
         connect();  // Ensure connection to the database
         String sql = "SELECT * FROM guild_shelter_area WHERE world = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, world);  // Make sure you're filtering by world (assuming world column exists)
+            pstmt.setString(1, world);  // 使用正确的 world 列名
             ResultSet rs = pstmt.executeQuery();
 
             while (rs.next()) {
@@ -255,6 +259,7 @@ public class SqLiteDatabase {
         }
         return false; // No conflict found
     }
+
 
     private boolean isOverlap(int x1, int z1, int x2, int z2, int dbX1, int dbZ1, int dbX2, int dbZ2) {
         // Check if the two areas overlap

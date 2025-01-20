@@ -22,13 +22,11 @@ public class GuildAreaInspection {
 
         for (int[] plot : result) {
             System.out.println("(" + plot[0] + ", " + plot[1] + ") - (" + plot[2] + ", " + plot[3] + ")");
-            sqLiteDatabase.insertPlot(plot[0], plot[1], plot[2], plot[3], "Vespea", "", "world", "愿听风止", "private");
             lastPlot = plot;  // 更新 lastPlot 为当前坐标
             i++;
         }
         if (lastPlot != null) {
             System.out.println("Last plot coordinates: (" + lastPlot[0] + ", " + lastPlot[1] + ") - (" + lastPlot[2] + ", " + lastPlot[3] + ")");
-            sqLiteDatabase.insertGuildShelterArea(x0, Az, lastPlot[2], lastPlot[3], "愿听风止");
         }
         // 看看最后是否冲突
         return sqLiteDatabase.isConflictWithExistingArea(x0, Az, lastPlot[2], lastPlot[3], world);

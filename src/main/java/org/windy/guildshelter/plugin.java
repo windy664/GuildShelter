@@ -42,6 +42,7 @@ public class plugin extends JavaPlugin {
         SqLiteDatabase.connect();
         // 创建 plot 表格
         sqLiteDatabase.createPlotTable();
+        sqLiteDatabase.createGuildShelterArea();
         //依赖注册
         try {
             Class.forName("com.sk89q.worldedit.WorldEdit");
