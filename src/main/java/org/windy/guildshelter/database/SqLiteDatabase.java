@@ -42,102 +42,48 @@ public class SqLiteDatabase {
     // Create the plot table
     public void createPlotTable() {
         connect();  // Ensure connection to the database
-        String sql = "CREATE TABLE IF NOT EXISTS plot (" +
+        String sql = "CREATE TABLE IF NOT EXISTS guild_plot (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                "x INTEGER NOT NULL, " +
-                "y INTEGER NOT NULL, " +
-                "player TEXT NOT NULL, " +
-                "truster TEXT NOT NULL, " +
-                "guild TEXT NOT NULL);";
+                "x1 INTEGER NOT NULL, " +
+                "z1 INTEGER NOT NULL, " +
+                "x2 INTEGER NOT NULL, " +
+                "z2 INTEGER NOT NULL, " +
+                "owner TEXT NOT NULL, " +
+                "member TEXT NOT NULL, " +
+                "levels INTEGER NOT NULL, " +
+                "guild TEXT NOT NULL, " +
+                "state TEXT NOT NULL);";
         try (Statement stmt = connection.createStatement()) {
             stmt.executeUpdate(sql);
-            plugin.LOGGER.info("Plot table created successfully!");
+            plugin.LOGGER.info("Guild plot table created successfully!");
         } catch (SQLException e) {
-            plugin.LOGGER.error("Failed to create plot table: " + e.getMessage());
+            plugin.LOGGER.error("Failed to create guild plot table: " + e.getMessage());
         }
     }
 
+
     // Insert plot data
-    public void insertPlot(int x, int y, String player, String truster, String guild) {
+    public void insertPlot(int x1, int z1, int x2, int z2, String owner, String member, int levels, String guild, String state) {
         connect();  // Ensure connection to the database
-        String sql = "INSERT INTO plot (x, y, player, truster, guild) VALUES (?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO guild_plot (x1, z1, x2, z2, owner, member, levels, guild, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setInt(1, x);
-            pstmt.setInt(2, y);
-            pstmt.setString(3, player);
-            pstmt.setString(4, truster);
-            pstmt.setString(5, guild);  // Corrected parameter binding
+            pstmt.setInt(1, x1);
+            pstmt.setInt(2, z1);
+            pstmt.setInt(3, x2);
+            pstmt.setInt(4, z2);
+            pstmt.setString(5, owner);
+            pstmt.setString(6, member);
+            pstmt.setInt(7, levels);
+            pstmt.setString(8, guild);
+            pstmt.setString(9, state);
             pstmt.executeUpdate();
-            plugin.LOGGER.info("Plot data inserted: (" + x + ", " + y + ") Player: " + player + " Guild: " + guild);
+            plugin.LOGGER.info("Plot data inserted: (" + x1 + ", " + z1 + ") to (" + x2 + ", " + z2 + ") Guild: " + guild + " Owner: " + owner);
         } catch (SQLException e) {
             plugin.LOGGER.error("Failed to insert plot data: " + e.getMessage());
         }
     }
 
-    // Get all plots by a specific player
-    public List<PlotData> getPlotsByPlayer(String playerName) {
-        connect();  // Ensure connection to the database
-        List<PlotData> plots = new ArrayList<>();
-        String sql = "SELECT * FROM plot WHERE player = ?";
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, playerName);
-            ResultSet rs = pstmt.executeQuery();
 
-            while (rs.next()) {
-                // Extract data and add to the return list
-                plots.add(new PlotData(
-                        rs.getInt("x"),
-                        rs.getInt("y"),
-                        rs.getString("player"),
-                        rs.getString("truster"),
-                        rs.getString("guild")
-                ));
-            }
-        } catch (SQLException e) {
-            plugin.LOGGER.error("Failed to query plot data: " + e.getMessage());
-        }
-        return plots;  // Return all plots of the specified player
-    }
-
-    // Update the truster for a specific plot
-    public void updateTruster(int x, int y, String truster) {
-        connect();  // Ensure connection to the database
-        String sql = "UPDATE plot SET truster = ? WHERE x = ? AND y = ?";
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, truster);
-            pstmt.setInt(2, x);
-            pstmt.setInt(3, y);
-            pstmt.executeUpdate();
-            plugin.LOGGER.info("Plot data updated: (" + x + ", " + y + ") Set truster to: " + truster);
-        } catch (SQLException e) {
-            plugin.LOGGER.error("Failed to update plot data: " + e.getMessage());
-        }
-    }
-
-    // Get plot data by coordinates
-    public PlotData getPlotByCoordinates(int plotX, int plotY) {
-        connect();  // Ensure connection to the database
-        String sql = "SELECT * FROM plot WHERE x = ? AND y = ?";
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setInt(1, plotX);
-            pstmt.setInt(2, plotY);
-            ResultSet rs = pstmt.executeQuery();
-
-            if (rs.next()) {
-                // Extract data and return a PlotData object
-                return new PlotData(
-                        rs.getInt("x"),
-                        rs.getInt("y"),
-                        rs.getString("player"),
-                        rs.getString("truster"),
-                        rs.getString("guild")
-                );
-            }
-        } catch (SQLException e) {
-            plugin.LOGGER.error("Failed to query plot data: " + e.getMessage());
-        }
-        return null;  // Return null if no data is found
-    }
 
     // Get the database connection
     // 获取数据库连接
@@ -147,4 +93,107 @@ public class SqLiteDatabase {
         }
         return connection;
     }
+    public List<PlotData> getPlotsByGuild(String guildName) {
+        connect();  // Ensure connection to the database
+        List<PlotData> plots = new ArrayList<>();
+        String sql = "SELECT * FROM guild_plot WHERE guild = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, guildName);
+            ResultSet rs = pstmt.executeQuery();
+
+            while (rs.next()) {
+                plots.add(new PlotData(
+                        rs.getInt("x1"),
+                        rs.getInt("z1"),
+                        rs.getInt("x2"),
+                        rs.getInt("z2"),
+                        rs.getString("owner"),
+                        rs.getString("member"),
+                        rs.getInt("levels"),
+                        rs.getString("guild"),
+                        rs.getString("state")
+                ));
+            }
+        } catch (SQLException e) {
+            plugin.LOGGER.error("Failed to query plot data by guild: " + e.getMessage());
+        }
+        return plots;
+    }
+    public List<PlotData> getPlotsByMember(String memberName) {
+        connect();  // Ensure connection to the database
+        List<PlotData> plots = new ArrayList<>();
+        String sql = "SELECT * FROM guild_plot WHERE member LIKE ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, "%" + memberName + "%");
+            ResultSet rs = pstmt.executeQuery();
+
+            while (rs.next()) {
+                plots.add(new PlotData(
+                        rs.getInt("x1"),
+                        rs.getInt("z1"),
+                        rs.getInt("x2"),
+                        rs.getInt("z2"),
+                        rs.getString("owner"),
+                        rs.getString("member"),
+                        rs.getInt("levels"),
+                        rs.getString("guild"),
+                        rs.getString("state")
+                ));
+            }
+        } catch (SQLException e) {
+            plugin.LOGGER.error("Failed to query plot data by member: " + e.getMessage());
+        }
+        return plots;
+    }
+    public List<PlotData> getPlotsByOwner(String ownerName) {
+        connect();  // Ensure connection to the database
+        List<PlotData> plots = new ArrayList<>();
+        String sql = "SELECT * FROM guild_plot WHERE owner = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, ownerName);
+            ResultSet rs = pstmt.executeQuery();
+
+            while (rs.next()) {
+                plots.add(new PlotData(
+                        rs.getInt("x1"),
+                        rs.getInt("z1"),
+                        rs.getInt("x2"),
+                        rs.getInt("z2"),
+                        rs.getString("owner"),
+                        rs.getString("member"),
+                        rs.getInt("levels"),
+                        rs.getString("guild"),
+                        rs.getString("state")
+                ));
+            }
+        } catch (SQLException e) {
+            plugin.LOGGER.error("Failed to query plot data by owner: " + e.getMessage());
+        }
+        return plots;
+    }
+    public void updateMember(int plotId, String newMember) {
+        connect();  // Ensure connection to the database
+        String sql = "UPDATE guild_plot SET member = ? WHERE id = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, newMember);
+            pstmt.setInt(2, plotId);
+            pstmt.executeUpdate();
+            plugin.LOGGER.info("Member updated for plot ID: " + plotId);
+        } catch (SQLException e) {
+            plugin.LOGGER.error("Failed to update member: " + e.getMessage());
+        }
+    }
+    public void removeMember(int plotId, String memberToRemove) {
+        connect();  // Ensure connection to the database
+        String sql = "UPDATE guild_plot SET member = REPLACE(member, ?, '') WHERE id = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, memberToRemove);
+            pstmt.setInt(2, plotId);
+            pstmt.executeUpdate();
+            plugin.LOGGER.info("Member removed from plot ID: " + plotId);
+        } catch (SQLException e) {
+            plugin.LOGGER.error("Failed to remove member: " + e.getMessage());
+        }
+    }
+
 }

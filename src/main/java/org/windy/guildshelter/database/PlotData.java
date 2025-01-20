@@ -1,43 +1,59 @@
 package org.windy.guildshelter.database;
 
 public class PlotData {
-    private int x;
-    private int y;
-    private String player;
-    private String truster;
-    private String guild;
+    private int x1, z1, x2, z2;
+    private String owner, member, guild, state;
+    private int levels;
 
-    public PlotData(int x, int y, String player, String truster, String guild) {
-        this.x = x;
-        this.y = y;
-        this.player = player;
-        this.truster = truster;
+    // 修改构造方法，接受正确的参数类型
+    public PlotData(int x1, int z1, int x2, int z2, String owner, String member, int levels, String guild, String state) {
+        this.x1 = x1;
+        this.z1 = z1;
+        this.x2 = x2;
+        this.z2 = z2;
+        this.owner = owner;
+        this.member = member;
+        this.levels = levels;
         this.guild = guild;
+        this.state = state;
     }
 
-    // Getter 和 Setter 方法
-    public int getX() {
-        return x;
+    // 其他 getter 和 setter 方法
+    public int getX1() {
+        return x1;
     }
 
-    public int getY() {
-        return y;
+    public int getZ1() {
+        return z1;
     }
 
-    public String getPlayer() {
-        return player;
+    public int getX2() {
+        return x2;
     }
 
-    public String getTruster() {
-        return truster;
+    public int getZ2() {
+        return z2;
+    }
+
+    public String getOwner() {
+        return owner;
+    }
+
+    public String getMember() {
+        return member;
+    }
+
+    public int getLevels() {
+        return levels;
     }
 
     public String getGuild() {
         return guild;
     }
 
-    public void setTruster(String truster) {
-        this.truster = truster;
+    public String getState() {
+        return state;
     }
-}
 
+    // 如果你有需要，可以添加其他方法
+}
