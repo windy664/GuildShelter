@@ -5,6 +5,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.windy.guildshelter.api.ConfigAPI;
+import org.windy.guildshelter.database.SqLiteDatabase;
 import org.windy.guildshelter.util.GenerateGuildBase;
 import org.windy.guildshelter.util.GuildAreaInspection;
 
@@ -12,11 +13,11 @@ public class CreateCommand {
 
     private final JavaPlugin plugin;
 
-
-    // 构造函数接收插件实
+    // 构造函数接收插件实例
     public CreateCommand(JavaPlugin plugin) {
         this.plugin = plugin;
     }
+
     public boolean execute(CommandSender sender) {
         GenerateGuildBase generator = new GenerateGuildBase(plugin);
         if (sender instanceof Player player) {
@@ -35,19 +36,22 @@ public class CreateCommand {
             String world = player.getWorld().getName();  // 获取玩家所在的世界
             String guildName = PlayerGuildApi.getInstance().getPlayerGuildName(player);
 
+            // 实例化 GuildAreaInspection
+            GuildAreaInspection areaInspection = new GuildAreaInspection(new SqLiteDatabase());
+
             // 调用 checkAreaConflict 方法进行冲突检测
-            boolean isConflict = GuildAreaInspection.checkAreaConflict(centerX, centerY, centerZ, radius, totalLength, totalWidth, roadWidth, plotLength, plotWidth, world);
+            boolean isConflict = areaInspection.checkAreaConflict(centerX, centerY, centerZ, radius, totalLength, totalWidth, roadWidth, plotLength, plotWidth, world);
 
             if (isConflict) {
                 sender.sendMessage("The area conflicts with an existing guild shelter.");
                 return false;  // 有冲突
             } else {
                 sender.sendMessage("The area is free to use.");
-                generator.createPlatform(centerX, centerY, centerZ, radius,totalLength,totalWidth,roadWidth,plotLength,plotWidth,world,guildName);
+                generator.createPlatform(centerX, centerY, centerZ, radius, totalLength, totalWidth, roadWidth, plotLength, plotWidth, world, "test");
                 return true;  // 没有冲突
             }
         } else {
-            sender.sendMessage("Only pla yes can execute this command.");
+            sender.sendMessage("Only players can execute this command.");
             return false;
         }
     }

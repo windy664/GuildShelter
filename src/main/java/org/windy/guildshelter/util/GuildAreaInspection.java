@@ -1,8 +1,5 @@
 package org.windy.guildshelter.util;
 
-import org.bukkit.Bukkit;
-import org.bukkit.Material;
-import org.bukkit.block.Block;
 import org.windy.guildshelter.database.SqLiteDatabase;
 
 public class GuildAreaInspection {
@@ -12,11 +9,12 @@ public class GuildAreaInspection {
         this.sqLiteDatabase = sqLiteDatabase;
     }
 
-    public static boolean checkAreaConflict(int centerX, int centerY, int centerZ, int radius, int Total_length, int Total_width, int Road_width, int Plot_length, int Plot_width, String world) {
-        //推演创建过程
+    // 将 checkAreaConflict 方法从静态方法改为实例方法
+    public boolean checkAreaConflict(int centerX, int centerY, int centerZ, int radius, int Total_length, int Total_width, int Road_width, int Plot_length, int Plot_width, String world) {
+        // 推演创建过程
         int x0 = centerX - (Total_length / 2);  // 初始 x 坐标
         int y0 = centerZ + radius + Road_width;  // 初始 y 坐标
-        int Az = y0 - 2*radius;
+        int Az = y0 - 2 * radius;
         int[][] result = fillArea(Total_length, Total_width, Plot_length, Plot_width, Road_width, x0, y0);
         int plotCount = countPlots(Total_length, Total_width, Plot_length, Plot_width, Road_width);
         int i = 1;
@@ -30,11 +28,12 @@ public class GuildAreaInspection {
         }
         if (lastPlot != null) {
             System.out.println("Last plot coordinates: (" + lastPlot[0] + ", " + lastPlot[1] + ") - (" + lastPlot[2] + ", " + lastPlot[3] + ")");
-            sqLiteDatabase.insertGuildShelterArea(x0,Az,lastPlot[2],lastPlot[3],"愿听风止");
+            sqLiteDatabase.insertGuildShelterArea(x0, Az, lastPlot[2], lastPlot[3], "愿听风止");
         }
-        //看看最后是否冲突
+        // 看看最后是否冲突
         return sqLiteDatabase.isConflictWithExistingArea(x0, Az, lastPlot[2], lastPlot[3], world);
     }
+
     public static int[][] fillArea(int A, int B, int l_a, int l_b, int d, int x0, int y0) {
         int xCount = (A - l_a) / (l_a + d) + 1;
         int yCount = (B - l_b) / (l_b + d) + 1;
