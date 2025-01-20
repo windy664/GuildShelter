@@ -29,14 +29,14 @@ public class GenerateGuildBase {
     public static int radius;
     private ResidenceManager residenceManager;
 
-    public void createPlatform(int centerX, int centerY, int centerZ, int radius,int Total_length,int Total_width,int Road_width,int Plot_length,int Plot_width) {
+    public void createPlatform(int centerX, int centerY, int centerZ, int radius,int Total_length,int Total_width,int Road_width,int Plot_length,int Plot_width,String world,String guildName) {
         SqLiteDatabase sqLiteDatabase = new SqLiteDatabase();
         Bukkit.getScheduler().runTask(plugin, () -> {
             for (int x = centerX - radius; x <= centerX + radius; x++) {
                 for (int z = centerZ - radius; z <= centerZ + radius; z++) {
                     // 计算当前 (x, z) 是否在正方形平台的范围内
                     if (Math.abs(x - centerX) <= radius && Math.abs(z - centerZ) <= radius) {
-                        Block block = Bukkit.getWorld("world").getBlockAt(x, centerY, z);
+                        Block block = Bukkit.getWorld(world).getBlockAt(x, centerY, z);
                         block.setType(Material.STONE_BRICKS);
                     }
                 }
@@ -57,7 +57,7 @@ public class GenerateGuildBase {
 
             for (int[] plot : result) {
                 System.out.println("(" + plot[0] + ", " + plot[1] + ") - (" + plot[2] + ", " + plot[3] + ")");
-                sqLiteDatabase.insertPlot(plot[0], plot[1], plot[2], plot[3], "Vespea", "", "world", "愿听风止", "private");
+                sqLiteDatabase.insertPlot(plot[0], plot[1], plot[2], plot[3], "Vespea", "", world, guildName, "private");
                 lastPlot = plot;  // 更新 lastPlot 为当前坐标
                 i++;
             }
