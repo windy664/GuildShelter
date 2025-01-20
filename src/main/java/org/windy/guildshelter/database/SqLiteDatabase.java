@@ -56,7 +56,7 @@ public class SqLiteDatabase {
                 "z2 INTEGER NOT NULL, " +
                 "owner TEXT NOT NULL, " +
                 "member TEXT NOT NULL, " +
-                "levels TEXT NOT NULL, " +
+                "world TEXT NOT NULL, " +  // 将 levels 修改为 world
                 "guild TEXT NOT NULL, " +
                 "state TEXT NOT NULL);";
         try (Statement stmt = connection.createStatement()) {
@@ -67,6 +67,7 @@ public class SqLiteDatabase {
         }
     }
 
+
     public void createGuildShelterArea() {
         connect();  // Ensure connection to the database
         String sql = "CREATE TABLE IF NOT EXISTS guild_shelter_area (" +
@@ -76,7 +77,7 @@ public class SqLiteDatabase {
                 "x2 INTEGER NOT NULL, " +
                 "z2 INTEGER NOT NULL, " +
                 "guild TEXT NOT NULL, " +
-                "world TEXT NOT NULL);";  // 添加 world 列
+                "world TEXT NOT NULL);";  // 确保使用 world 列
         try (Statement stmt = connection.createStatement()) {
             stmt.executeUpdate(sql);
             plugin.LOGGER.info("Guild shelter area table created successfully!");
@@ -84,6 +85,7 @@ public class SqLiteDatabase {
             plugin.LOGGER.error("Failed to create guild shelter area table: " + e.getMessage());
         }
     }
+
 
     public void insertGuildShelterArea(int x1, int z1, int x2, int z2, String guild, String world) {
         connect();  // Ensure connection to the database
@@ -102,10 +104,11 @@ public class SqLiteDatabase {
         }
     }
 
+
     // Insert plot data
-    public void insertPlot(int x1, int z1, int x2, int z2, String owner, String member, String levels, String guild, String state) {
+    public void insertPlot(int x1, int z1, int x2, int z2, String owner, String member, String world, String guild, String state) {
         connect();  // Ensure connection to the database
-        String sql = "INSERT INTO guild_plot (x1, z1, x2, z2, owner, member, levels, guild, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO guild_plot (x1, z1, x2, z2, owner, member, world, guild, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, x1);
             pstmt.setInt(2, z1);
@@ -113,7 +116,7 @@ public class SqLiteDatabase {
             pstmt.setInt(4, z2);
             pstmt.setString(5, owner);
             pstmt.setString(6, member);
-            pstmt.setString(7, levels);
+            pstmt.setString(7, world);  // 使用 world 而不是 levels
             pstmt.setString(8, guild);
             pstmt.setString(9, state);
             pstmt.executeUpdate();
@@ -122,6 +125,7 @@ public class SqLiteDatabase {
             plugin.LOGGER.error("Failed to insert plot data: " + e.getMessage());
         }
     }
+
 
     public List<PlotData> getPlotsByGuild(String guildName) {
         connect();  // Ensure connection to the database
@@ -139,7 +143,7 @@ public class SqLiteDatabase {
                         rs.getInt("z2"),
                         rs.getString("owner"),
                         rs.getString("member"),
-                        rs.getString("levels"),
+                        rs.getString("world"),  // 使用 world 而不是 levels
                         rs.getString("guild"),
                         rs.getString("state")
                 ));
@@ -149,6 +153,7 @@ public class SqLiteDatabase {
         }
         return plots;
     }
+
     public List<PlotData> getPlotsByMember(String memberName) {
         connect();  // Ensure connection to the database
         List<PlotData> plots = new ArrayList<>();
@@ -165,7 +170,7 @@ public class SqLiteDatabase {
                         rs.getInt("z2"),
                         rs.getString("owner"),
                         rs.getString("member"),
-                        rs.getString("levels"),
+                        rs.getString("world"),
                         rs.getString("guild"),
                         rs.getString("state")
                 ));
@@ -191,7 +196,7 @@ public class SqLiteDatabase {
                         rs.getInt("z2"),
                         rs.getString("owner"),
                         rs.getString("member"),
-                        rs.getString("levels"),
+                        rs.getString("world"),
                         rs.getString("guild"),
                         rs.getString("state")
                 ));
