@@ -25,7 +25,13 @@ public class SqLiteDatabase {
             plugin.LOGGER.error("Unable to connect to SQLite database: " + e.getMessage());
         }
     }
-
+    // 获取数据库连接
+    public static Connection getConnection() {
+        if (connection == null) {
+            connect();  // 如果连接为空，则尝试连接数据库
+        }
+        return connection;
+    }
 
     // 断开数据库连接
     public static void disconnect() {
@@ -61,7 +67,37 @@ public class SqLiteDatabase {
         }
     }
 
-
+    public void createGuildShelterArea() {
+        connect();  // Ensure connection to the database
+        String sql = "CREATE TABLE IF NOT EXISTS guild_shelter_area (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "x1 INTEGER NOT NULL, " +
+                "z1 INTEGER NOT NULL, " +
+                "x2 INTEGER NOT NULL, " +
+                "z2 INTEGER NOT NULL, " +
+                "guild TEXT NOT NULL);";
+        try (Statement stmt = connection.createStatement()) {
+            stmt.executeUpdate(sql);
+            plugin.LOGGER.info("Guild plot table created successfully!");
+        } catch (SQLException e) {
+            plugin.LOGGER.error("Failed to create guild plot table: " + e.getMessage());
+        }
+    }
+    public void insertGuildShelterArea(int x1, int z1, int x2, int z2, String guild) {
+        connect();  // Ensure connection to the database
+        String sql = "INSERT INTO guild_shelter_area (x1, z1, x2, z2, guild) VALUES (?,?,?,?,?)";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, x1);
+            pstmt.setInt(2, z1);
+            pstmt.setInt(3, x2);
+            pstmt.setInt(4, z2);
+            pstmt.setString(5, guild);
+            pstmt.executeUpdate();
+            plugin.LOGGER.info("Guild shelter area inserted: (" + x1 + ", " + z1 + ") to (" + x2 + ", " + z2 + ") Guild: " + guild);
+        } catch (SQLException e) {
+            plugin.LOGGER.error("Failed to insert guild shelter area: " + e.getMessage());
+        }
+    }
     // Insert plot data
     public void insertPlot(int x1, int z1, int x2, int z2, String owner, String member, String levels, String guild, String state) {
         connect();  // Ensure connection to the database
@@ -83,16 +119,6 @@ public class SqLiteDatabase {
         }
     }
 
-
-
-    // Get the database connection
-    // 获取数据库连接
-    public static Connection getConnection() {
-        if (connection == null) {
-            connect();  // 如果连接为空，则尝试连接数据库
-        }
-        return connection;
-    }
     public List<PlotData> getPlotsByGuild(String guildName) {
         connect();  // Ensure connection to the database
         List<PlotData> plots = new ArrayList<>();
@@ -194,6 +220,45 @@ public class SqLiteDatabase {
         } catch (SQLException e) {
             plugin.LOGGER.error("Failed to remove member: " + e.getMessage());
         }
+    }
+    public void removeGuildArea(String guildName) {
+        connect();  // Ensure connection to the database
+        String sql = "DELETE FROM guild_plot WHERE guild =?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, guildName);
+            pstmt.executeUpdate();
+            plugin.LOGGER.info("Guild area removed for guild: " + guildName);
+        }catch (SQLException e) {
+            plugin.LOGGER.error("Failed to remove guild area: " + e.getMessage());
+        }
+    }
+    public boolean isConflictWithExistingArea(int x1, int z1, int x2, int z2, String world) {
+        connect();  // Ensure connection to the database
+        String sql = "SELECT * FROM guild_shelter_area WHERE world = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, world);  // Make sure you're filtering by world (assuming world column exists)
+            ResultSet rs = pstmt.executeQuery();
+
+            while (rs.next()) {
+                int dbX1 = rs.getInt("x1");
+                int dbZ1 = rs.getInt("z1");
+                int dbX2 = rs.getInt("x2");
+                int dbZ2 = rs.getInt("z2");
+
+                // Check for overlap between the input range and the database range
+                if (isOverlap(x1, z1, x2, z2, dbX1, dbZ1, dbX2, dbZ2)) {
+                    return true; // Conflict found
+                }
+            }
+        } catch (SQLException e) {
+            plugin.LOGGER.error("Failed to check for conflicts in guild shelter area: " + e.getMessage());
+        }
+        return false; // No conflict found
+    }
+
+    private boolean isOverlap(int x1, int z1, int x2, int z2, int dbX1, int dbZ1, int dbX2, int dbZ2) {
+        // Check if the two areas overlap
+        return !(x2 < dbX1 || x1 > dbX2 || z2 < dbZ1 || z1 > dbZ2);
     }
 
 }

@@ -43,17 +43,27 @@ public class GenerateGuildBase {
             }
         });
         Bukkit.getScheduler().runTask(plugin, () -> {
-            int x0 = centerX-(Total_length/2);  // 初始 x 坐标
-            int y0 = centerZ+radius+Road_width;  // 初始 y 坐标
+            int x0 = centerX - (Total_length / 2);  // 初始 x 坐标
+            int y0 = centerZ + radius + Road_width;  // 初始 y 坐标
+
+            int Az = y0 - 2*radius;
+
             int[][] result = fillArea(Total_length, Total_width, Plot_length, Plot_width, Road_width, x0, y0);
             int plotCount = countPlots(Total_length, Total_width, Plot_length, Plot_width, Road_width);
             System.out.println("Total number of plots: " + plotCount);
-            int i=1;
+
+            int i = 1;
+            int[] lastPlot = null;  // 用来存储最后一个坐标
+
             for (int[] plot : result) {
                 System.out.println("(" + plot[0] + ", " + plot[1] + ") - (" + plot[2] + ", " + plot[3] + ")");
                 sqLiteDatabase.insertPlot(plot[0], plot[1], plot[2], plot[3], "Vespea", "", "world", "愿听风止", "private");
-             //   createResidence(plot[0], plot[1], plot[2], plot[3], "Vespera","world",i,"愿听风止");
+                lastPlot = plot;  // 更新 lastPlot 为当前坐标
                 i++;
+            }
+            if (lastPlot != null) {
+                System.out.println("Last plot coordinates: (" + lastPlot[0] + ", " + lastPlot[1] + ") - (" + lastPlot[2] + ", " + lastPlot[3] + ")");
+                sqLiteDatabase.insertGuildShelterArea(x0,Az,lastPlot[2],lastPlot[3],"愿听风止");
             }
         });
     }
