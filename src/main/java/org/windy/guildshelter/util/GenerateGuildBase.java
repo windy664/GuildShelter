@@ -4,7 +4,6 @@ import com.bekvon.bukkit.residence.Residence;
 import com.bekvon.bukkit.residence.protection.ResidenceManager;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.Marker;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -31,6 +30,7 @@ public class GenerateGuildBase {
     private ResidenceManager residenceManager;
 
     public void createPlatform(int centerX, int centerY, int centerZ, int radius,int Total_length,int Total_width,int Road_width,int Plot_length,int Plot_width) {
+        SqLiteDatabase sqLiteDatabase = new SqLiteDatabase();
         Bukkit.getScheduler().runTask(plugin, () -> {
             for (int x = centerX - radius; x <= centerX + radius; x++) {
                 for (int z = centerZ - radius; z <= centerZ + radius; z++) {
@@ -43,20 +43,16 @@ public class GenerateGuildBase {
             }
         });
         Bukkit.getScheduler().runTask(plugin, () -> {
-            int A = Total_length;
-            int B = Total_width;
-            int l_a = Plot_length;
-            int l_b = Plot_width;
-            int d = Road_width;
             int x0 = centerX-(Total_length/2);  // 初始 x 坐标
             int y0 = centerZ+radius+Road_width;  // 初始 y 坐标
-            int[][] result = fillArea(A, B, l_a, l_b, d, x0, y0);
-            int plotCount = countPlots(A, B, l_a, l_b, d);
+            int[][] result = fillArea(Total_length, Total_width, Plot_length, Plot_width, Road_width, x0, y0);
+            int plotCount = countPlots(Total_length, Total_width, Plot_length, Plot_width, Road_width);
             System.out.println("Total number of plots: " + plotCount);
             int i=1;
             for (int[] plot : result) {
                 System.out.println("(" + plot[0] + ", " + plot[1] + ") - (" + plot[2] + ", " + plot[3] + ")");
-                createResidence(plot[0], plot[1], plot[2], plot[3], "Vespera","world",i,"愿听风止");
+                sqLiteDatabase.insertPlot(plot[0], plot[1], plot[2], plot[3], "Vespera", "", "worlds", "愿听风止", "private");
+             //   createResidence(plot[0], plot[1], plot[2], plot[3], "Vespera","world",i,"愿听风止");
                 i++;
             }
         });

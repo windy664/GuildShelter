@@ -50,7 +50,7 @@ public class SqLiteDatabase {
                 "z2 INTEGER NOT NULL, " +
                 "owner TEXT NOT NULL, " +
                 "member TEXT NOT NULL, " +
-                "levels INTEGER NOT NULL, " +
+                "levels TEXT NOT NULL, " +
                 "guild TEXT NOT NULL, " +
                 "state TEXT NOT NULL);";
         try (Statement stmt = connection.createStatement()) {
@@ -63,7 +63,7 @@ public class SqLiteDatabase {
 
 
     // Insert plot data
-    public void insertPlot(int x1, int z1, int x2, int z2, String owner, String member, int levels, String guild, String state) {
+    public void insertPlot(int x1, int z1, int x2, int z2, String owner, String member, String levels, String guild, String state) {
         connect();  // Ensure connection to the database
         String sql = "INSERT INTO guild_plot (x1, z1, x2, z2, owner, member, levels, guild, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
@@ -73,7 +73,7 @@ public class SqLiteDatabase {
             pstmt.setInt(4, z2);
             pstmt.setString(5, owner);
             pstmt.setString(6, member);
-            pstmt.setInt(7, levels);
+            pstmt.setString(7, levels);
             pstmt.setString(8, guild);
             pstmt.setString(9, state);
             pstmt.executeUpdate();
@@ -109,7 +109,7 @@ public class SqLiteDatabase {
                         rs.getInt("z2"),
                         rs.getString("owner"),
                         rs.getString("member"),
-                        rs.getInt("levels"),
+                        rs.getString("levels"),
                         rs.getString("guild"),
                         rs.getString("state")
                 ));
@@ -135,7 +135,7 @@ public class SqLiteDatabase {
                         rs.getInt("z2"),
                         rs.getString("owner"),
                         rs.getString("member"),
-                        rs.getInt("levels"),
+                        rs.getString("levels"),
                         rs.getString("guild"),
                         rs.getString("state")
                 ));
@@ -161,7 +161,7 @@ public class SqLiteDatabase {
                         rs.getInt("z2"),
                         rs.getString("owner"),
                         rs.getString("member"),
-                        rs.getInt("levels"),
+                        rs.getString("levels"),
                         rs.getString("guild"),
                         rs.getString("state")
                 ));
