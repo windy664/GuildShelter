@@ -51,7 +51,7 @@ public class GenerateGuildBase {
             int i=1;
             for (int[] plot : result) {
                 System.out.println("(" + plot[0] + ", " + plot[1] + ") - (" + plot[2] + ", " + plot[3] + ")");
-                sqLiteDatabase.insertPlot(plot[0], plot[1], plot[2], plot[3], "Vespera", "", "worlds", "愿听风止", "private");
+                sqLiteDatabase.insertPlot(plot[0], plot[1], plot[2], plot[3], "Vespea", "", "worlds", "愿听风止", "private");
              //   createResidence(plot[0], plot[1], plot[2], plot[3], "Vespera","world",i,"愿听风止");
                 i++;
             }

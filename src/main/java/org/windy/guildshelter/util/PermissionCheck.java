@@ -3,8 +3,6 @@ import org.windy.guildshelter.database.SqLiteDatabase;
 import org.windy.guildshelter.plugin;
 
 import java.sql.*;
-import java.util.ArrayList;
-import java.util.List;
 public class PermissionCheck {
     public static boolean hasPermission(String playerName, String level, int playerX, int playerZ) {
         SqLiteDatabase.connect();  // Ensure connection to the database
@@ -37,16 +35,5 @@ public class PermissionCheck {
 
         // 如果没有找到符合条件的权限区域，则返回 false
         return false;
-    }
-
-    // 测试方法
-    public static void main(String[] args) {
-        String playerName = "player123";
-        String level = "world";  // 世界名称
-        int playerX = 150;       // 玩家 x 坐标
-        int playerZ = 70;        // 玩家 z 坐标
-
-        boolean hasPermission = hasPermission(playerName, level, playerX, playerZ);
-        System.out.println("Player has permission: " + hasPermission);
     }
 }
