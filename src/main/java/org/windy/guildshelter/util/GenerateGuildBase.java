@@ -1,40 +1,33 @@
 package org.windy.guildshelter.util;
 
-import com.bekvon.bukkit.residence.Residence;
-import com.bekvon.bukkit.residence.protection.ResidenceManager;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.windy.guildshelter.database.SqLiteDatabase;
+import org.windy.guildshelter.database.PlotTable;
+import org.windy.guildshelter.database.PlotData;
 
 public class GenerateGuildBase {
 
     private final JavaPlugin plugin;
-    public static SqLiteDatabase sqLiteDatabase;  // 将 sqLiteDatabase 设置为 static
+    private final PlotTable plotTable;  // 添加 PlotTable 字段
+
+    public GenerateGuildBase(JavaPlugin plugin, PlotTable plotTable) {
+        this.plugin = plugin;
+        this.plotTable = plotTable;  // 初始化 PlotTable
+    }
     public static final Logger LOGGER = LogManager.getLogger();
 
 
-    public GenerateGuildBase(JavaPlugin plugin) {
-        this.plugin = plugin;
-        sqLiteDatabase = new SqLiteDatabase();  // 初始化静态字段
-    }
-    public static int centerX;
-    public static int centerZ;
-    public static int radius;
-    private ResidenceManager residenceManager;
 
-    public void createPlatform(int centerX, int centerY, int centerZ, int radius,int Total_length,int Total_width,int Road_width,int Plot_length,int Plot_width,String world,String guildName) {
-        SqLiteDatabase sqLiteDatabase = new SqLiteDatabase();
+    public void createPlatform(int centerX, int centerY, int centerZ, int radius, int totalLength, int totalWidth, int roadWidth, int plotLength, int plotWidth, String world, String guildName) {
         Bukkit.getScheduler().runTask(plugin, () -> {
+            // 创建平台的代码不变，使用石砖填充指定范围
             for (int x = centerX - radius; x <= centerX + radius; x++) {
                 for (int z = centerZ - radius; z <= centerZ + radius; z++) {
-                    // 计算当前 (x, z) 是否在正方形平台的范围内
                     if (Math.abs(x - centerX) <= radius && Math.abs(z - centerZ) <= radius) {
                         Block block = Bukkit.getWorld(world).getBlockAt(x, centerY, z);
                         block.setType(Material.STONE_BRICKS);
@@ -42,86 +35,57 @@ public class GenerateGuildBase {
                 }
             }
         });
+
         Bukkit.getScheduler().runTask(plugin, () -> {
-            int x0 = centerX - (Total_length / 2);  // 初始 x 坐标
-            int y0 = centerZ + radius + Road_width;  // 初始 y 坐标
+            // 计算填充区域并检查地块是否与其他公会的地块冲突
+            int x0 = centerX - (totalLength / 2);  // 初始 x 坐标
+            int y0 = centerZ + radius + roadWidth;  // 初始 y 坐标
 
-            int Az = y0 - 2*radius;
+            int az = y0 - 2 * radius;
 
-            int[][] result = fillArea(Total_length, Total_width, Plot_length, Plot_width, Road_width, x0, y0);
-            int plotCount = countPlots(Total_length, Total_width, Plot_length, Plot_width, Road_width);
+            int[][] result = fillArea(totalLength, totalWidth, plotLength, plotWidth, roadWidth, x0, y0);
+            int plotCount = countPlots(totalLength, totalWidth, plotLength, plotWidth, roadWidth);
             System.out.println("Total number of plots: " + plotCount);
 
             int i = 1;
-            int[] lastPlot = null;  // 用来存储最后一个坐标
+            int[] lastPlot = null;
 
             for (int[] plot : result) {
                 System.out.println("(" + plot[0] + ", " + plot[1] + ") - (" + plot[2] + ", " + plot[3] + ")");
-                sqLiteDatabase.insertPlot(plot[0], plot[1], plot[2], plot[3], "Vespea", "", world, guildName, "private");
-                lastPlot = plot;  // 更新 lastPlot 为当前坐标
+                plotTable.insertPlot(plot[0], plot[1], plot[2], plot[3], "Vespea", "", world, guildName, "private");
+                lastPlot = plot;
                 i++;
             }
             if (lastPlot != null) {
                 System.out.println("Last plot coordinates: (" + lastPlot[0] + ", " + lastPlot[1] + ") - (" + lastPlot[2] + ", " + lastPlot[3] + ")");
-                sqLiteDatabase.insertGuildShelterArea(x0,Az,lastPlot[2],lastPlot[3],guildName,world);
+                plotTable.insertGuildShelterArea(x0, az, lastPlot[2], lastPlot[3], guildName, world);
             }
         });
     }
-    public static int[][] fillArea(int A, int B, int l_a, int l_b, int d, int x0, int y0) {
-        int xCount = (A - l_a) / (l_a + d) + 1;
-        int yCount = (B - l_b) / (l_b + d) + 1;
+
+    public static int[][] fillArea(int totalLength, int totalWidth, int plotLength, int plotWidth, int roadWidth, int x0, int y0) {
+        int xCount = (totalLength - plotLength) / (plotLength + roadWidth) + 1;
+        int yCount = (totalWidth - plotWidth) / (plotWidth + roadWidth) + 1;
         int[][] plots = new int[xCount * yCount][4];
         int index = 0;
         for (int y = 0; y < yCount; y++) {
             for (int x = 0; x < xCount; x++) {
-                int x1 = x0 + x * (l_a + d);
-                int y1 = y0 + y * (l_b + d);
+                int x1 = x0 + x * (plotLength + roadWidth);
+                int y1 = y0 + y * (plotWidth + roadWidth);
                 plots[index][0] = x1;
                 plots[index][1] = y1;
-                plots[index][2] = x1 + l_a;
-                plots[index][3] = y1 + l_b;
+                plots[index][2] = x1 + plotLength;
+                plots[index][3] = y1 + plotWidth;
                 index++;
             }
         }
         return plots;
     }
 
-    public static int countPlots(int A, int B, int l_a, int l_b, int d) {
-        int xCount = (A - l_a) / (l_a + d) + 1;
-        int yCount = (B - l_b) / (l_b + d) + 1;
+    public static int countPlots(int totalLength, int totalWidth, int plotLength, int plotWidth, int roadWidth) {
+        int xCount = (totalLength - plotLength) / (plotLength + roadWidth) + 1;
+        int yCount = (totalWidth - plotWidth) / (plotWidth + roadWidth) + 1;
         return xCount * yCount;
     }
-    public void createResidence(int x1, int z1, int x2, int z2, String playerName,String worldname,int i,String guildName) {
-        // 获取 Residence 插件实例
-        Residence residencePlugin = (Residence) Bukkit.getServer().getPluginManager().getPlugin("Residence");
 
-        // 获取 ResidenceManager 实例
-        residenceManager = residencePlugin.getResidenceManager();
-        // 获取目标世界
-        World world = Bukkit.getWorld(worldname); // 假设世界名称是 "world"
-        if (world == null) {
-            LOGGER.error("Not world found");
-            return;
-        }
-
-        // 定义两个对角点
-        Location loc1 = new Location(world, x1, 0, z1);  // 第一个坐标点
-        Location loc2 = new Location(world, x2, 256, z2);  // 第二个坐标点
-
-        // 获取玩家对象
-        Player player = Bukkit.getPlayer(playerName); // 获取玩家 "verpa"
-        if (player == null) {
-            LOGGER.error("Player not found.");
-            return;
-        }
-        String House_Number_Name = guildName+i+"号";
-        LOGGER.info(House_Number_Name);
-        // 使用 addResidence 方法创建地块
-        boolean success = residenceManager.addResidence(player, playerName, House_Number_Name, loc1, loc2, true);
-        if (success) {
-            LOGGER.info("Residence created successfully!");
-        } else {
-            LOGGER.error("Failed to create residence.");
-        }
-    }
 }

@@ -10,7 +10,8 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.windy.guildshelter.command.GuildShelterCommand;
-import org.windy.guildshelter.database.SqLiteDatabase;
+import org.windy.guildshelter.database.GuildShelterAreaTable;
+import org.windy.guildshelter.database.PlotTable;
 import org.windy.guildshelter.listener.GuildCreateListener;
 import org.windy.guildshelter.listener.neoforge.BlockInteractListener;
 import com.bekvon.bukkit.residence.Residence;
@@ -27,7 +28,7 @@ import static net.neoforged.neoforge.common.NeoForge.EVENT_BUS;
 public class plugin extends JavaPlugin {
 
     public static final Logger LOGGER = LogManager.getLogger();
-    private SqLiteDatabase sqLiteDatabase;
+
 
     @Override
     public void onEnable() {
@@ -37,12 +38,11 @@ public class plugin extends JavaPlugin {
         saveDefaultLangFile();
         // 获取 lang.yml 文件的配置
         FileConfiguration langConfig = getLangConfig();
-        // 初始化数据库
-        sqLiteDatabase = new SqLiteDatabase();
-        SqLiteDatabase.connect();
-        // 创建 plot 表格
-        sqLiteDatabase.createPlotTable();
-        sqLiteDatabase.createGuildShelterArea();
+        // 创建 plot 和 guild shelter area 表格
+        PlotTable plotTable = new PlotTable();
+        plotTable.createPlotTable();
+        GuildShelterAreaTable shelterAreaTable = new GuildShelterAreaTable();
+        shelterAreaTable.createGuildShelterArea();
         //依赖注册
         try {
             Class.forName("com.sk89q.worldedit.WorldEdit");
@@ -68,9 +68,6 @@ public class plugin extends JavaPlugin {
     public void onDisable() {
         // 注销事件监听器
         EVENT_BUS.unregister(new BlockInteractListener());
-        if (sqLiteDatabase != null) {
-            sqLiteDatabase.disconnect();
-        }
     }
 
     // 保存 lang.yml 文件的方法

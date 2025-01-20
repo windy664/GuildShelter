@@ -5,13 +5,14 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.windy.guildshelter.api.ConfigAPI;
+import org.windy.guildshelter.database.PlotTable;
 import org.windy.guildshelter.util.GenerateGuildBase;
 
 public class GenPlatCommand {
 
     private final JavaPlugin plugin;
 
-    // 构造函数接收插件实
+    // 构造函数接收插件实例
     public GenPlatCommand(JavaPlugin plugin) {
         this.plugin = plugin;
     }
@@ -31,10 +32,14 @@ public class GenPlatCommand {
             int radius = ConfigAPI.getRadius();
             String world = player.getWorld().getName();  // 获取玩家所在的世界
             String guildName = PlayerGuildApi.getInstance().getPlayerGuildName(player);
+
+            // 创建 PlotTable 实例
+            PlotTable plotTable = new PlotTable(); // 如果 PlotTable 需要参数，可以调整构造函数
+
             // 创建 GenerateGuildBase 实例并调用 createPlatform
-            GenerateGuildBase generator = new GenerateGuildBase(plugin);
-            generator.createPlatform(centerX, centerZ, centerY, radius,plotLength,plotWidth,totalLength,totalWidth,roadWidth,world,"公会测试");  // 在坐标 (0, 80, 0) 生成一个半径为 75 的平台
-//    public void createPlatform(int centerX, int centerY, int centerZ, int radius,int Total_length,int Total_width,int Road_width,int Plot_length,int Plot_width) {
+            GenerateGuildBase generator = new GenerateGuildBase(plugin, plotTable);
+            generator.createPlatform(centerX, centerZ, centerY, radius, plotLength, plotWidth, totalLength, totalWidth, roadWidth, world, guildName);  // 在玩家位置生成平台
+
             player.sendMessage("平台已生成！");
             return true;
         } else {
