@@ -1,11 +1,16 @@
 package org.windy.guildshelter.util;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.windy.guildshelter.database.SqLiteDatabase;
 import org.windy.guildshelter.plugin;
 
 import java.sql.*;
 public class PermissionCheck {
+    public static final Logger LOGGER = LogManager.getLogger();
     public static boolean hasPermission(String playerName, String level, int playerX, int playerZ) {
         SqLiteDatabase.connect();  // Ensure connection to the database
+        LOGGER.info("传入日志检查权限" + playerName+ level+playerX+playerZ);
 
         // SQL 查询语句，查询包含玩家坐标范围的区域
         String sql = "SELECT * FROM guild_plot WHERE level = ? AND " +
@@ -30,7 +35,8 @@ public class PermissionCheck {
                 }
             }
         } catch (SQLException e) {
-            plugin.LOGGER.error("Failed to check player permission: " + e.getMessage());
+           // plugin.LOGGER.error("Failed to check player permission: " + e.getMessage());
+            return true;
         }
 
         // 如果没有找到符合条件的权限区域，则返回 false

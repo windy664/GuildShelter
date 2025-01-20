@@ -46,10 +46,58 @@ public class BlockInteractListener {
 
     @SubscribeEvent
     public void onPlayerInteract(PlayerInteractEvent.RightClickBlock event) {
-        LOGGER.info("PlayerInteractEvent 触发");
+        String player = event.getEntity().getName().getString();
+        String world = event.getLevel().dimension().toString();
+        int x = event.getPos().getX();
+        int z = event.getPos().getZ();
+
+        // 检查实体的名字是否包含特定的子字符串
+        if (player.contains("AS-FAKEPLAYER") ||
+                player.contains("[MINECRAFT]") ||
+                player.contains("[MEKANISM]") ||
+                player.contains("[IF]") ||
+                player.contains("[IntegratedTunnels]") ||
+                player.contains("KILLER JOE") ||
+                player.contains("[DEPOLYER]") ||
+                player.contains("[XU2FAKEPLAYER]") ||
+                player.contains("[MODULAR ROUTERS]")) {
+            // 如果玩家名字匹配条件，返回，不处理事件
+            LOGGER.info("假玩家" + player + " 触发了 PlayerInteractEvent");
+            return;
+        }
+        if(PermissionCheck.hasPermission(player,world,x,z)){
+            return;
+        }
+
+        // 如果权限不足，取消事件
+        event.setCanceled(true);
     }
     @SubscribeEvent
     public void onPlayerInteract(PlayerInteractEvent.EntityInteract event) {
-        LOGGER.info("PlayerInteractEvent 触发");
+        String player = event.getEntity().getName().getString();
+        String world = event.getLevel().dimension().toString();
+        int x = event.getPos().getX();
+        int z = event.getPos().getZ();
+
+        // 检查实体的名字是否包含特定的子字符串
+        if (player.contains("AS-FAKEPLAYER") ||
+                player.contains("[MINECRAFT]") ||
+                player.contains("[MEKANISM]") ||
+                player.contains("[IF]") ||
+                player.contains("[IntegratedTunnels]") ||
+                player.contains("KILLER JOE") ||
+                player.contains("[DEPOLYER]") ||
+                player.contains("[XU2FAKEPLAYER]") ||
+                player.contains("[MODULAR ROUTERS]")) {
+            // 如果玩家名字匹配条件，返回，不处理事件
+            LOGGER.info("假玩家" + player + " 触发了 PlayerInteractEvent");
+            return;
+        }
+        if(PermissionCheck.hasPermission(player,world,x,z)){
+            return;
+        }
+
+        // 如果权限不足，取消事件
+        event.setCanceled(true);
     }
 }
