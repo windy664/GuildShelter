@@ -30,15 +30,12 @@ public class PlotTable {
 
     // 新增的插入公会庇护所区域数据的方法
     public void insertGuildShelterArea(int x1, int z1, int x2, int z2, String guildName, String world) {
-        // 插入数据到 guild_plot 表
         String sqlPlot = "INSERT INTO guild_plot (owner, member, guild, world, state) VALUES (?, ?, ?, ?, ?)";
-        // 插入数据到 guild_plot_rtree 表
         String sqlRtree = "INSERT INTO guild_plot_rtree(id, x1, z1, x2, z2) VALUES (?, ?, ?, ?, ?)";
 
         try (Connection conn = DatabaseManager.getConnection()) {
-            conn.setAutoCommit(false);
+            conn.setAutoCommit(false);  // 启用事务
 
-            // 插入到 guild_plot 表
             try (PreparedStatement pstmt = conn.prepareStatement(sqlPlot, Statement.RETURN_GENERATED_KEYS)) {
                 pstmt.setString(1, "");  // 默认空字符串或其他适当值（owner）
                 pstmt.setString(2, "");  // 默认空字符串或其他适当值（member）
@@ -47,14 +44,12 @@ public class PlotTable {
                 pstmt.setString(5, "active");  // 假设状态是 active
                 pstmt.executeUpdate();
 
-                // 获取生成的 id
                 ResultSet rs = pstmt.getGeneratedKeys();
                 int plotId = -1;
                 if (rs.next()) {
                     plotId = rs.getInt(1);  // 获取生成的 plot_id
                 }
 
-                // 插入到 guild_plot_rtree 表
                 try (PreparedStatement pstmtRtree = conn.prepareStatement(sqlRtree)) {
                     pstmtRtree.setInt(1, plotId);
                     pstmtRtree.setInt(2, x1);
@@ -69,8 +64,6 @@ public class PlotTable {
             } catch (SQLException e) {
                 conn.rollback();
                 plugin.LOGGER.error("Failed to insert guild shelter area: " + e.getMessage());
-            } finally {
-                conn.setAutoCommit(true);
             }
         } catch (SQLException e) {
             plugin.LOGGER.error("Database connection issue during insert: " + e.getMessage());
@@ -117,6 +110,7 @@ public class PlotTable {
 
         return null;
     }
+    // 插入公会地块数据的方法
     public void insertPlot(int x1, int z1, int x2, int z2, String owner, String member, String world, String guild, String state) {
         String sqlPlot = "INSERT INTO guild_plot (owner, member, guild, world, state) VALUES (?, ?, ?, ?, ?)";
         String sqlRtree = "INSERT INTO guild_plot_rtree(id, x1, z1, x2, z2) VALUES (?, ?, ?, ?, ?)";
@@ -124,7 +118,6 @@ public class PlotTable {
         try (Connection conn = DatabaseManager.getConnection()) {
             conn.setAutoCommit(false);  // 启用事务
 
-            // 插入到 guild_plot 表
             try (PreparedStatement pstmt = conn.prepareStatement(sqlPlot, Statement.RETURN_GENERATED_KEYS)) {
                 pstmt.setString(1, owner);
                 pstmt.setString(2, member);
@@ -133,14 +126,12 @@ public class PlotTable {
                 pstmt.setString(5, state);
                 pstmt.executeUpdate();
 
-                // 获取生成的 plot_id
                 ResultSet rs = pstmt.getGeneratedKeys();
                 int plotId = -1;
                 if (rs.next()) {
                     plotId = rs.getInt(1);  // 获取生成的 plot_id
                 }
 
-                // 插入到 guild_plot_rtree 表
                 if (plotId != -1) {
                     try (PreparedStatement pstmtRtree = conn.prepareStatement(sqlRtree)) {
                         pstmtRtree.setInt(1, plotId);
@@ -157,12 +148,9 @@ public class PlotTable {
             } catch (SQLException e) {
                 conn.rollback();  // 回滚事务
                 plugin.LOGGER.error("Failed to insert plot: " + e.getMessage());
-            } finally {
-                conn.setAutoCommit(true);  // 恢复自动提交
             }
         } catch (SQLException e) {
             plugin.LOGGER.error("Database connection issue during plot insert: " + e.getMessage());
         }
     }
-
 }
