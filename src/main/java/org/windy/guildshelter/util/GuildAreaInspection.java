@@ -12,7 +12,7 @@ public class GuildAreaInspection {
         this.sqLiteDatabase = sqLiteDatabase;
     }
 
-    public boolean checkAreaConflict(int centerX, int centerY, int centerZ, int radius,int Total_length,int Total_width,int Road_width,int Plot_length,int Plot_width) {
+    public static boolean checkAreaConflict(int centerX, int centerY, int centerZ, int radius, int Total_length, int Total_width, int Road_width, int Plot_length, int Plot_width, String world) {
         //推演创建过程
         int x0 = centerX - (Total_length / 2);  // 初始 x 坐标
         int y0 = centerZ + radius + Road_width;  // 初始 y 坐标

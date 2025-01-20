@@ -6,6 +6,7 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.entity.Player;
 import org.windy.guildshelter.command.debug.GenPlatCommand;
+import org.windy.guildshelter.command.player.CreateCommand;
 import org.windy.guildshelter.command.player.SetSpawnCommand;
 import org.windy.guildshelter.command.player.SpawnCommand;
 
@@ -47,6 +48,9 @@ public class GuildShelterCommand implements CommandExecutor, TabCompleter {
                 return new SpawnCommand().execute(sender);
             case "setspawn":
                 return new SetSpawnCommand().execute(sender);
+            case "create":
+                CreateCommand createCommand = new CreateCommand(plugin);
+                return createCommand.execute(sender);
             default:
                 sender.sendMessage("Unknown command. Usage: /gs <debug|spawn|setspawn>");
                 return false;
@@ -62,6 +66,7 @@ public class GuildShelterCommand implements CommandExecutor, TabCompleter {
             completions.add("debug");
             completions.add("spawn");
             completions.add("setspawn");
+            completions.add("create");
         } else if (args.length == 2 && args[0].equalsIgnoreCase("debug")) {
             completions.add("genplat");
         }

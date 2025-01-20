@@ -17,8 +17,7 @@ public class GenPlatCommand {
     // 执行命令的方法
     public boolean execute(CommandSender sender) {
         // 确保命令由玩家执行
-        if (sender instanceof Player) {
-            Player player = (Player) sender;
+        if (sender instanceof Player player) {
 
             // 创建 GenerateGuildBase 实例并调用 createPlatform
             GenerateGuildBase generator = new GenerateGuildBase(plugin);
