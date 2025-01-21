@@ -3,6 +3,7 @@ plugins {
     id 'maven-publish'
     id 'idea'
     id 'net.neoforged.moddev' version '2.0.74'
+    id 'com.gradleup.shadow' version '9.0.0-beta4'
 }
 
 version = mod_version
@@ -164,19 +165,24 @@ sourceSets.main.resources.srcDir generateModMetadata
 // To avoid having to run "generateModMetadata" manually, make it run on every project reload
 neoForge.ideSyncTask generateModMetadata
 
-// Example configuration to allow publishing using the maven-publish plugin
 publishing {
     publications {
-        register('mavenJava', MavenPublication) {
-            from components.java
+        create('mavenJava', MavenPublication) {
+            // 直接引用 shadowJar 任务的输出
+            artifact tasks.shadowJar
         }
     }
+
     repositories {
         maven {
-            url "file://${project.projectDir}/repo"
+            url "file://${project.projectDir}/repo"  // 本地仓库地址
         }
     }
 }
+
+
+
+
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.
 idea {
@@ -189,3 +195,54 @@ idea {
 tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
 }
+
+
+
+shadowJar {
+    archiveBaseName.set("GuildShelter")
+    archiveVersion.set(mod_version)
+
+    // 只包含需要的类
+    from(sourceSets.main.output) {
+        include 'com/zaxxer/hikari/HikariConfig.class'
+        include 'com/zaxxer/hikari/HikariDataSource.class'
+    }
+
+    // 排除不必要的依赖项
+    dependencies {
+        // 排除不需要的库
+        exclude(dependency('com.zaxxer:HikariCP'))
+        exclude(dependency('org.slf4j:slf4j-api'))
+
+
+        exclude(dependency('net.neoforged:neoforge'))
+
+        // 按包名排除，确保只包含你需要的内容
+        exclude(dependency('com.google.code.gson:.*'))
+        exclude(dependency('org.intellij:.*'))
+        exclude(dependency('org.jetbrains:.*'))
+    }
+
+    // 排除所有 META-INF 相关文件，减少冗余
+    exclude("META-INF/**")
+
+    // 排除其他不必要的资源文件
+    exclude("**/*.properties")
+    exclude("**/*.xml")
+
+    // 排除测试文件
+    exclude("**/test/**")
+
+    // 重命名（重定位）不需要的库
+    relocate('com.zaxxer', project.group.toString())
+
+    // 优化 JAR 文件大小，仅包含实际使用的类
+    minimize()
+
+    // 删除 JAR 文件中的冗余分类器
+    archiveClassifier.set(null)
+
+    // 显式排除 NeoForge 模组和相关的资源
+}
+
+

@@ -2,6 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/GuildShelter.iml" filepath="$PROJECT_DIR$/.idea/modules/GuildShelter.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/GuildShelter.main.iml" filepath="$PROJECT_DIR$/.idea/modules/GuildShelter.main.iml" />
     </modules>
   </component>
