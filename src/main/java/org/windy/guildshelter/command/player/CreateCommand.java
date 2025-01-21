@@ -5,6 +5,8 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.windy.guildshelter.api.ConfigAPI;
+import org.windy.guildshelter.database.CenterTable;
+import org.windy.guildshelter.database.GuildRegionTable;
 import org.windy.guildshelter.database.PlotTable;
 import org.windy.guildshelter.util.GenerateGuildBase;
 import org.windy.guildshelter.util.GuildAreaInspection;
@@ -19,7 +21,9 @@ public class CreateCommand {
 
     public boolean execute(CommandSender sender) {
         PlotTable plotTable = new PlotTable();  // 创建 PlotTable 实例
-        GenerateGuildBase generator = new GenerateGuildBase(plugin, plotTable);  // 将 PlotTable 传递给 GenerateGuildBase
+        CenterTable centerTable = new CenterTable();  // 创建 CenterTable 实例
+        GuildRegionTable guildRegionTable = new GuildRegionTable();  // 创建 GuildRegionTable 实例
+        GenerateGuildBase generator = new GenerateGuildBase(plugin, plotTable,centerTable,guildRegionTable);  // 将 PlotTable 传递给 GenerateGuildBase
         if (sender instanceof Player player) {
             // 获取玩家的当前位置
             int centerX = player.getLocation().getBlockX();
@@ -47,9 +51,6 @@ public class CreateCommand {
                 return false;  // 有冲突
             } else {
                 sender.sendMessage("The area is free to use.");
-
-                // 插入区域数据到数据库
-                plotTable.insertGuildShelterArea(centerX, centerZ, centerX + totalLength, centerZ + totalWidth, guildName, world);
 
                 // 创建平台
                 generator.createPlatform(centerX, centerY, centerZ, radius, totalLength, totalWidth, roadWidth, plotLength, plotWidth, world, guildName);

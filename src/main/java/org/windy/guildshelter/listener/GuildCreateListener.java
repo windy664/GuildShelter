@@ -4,6 +4,8 @@ import com.handy.guild.event.GuildCreateEvent;  // 引入你的 GuildCreateEvent
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.Bukkit;
+import org.windy.guildshelter.database.CenterTable;
+import org.windy.guildshelter.database.GuildRegionTable;
 import org.windy.guildshelter.util.GenerateGuildBase;
 import org.windy.guildshelter.database.PlotTable;  // 导入 PlotTable
 import org.bukkit.plugin.java.JavaPlugin;
@@ -28,9 +30,11 @@ public class GuildCreateListener implements Listener {
 
         // 创建 PlotTable 实例
         PlotTable plotTable = new PlotTable();
+        CenterTable centerTable = new CenterTable();
+        GuildRegionTable guildRegionTable = new GuildRegionTable();
 
         // 创建 GenerateGuildBase 实例并传递 PlotTable
-        GenerateGuildBase generator = new GenerateGuildBase(plugin, plotTable);
+        GenerateGuildBase generator = new GenerateGuildBase(plugin, plotTable,centerTable, guildRegionTable);
 
         // 你可以在此处添加额外的逻辑，如让玩家选择自定义位置，或者随机生成位置等
         // 假设玩家选择随机生成位置，这里可以先处理位置的生成逻辑。

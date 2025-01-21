@@ -5,19 +5,24 @@ import org.apache.logging.log4j.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
-import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.windy.guildshelter.database.CenterTable;
+import org.windy.guildshelter.database.GuildRegionTable;
 import org.windy.guildshelter.database.PlotTable;
-import org.windy.guildshelter.database.PlotData;
 
 public class GenerateGuildBase {
 
     private final JavaPlugin plugin;
     private final PlotTable plotTable;  // 添加 PlotTable 字段
+    private final CenterTable centerTable;  // 添加 PlotTable 字段
+    private final GuildRegionTable guildRegionTable;  // GuildRegionTable 实例
 
-    public GenerateGuildBase(JavaPlugin plugin, PlotTable plotTable) {
+
+    public GenerateGuildBase(JavaPlugin plugin, PlotTable plotTable, CenterTable centerTable, GuildRegionTable guildRegionTable) {
         this.plugin = plugin;
         this.plotTable = plotTable;  // 初始化 PlotTable
+        this.centerTable = centerTable;  // 初始化 PlotTable
+        this.guildRegionTable = guildRegionTable;  // 初始化 GuildRegionTable
     }
     public static final Logger LOGGER = LogManager.getLogger();
 
@@ -34,6 +39,8 @@ public class GenerateGuildBase {
                     }
                 }
             }
+            // 保存中心坐标到数据库
+            centerTable.insertCenter(centerX - radius, centerZ - radius, centerX + radius, centerX + radius,"","",guildName,world,"");
         });
 
         Bukkit.getScheduler().runTask(plugin, () -> {
@@ -45,20 +52,20 @@ public class GenerateGuildBase {
 
             int[][] result = fillArea(totalLength, totalWidth, plotLength, plotWidth, roadWidth, x0, y0);
             int plotCount = countPlots(totalLength, totalWidth, plotLength, plotWidth, roadWidth);
-            System.out.println("Total number of plots: " + plotCount);
-
             int i = 1;
+            System.out.println("Total number of plots: " + plotCount);
+            String doorplate = guildName+" "+i+"号";
             int[] lastPlot = null;
 
             for (int[] plot : result) {
                 System.out.println("(" + plot[0] + ", " + plot[1] + ") - (" + plot[2] + ", " + plot[3] + ")");
-                plotTable.insertPlot(plot[0], plot[1], plot[2], plot[3], "Vespea", "", world, guildName, "private");
+                plotTable.insertPlot(plot[0], plot[1], plot[2], plot[3], "Vespea", "", "","private", guildName,world, "",doorplate );
                 lastPlot = plot;
                 i++;
             }
             if (lastPlot != null) {
                 System.out.println("Last plot coordinates: (" + lastPlot[0] + ", " + lastPlot[1] + ") - (" + lastPlot[2] + ", " + lastPlot[3] + ")");
-                plotTable.insertGuildShelterArea(x0, az, lastPlot[2], lastPlot[3], guildName, world);
+                guildRegionTable.insertGuildRegion(x0, az, lastPlot[2], lastPlot[3], guildName, world);
             }
         });
     }

@@ -5,6 +5,8 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.windy.guildshelter.api.ConfigAPI;
+import org.windy.guildshelter.database.CenterTable;
+import org.windy.guildshelter.database.GuildRegionTable;
 import org.windy.guildshelter.database.PlotTable;
 import org.windy.guildshelter.util.GenerateGuildBase;
 
@@ -35,9 +37,11 @@ public class GenPlatCommand {
 
             // 创建 PlotTable 实例
             PlotTable plotTable = new PlotTable(); // 如果 PlotTable 需要参数，可以调整构造函数
+            CenterTable centerTable = new CenterTable(); // 如果 PlotTable 需要参数，可以调整构造函数
+            GuildRegionTable guildRegionTable = new GuildRegionTable(); // 如果 PlotTable 需要参数，可以调整构造函数
 
             // 创建 GenerateGuildBase 实例并调用 createPlatform
-            GenerateGuildBase generator = new GenerateGuildBase(plugin, plotTable);
+            GenerateGuildBase generator = new GenerateGuildBase(plugin, plotTable,centerTable, guildRegionTable);
             generator.createPlatform(centerX, centerZ, centerY, radius, plotLength, plotWidth, totalLength, totalWidth, roadWidth, world, guildName);  // 在玩家位置生成平台
 
             player.sendMessage("平台已生成！");

@@ -1,26 +1,17 @@
 package org.windy.guildshelter;
 
-import com.bekvon.bukkit.residence.Residence;
-import com.bekvon.bukkit.residence.api.ResidenceInterface;
-import com.bekvon.bukkit.residence.protection.ResidenceManager;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.windy.guildshelter.command.GuildShelterCommand;
-import org.windy.guildshelter.database.GuildShelterAreaTable;
+import org.windy.guildshelter.database.GuildRegionTable;
 import org.windy.guildshelter.database.PlotTable;
 import org.windy.guildshelter.listener.GuildCreateListener;
 import org.windy.guildshelter.listener.neoforge.BlockInteractListener;
-import com.bekvon.bukkit.residence.Residence;
-import com.bekvon.bukkit.residence.protection.ResidenceManager;
-import com.bekvon.bukkit.residence.protection.ResidencePermissions;
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.World;
-import org.bukkit.entity.Player;
+import org.windy.guildshelter.database.CenterTable;
+
 import java.io.File;
 
 import static net.neoforged.neoforge.common.NeoForge.EVENT_BUS;
@@ -41,8 +32,10 @@ public class plugin extends JavaPlugin {
         // 创建 plot 和 guild shelter area 表格
         PlotTable plotTable = new PlotTable();
         plotTable.createPlotTable();
-        GuildShelterAreaTable shelterAreaTable = new GuildShelterAreaTable();
-        shelterAreaTable.createGuildShelterArea();
+        GuildRegionTable guildRegionTable = new GuildRegionTable();
+        guildRegionTable.createGuildRegionTable();
+        CenterTable centerTable = new CenterTable();
+        centerTable.createCenterTable();
         //依赖注册
         try {
             Class.forName("com.sk89q.worldedit.WorldEdit");
