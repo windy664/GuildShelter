@@ -42,25 +42,22 @@ public class PermissionCheck {
 
             LOGGER.info("玩家 {} 位于公会区域内，正在检查公会地块...", playerName);
 
-            // 检查玩家是否在公会地块内
+            // 获取对应的 plotId
             PlotTable plotTable = new PlotTable();
-            if (!plotTable.isInPlot(playerX, playerZ, worldname)) {
+            Integer plotId = plotTable.getPlotId(playerX, playerZ, worldname);
+            if (plotId == null) {
                 LOGGER.info("玩家 {} 不在公会地块内，权限检查失败。", playerName);
                 return false; // 如果不在公会地块内，返回没有权限
             }
 
-            // 如果玩家在 plot 区域内，检查权限
-            String sql = "SELECT * FROM guildshelter_plot WHERE world = ? AND " +
-                    "((? BETWEEN LEAST(x1, x2) AND GREATEST(x1, x2)) AND (? BETWEEN LEAST(z1, z2) AND GREATEST(z1, z2)))";
+            // 使用 plotId 查询权限
+            String sql = "SELECT * FROM guildshelter_plot WHERE id = ?";
 
             boolean permissionFound = false;
             int retries = 3; // 重试次数
             while (retries > 0) {
                 try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                    pstmt.setString(1, worldname);  // 设置世界名称
-                    pstmt.setInt(2, playerX);       // 设置玩家的 x 坐标
-                    pstmt.setInt(3, playerZ);       // 设置玩家的 z 坐标
-
+                    pstmt.setInt(1, plotId);  // 使用 plotId 查询权限
                     try (ResultSet rs = pstmt.executeQuery()) {
                         while (rs.next()) {
                             String owner = rs.getString("owner");
@@ -76,9 +73,10 @@ public class PermissionCheck {
                     }
                     if (permissionFound) {
                         return true;  // 如果找到了权限，直接返回
+                    } else {
+                        LOGGER.info("玩家 {} 不拥有该地块的权限。", playerName);
+                        return false;  // 如果没有权限，返回没有权限
                     }
-                    LOGGER.info("玩家 {} 不在地块内，权限检查失败。", playerName);
-                    return false;  // 如果不在 plot 内，返回没有权限
                 } catch (SQLException e) {
                     LOGGER.error("检查地块权限时失败: {}，正在重试...剩余重试次数: {}", e.getMessage(), retries - 1);
                     retries--;
@@ -102,7 +100,7 @@ public class PermissionCheck {
             }
         }
 
-        // 默认返回成功
-        return true;
+        // 默认返回失败
+        return false;
     }
 }

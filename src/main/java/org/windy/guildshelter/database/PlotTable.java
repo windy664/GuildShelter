@@ -136,4 +136,25 @@ public class PlotTable {
 
         return false;  // 如果没有结果，说明该点不在任何 plot 区域内
     }
+    public Integer getPlotId(int x, int z, String world) {
+        String sql = "SELECT id FROM guildshelter_plot_tree WHERE x1 <= ? AND x2 >= ? AND z1 <= ? AND z2 >= ?";
+
+        try (Connection conn = DatabaseManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, x); // 设置 x 坐标
+            pstmt.setInt(2, x); // 设置 x 坐标
+            pstmt.setInt(3, z); // 设置 z 坐标
+            pstmt.setInt(4, z); // 设置 z 坐标
+            ResultSet rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                return rs.getInt("id");  // 返回找到的 plot id
+            }
+        } catch (SQLException e) {
+            plugin.LOGGER.error("查询点对应的 plot id 失败: " + e.getMessage(), e);
+        }
+
+        return null;  // 如果没有找到，返回 null
+    }
+
 }
