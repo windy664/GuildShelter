@@ -1,7 +1,6 @@
 package org.windy.guildshelter.database;
 
 import org.windy.guildshelter.plugin;
-
 import java.sql.*;
 
 public class GuildRegionTable {
@@ -19,14 +18,13 @@ public class GuildRegionTable {
 
         String sqlRtreeTable = "CREATE VIRTUAL TABLE IF NOT EXISTS guild_region_rtree USING rtree(id, x1, z1, x2, z2);";
 
-        try (Connection conn = DatabaseManager.getConnection()) {
-            try (Statement stmt = conn.createStatement()) {
-                stmt.executeUpdate(sqlRegionTable);
-                stmt.executeUpdate(sqlRtreeTable);
-                plugin.LOGGER.info("Guild region and R-tree table created successfully!");
-            }
+        try (Connection conn = DatabaseManager.getConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.executeUpdate(sqlRegionTable);
+            stmt.executeUpdate(sqlRtreeTable);
+            plugin.LOGGER.info("公会区域表和 R-tree 表创建成功！");
         } catch (SQLException e) {
-            plugin.LOGGER.error("Failed to create guild region or R-tree table: " + e.getMessage());
+            plugin.LOGGER.error("创建公会区域或 R-tree 表失败: " + e.getMessage());
         }
     }
 
@@ -68,15 +66,15 @@ public class GuildRegionTable {
                 }
 
                 conn.commit();  // 提交事务
-                plugin.LOGGER.info("Guild region inserted for Guild: " + guild);
+                plugin.LOGGER.info("公会《" + guild + "》的区域已插入！");
             } catch (SQLException e) {
                 conn.rollback();  // 回滚事务
-                plugin.LOGGER.error("Failed to insert guild region: " + e.getMessage());
+                plugin.LOGGER.error("插入公会区域失败: " + e.getMessage());
             } finally {
                 conn.setAutoCommit(true);  // 恢复自动提交
             }
         } catch (SQLException e) {
-            plugin.LOGGER.error("Database connection issue during guild region insert: " + e.getMessage());
+            plugin.LOGGER.error("数据库连接问题，插入公会区域失败: " + e.getMessage());
         }
     }
 
@@ -115,32 +113,34 @@ public class GuildRegionTable {
                 }
             }
         } catch (SQLException e) {
-            plugin.LOGGER.error("Failed to query guild region data by range: " + e.getMessage());
+            plugin.LOGGER.error("查询公会区域数据失败: " + e.getMessage());
         }
 
         return null;
     }
 
     // 判断某个点是否在公会区域内
-    public boolean isInRegion(int x, int z, String world, String guild) {
-        String sql = "SELECT id FROM guild_region WHERE world = ? AND guild = ? AND x1 <= ? AND x2 >= ? AND z1 <= ? AND z2 >= ?";
+// 更新后的 isInRegion 方法
+// 更新后的 isInRegion 方法
+    public boolean isInRegion(int x, int z, String world) {
+        String sql = "SELECT id FROM guild_region WHERE world = ? AND x1 <= ? AND x2 >= ? AND z1 <= ? AND z2 >= ?";
 
         try (Connection conn = DatabaseManager.getConnection()) {
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setString(1, world);
-                pstmt.setString(2, guild);
+                pstmt.setInt(2, x);
                 pstmt.setInt(3, x);
-                pstmt.setInt(4, x);
+                pstmt.setInt(4, z);
                 pstmt.setInt(5, z);
-                pstmt.setInt(6, z);
                 ResultSet rs = pstmt.executeQuery();
 
-                return rs.next();  // 如果有结果，说明该点在区域内
+                return rs.next();  // 如果有结果，说明该点在公会区域内
             }
         } catch (SQLException e) {
-            plugin.LOGGER.error("Failed to check if point is in guild region: " + e.getMessage());
+            plugin.LOGGER.error("查询公会区域内点是否存在失败: " + e.getMessage());
         }
 
-        return false;
+        return false;  // 如果没有结果，说明该点不在任何公会区域内
     }
+
 }

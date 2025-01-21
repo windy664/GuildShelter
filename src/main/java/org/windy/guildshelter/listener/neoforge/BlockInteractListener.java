@@ -12,18 +12,6 @@ public class BlockInteractListener {
 
     private static final Logger LOGGER = LogManager.getLogger();
 
-    // 提取通用的权限检查逻辑
-    private boolean isPlayerInPlot(String player, String worldName, double playerX, double playerZ) {
-        // 调用权限检查方法，传递玩家名称、世界名称、玩家坐标
-        boolean hasPermission = PermissionCheck.hasPermission(player, worldName, (int) playerX, (int) playerZ);
-
-        // 记录是否有权限
-        LOGGER.info("Checking permission for player: {} at world: {} with coordinates ({}, {}) - Permission: {}",
-                player, worldName, (int) playerX, (int) playerZ, hasPermission);
-
-        return hasPermission;
-    }
-
     // 判断是否是假的玩家
     private boolean isFakePlayer(String playerName) {
         return playerName.contains("AS-FAKEPLAYER") ||
@@ -38,12 +26,11 @@ public class BlockInteractListener {
     }
 
     // 获取世界名称，处理世界维度和主世界
-// 获取世界名称，处理世界维度和主世界
     private String getWorldName(Level world) {
         String worldName = world.dimension().location().getPath();  // 获取维度路径（如 "overworld"）
 
         // 记录世界名称映射
-        LOGGER.info("Detected world dimension: {}. Mapping to world name: {}", worldName, worldName.equals("overworld") ? "world" : worldName);
+        LOGGER.info("检测到的世界维度: {}. 映射为世界名称: {}", worldName, worldName.equals("overworld") ? "world" : worldName);
 
         // 如果是主世界，映射为 "world"
         if (worldName.equals("overworld")) {
@@ -60,15 +47,8 @@ public class BlockInteractListener {
         String player = event.getEntity().getName().getString();
         String worldName = getWorldName(event.getLevel());  // 获取正确的世界名称
 
-        // 先检查玩家是否在公会地块范围内
-        if (!isPlayerInPlot(player, worldName, event.getEntity().getX(), event.getEntity().getZ())) {
-            LOGGER.info("Player {} is not in plot range, skipping permission check.", player);
-            return; // 不在范围内，不阻断操作
-        }
-
-        // 如果玩家在公会地块范围内，则进行权限检查
         if (isFakePlayer(player)) {
-            LOGGER.info("Fake player {} triggered PlayerInteractEvent.", player);
+            LOGGER.info("玩家 {} 触发了左键点击事件 (假玩家)。", player);
             return; // 假玩家不处理
         }
 
@@ -76,7 +56,7 @@ public class BlockInteractListener {
         boolean hasPermission = PermissionCheck.hasPermission(player, worldName, (int) event.getEntity().getX(), (int) event.getEntity().getZ());
         if (!hasPermission) {
             event.setCanceled(true);
-            LOGGER.info("Player {} does not have permission to interact with the block.", player);
+            LOGGER.info("玩家 {} 没有权限与方块交互，事件被取消。", player);
         }
     }
 
@@ -86,15 +66,9 @@ public class BlockInteractListener {
         String player = event.getEntity().getName().getString();
         String worldName = getWorldName(event.getLevel());  // 获取正确的世界名称
 
-        // 先检查玩家是否在公会地块范围内
-        if (!isPlayerInPlot(player, worldName, event.getEntity().getX(), event.getEntity().getZ())) {
-            LOGGER.info("Player {} is not in plot range, skipping permission check.", player);
-            return; // 不在范围内，不阻断操作
-        }
-
         // 如果玩家在公会地块范围内，则进行权限检查
         if (isFakePlayer(player)) {
-            LOGGER.info("Fake player {} triggered PlayerInteractEvent.", player);
+            LOGGER.info("玩家 {} 触发了右键点击事件 (假玩家)。", player);
             return; // 假玩家不处理
         }
 
@@ -102,7 +76,7 @@ public class BlockInteractListener {
         boolean hasPermission = PermissionCheck.hasPermission(player, worldName, (int) event.getEntity().getX(), (int) event.getEntity().getZ());
         if (!hasPermission) {
             event.setCanceled(true);
-            LOGGER.info("Player {} does not have permission to right-click the block.", player);
+            LOGGER.info("玩家 {} 没有权限右键点击方块，事件被取消。", player);
         }
     }
 
@@ -112,15 +86,8 @@ public class BlockInteractListener {
         String player = event.getEntity().getName().getString();
         String worldName = getWorldName(event.getLevel());  // 获取正确的世界名称
 
-        // 先检查玩家是否在公会地块范围内
-        if (!isPlayerInPlot(player, worldName, event.getEntity().getX(), event.getEntity().getZ())) {
-            LOGGER.info("Player {} is not in plot range, skipping permission check.", player);
-            return; // 不在范围内，不阻断操作
-        }
-
-        // 如果玩家在公会地块范围内，则进行权限检查
         if (isFakePlayer(player)) {
-            LOGGER.info("Fake player {} triggered PlayerInteractEvent.", player);
+            LOGGER.info("玩家 {} 触发了实体交互事件 (假玩家)。", player);
             return; // 假玩家不处理
         }
 
@@ -128,7 +95,7 @@ public class BlockInteractListener {
         boolean hasPermission = PermissionCheck.hasPermission(player, worldName, (int) event.getEntity().getX(), (int) event.getEntity().getZ());
         if (!hasPermission) {
             event.setCanceled(true);
-            LOGGER.info("Player {} does not have permission to interact with the entity.", player);
+            LOGGER.info("玩家 {} 没有权限与实体交互，事件被取消。", player);
         }
     }
 }

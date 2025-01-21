@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>org.windy</groupId>
+  <artifactId>GuildShelter</artifactId>
+  <versioning>
+    <latest>1.3-SNAPSHOT</latest>
+    <versions>
+      <version>1.3-SNAPSHOT</version>
+    </versions>
+    <lastUpdated>20250121071737</lastUpdated>
+  </versioning>
+</metadata>

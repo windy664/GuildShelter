@@ -17,14 +17,13 @@ public class CenterTable {
 
         String sqlRtreeTable = "CREATE VIRTUAL TABLE IF NOT EXISTS guildshelter_center_tree USING rtree(id, x1, z1, x2, z2);";
 
-        try (Connection conn = DatabaseManager.getConnection()) {
-            try (Statement stmt = conn.createStatement()) {
-                stmt.executeUpdate(sqlCenterTable);
-                stmt.executeUpdate(sqlRtreeTable);
-                plugin.LOGGER.info("Guild shelter center and R-tree table created successfully!");
-            }
+        try (Connection conn = DatabaseManager.getConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.executeUpdate(sqlCenterTable);
+            stmt.executeUpdate(sqlRtreeTable);
+            plugin.LOGGER.info("公会庇护中心表和 R-tree 表创建成功！");
         } catch (SQLException e) {
-            plugin.LOGGER.error("Failed to create guild shelter center or R-tree table: " + e.getMessage());
+            plugin.LOGGER.error("创建公会庇护中心或 R-tree 表失败: " + e.getMessage());
         }
     }
 
@@ -63,15 +62,15 @@ public class CenterTable {
                 }
 
                 conn.commit();
-                plugin.LOGGER.info("Center inserted for Guild: " + guild);
+                plugin.LOGGER.info("公会《" + guild + "》的庇护中心已插入！");
             } catch (SQLException e) {
                 conn.rollback();
-                plugin.LOGGER.error("Failed to insert center: " + e.getMessage());
+                plugin.LOGGER.error("插入庇护中心失败: " + e.getMessage());
             } finally {
                 conn.setAutoCommit(true);
             }
         } catch (SQLException e) {
-            plugin.LOGGER.error("Database connection issue during center insert: " + e.getMessage());
+            plugin.LOGGER.error("数据库连接问题，插入庇护中心失败: " + e.getMessage());
         }
     }
 
@@ -110,7 +109,7 @@ public class CenterTable {
                 }
             }
         } catch (SQLException e) {
-            plugin.LOGGER.error("Failed to query center data by range: " + e.getMessage());
+            plugin.LOGGER.error("查询庇护中心数据失败: " + e.getMessage());
         }
 
         return null;

@@ -132,9 +132,7 @@ dependencies {
     compileOnly("org.spigotmc:spigot-api:1.21.1-R0.1-SNAPSHOT")
     compileOnly fileTree("./libs")
     compileOnly 'me.clip:placeholderapi:2.11.5'
-
-
-
+    implementation 'com.zaxxer:HikariCP:5.0.0'
 
 }
 

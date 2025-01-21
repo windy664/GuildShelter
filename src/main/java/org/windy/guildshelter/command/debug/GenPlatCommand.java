@@ -42,7 +42,7 @@ public class GenPlatCommand {
 
             // 创建 GenerateGuildBase 实例并调用 createPlatform
             GenerateGuildBase generator = new GenerateGuildBase(plugin, plotTable,centerTable, guildRegionTable);
-            generator.createPlatform(centerX, centerZ, centerY, radius, plotLength, plotWidth, totalLength, totalWidth, roadWidth, world, guildName);  // 在玩家位置生成平台
+            generator.createPlatform(centerX, centerZ, centerY, radius, plotLength, plotWidth, totalLength, totalWidth, roadWidth, world, "都说是测试公会了");  // 在玩家位置生成平台
 
             player.sendMessage("平台已生成！");
             return true;
