@@ -1,7 +1,7 @@
 package org.windy.guildshelter.util;
 
-import org.windy.guildshelter.database.PlotTable;
-import org.windy.guildshelter.database.PlotData;
+import org.windy.guildshelter.database.sqlite.PlotTable;
+import org.windy.guildshelter.database.sqlite.PlotData;
 
 public class GuildAreaInspection {
     private final PlotTable plotTable;

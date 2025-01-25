@@ -1,5 +1,7 @@
-package org.windy.guildshelter.database;
+package org.windy.guildshelter.database.sqlite;
 
+import org.windy.guildshelter.database.sqlite.DatabaseManager;
+import org.windy.guildshelter.database.sqlite.PlotData;
 import org.windy.guildshelter.plugin;
 import java.sql.*;
 

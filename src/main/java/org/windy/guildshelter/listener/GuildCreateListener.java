@@ -4,10 +4,10 @@ import com.handy.guild.event.GuildCreateEvent;  // 引入你的 GuildCreateEvent
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.Bukkit;
-import org.windy.guildshelter.database.CenterTable;
-import org.windy.guildshelter.database.GuildRegionTable;
+import org.windy.guildshelter.database.sqlite.CenterTable;
+import org.windy.guildshelter.database.sqlite.GuildRegionTable;
 import org.windy.guildshelter.util.GenerateGuildBase;
-import org.windy.guildshelter.database.PlotTable;  // 导入 PlotTable
+import org.windy.guildshelter.database.sqlite.PlotTable;  // 导入 PlotTable
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class GuildCreateListener implements Listener {

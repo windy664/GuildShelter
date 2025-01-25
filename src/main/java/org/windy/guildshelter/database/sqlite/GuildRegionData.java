@@ -1,4 +1,4 @@
-package org.windy.guildshelter.database;
+package org.windy.guildshelter.database.sqlite;
 
 public class GuildRegionData {
 

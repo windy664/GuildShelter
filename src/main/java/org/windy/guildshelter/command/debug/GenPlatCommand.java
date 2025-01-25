@@ -1,53 +1,50 @@
 package org.windy.guildshelter.command.debug;
 
-import com.handy.guild.api.PlayerGuildApi;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.windy.guildshelter.util.GeneraeInitialGuildBase;
+import org.windy.guildshelter.database.mysql.DatabaseManager;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.windy.guildshelter.api.ConfigAPI;
-import org.windy.guildshelter.database.CenterTable;
-import org.windy.guildshelter.database.GuildRegionTable;
-import org.windy.guildshelter.database.PlotTable;
-import org.windy.guildshelter.util.GenerateGuildBase;
 
 public class GenPlatCommand {
-
     private final JavaPlugin plugin;
+    private final DatabaseManager databaseManager;
 
-    // 构造函数接收插件实例
+    // 构造函数，接收 plugin 实例，并内部初始化 databaseManager
     public GenPlatCommand(JavaPlugin plugin) {
         this.plugin = plugin;
+        this.databaseManager = new DatabaseManager(plugin);  // 假设你在 DatabaseManager 中有一个构造函数接收 JavaPlugin
     }
 
     // 执行命令的方法
     public boolean execute(CommandSender sender) {
-        // 确保命令由玩家执行
-        if (sender instanceof Player player) {
-            int centerX = player.getLocation().getBlockX();
-            int centerZ = player.getLocation().getBlockZ();
-            int centerY = player.getLocation().getBlockY();  // 如果需要的话可以获取 Y 轴坐标
-            int plotLength = ConfigAPI.getPlotLength();
-            int plotWidth = ConfigAPI.getPlotWidth();
-            int totalLength = ConfigAPI.getTotalLength();
-            int totalWidth = ConfigAPI.getTotalWidth();
-            int roadWidth = ConfigAPI.getRoadWidth();
-            int radius = ConfigAPI.getRadius();
-            String world = player.getWorld().getName();  // 获取玩家所在的世界
-            String guildName = PlayerGuildApi.getInstance().getPlayerGuildName(player);
+        if (sender instanceof Player) {
+            Player player = (Player) sender;
+            String playerName = player.getName();
+            String guildName = "TestGuild";  // 假设你已经从某处获取了公会名
 
-            // 创建 PlotTable 实例
-            PlotTable plotTable = new PlotTable(); // 如果 PlotTable 需要参数，可以调整构造函数
-            CenterTable centerTable = new CenterTable(); // 如果 PlotTable 需要参数，可以调整构造函数
-            GuildRegionTable guildRegionTable = new GuildRegionTable(); // 如果 PlotTable 需要参数，可以调整构造函数
+            // 获取玩家所在世界
+            String worldName = player.getWorld().getName();
 
-            // 创建 GenerateGuildBase 实例并调用 createPlatform
-            GenerateGuildBase generator = new GenerateGuildBase(plugin, plotTable,centerTable, guildRegionTable);
-            generator.createPlatform(centerX, centerZ, centerY, radius, plotLength, plotWidth, totalLength, totalWidth, roadWidth, world, "都说是测试公会了");  // 在玩家位置生成平台
+            // 假设基于某些参数，生成平台的大小和位置
+            int startX = player.getLocation().getBlockX();
+            int startZ = player.getLocation().getBlockZ();
+            int totalLength = 600;  // 假设一个总长度
+            int totalWidth = 300;   // 假设一个总宽度
+            int roadWidth = 5;
+            int plotLength = 100;
+            int plotWidth = 90;
 
-            player.sendMessage("平台已生成！");
+            // 创建 GeneraeInitialGuildBase 实例并生成数据
+            GeneraeInitialGuildBase generator = new GeneraeInitialGuildBase(databaseManager);
+            generator.create(startX, startZ, totalLength, totalWidth, roadWidth, plotLength, plotWidth, worldName, guildName);
+
+            // 告知玩家
+            player.sendMessage("Guild base generation initiated!");
+
             return true;
         } else {
-            sender.sendMessage("此命令只能由玩家执行！");
+            sender.sendMessage("This command can only be executed by a player.");
             return false;
         }
     }

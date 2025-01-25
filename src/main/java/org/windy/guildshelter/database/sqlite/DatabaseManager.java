@@ -1,4 +1,4 @@
-package org.windy.guildshelter.database;
+package org.windy.guildshelter.database.sqlite;
 
 import org.windy.guildshelter.plugin;
 import java.sql.Connection;

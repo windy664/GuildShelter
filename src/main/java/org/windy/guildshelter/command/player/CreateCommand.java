@@ -5,9 +5,9 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.windy.guildshelter.api.ConfigAPI;
-import org.windy.guildshelter.database.CenterTable;
-import org.windy.guildshelter.database.GuildRegionTable;
-import org.windy.guildshelter.database.PlotTable;
+import org.windy.guildshelter.database.sqlite.CenterTable;
+import org.windy.guildshelter.database.sqlite.GuildRegionTable;
+import org.windy.guildshelter.database.sqlite.PlotTable;
 import org.windy.guildshelter.util.GenerateGuildBase;
 import org.windy.guildshelter.util.GuildAreaInspection;
 

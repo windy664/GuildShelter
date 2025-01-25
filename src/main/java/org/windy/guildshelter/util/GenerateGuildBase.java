@@ -6,9 +6,9 @@ import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.windy.guildshelter.database.CenterTable;
-import org.windy.guildshelter.database.GuildRegionTable;
-import org.windy.guildshelter.database.PlotTable;
+import org.windy.guildshelter.database.sqlite.CenterTable;
+import org.windy.guildshelter.database.sqlite.GuildRegionTable;
+import org.windy.guildshelter.database.sqlite.PlotTable;
 
 public class GenerateGuildBase {
 

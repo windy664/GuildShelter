@@ -1,4 +1,4 @@
-package org.windy.guildshelter.database;
+package org.windy.guildshelter.database.sqlite;
 
 // PlotData 类（用于存储 Plot 信息）
 public class PlotData {

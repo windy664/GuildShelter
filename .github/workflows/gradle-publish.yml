@@ -28,7 +28,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build with Gradle
-        run: ./gradlew shadowJar  # 使用 shadowJar 任务来打包
+        run: ./gradlew build
 
       - name: Archive JAR file
         uses: actions/upload-artifact@v3

@@ -2,9 +2,9 @@ package org.windy.guildshelter.util;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.windy.guildshelter.database.DatabaseManager;
-import org.windy.guildshelter.database.GuildRegionTable;
-import org.windy.guildshelter.database.PlotTable;
+import org.windy.guildshelter.database.sqlite.DatabaseManager;
+import org.windy.guildshelter.database.sqlite.GuildRegionTable;
+import org.windy.guildshelter.database.sqlite.PlotTable;
 
 import java.sql.*;
 

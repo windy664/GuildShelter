@@ -2,26 +2,25 @@ package org.windy.guildshelter;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.bukkit.ChatColor;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.windy.guildshelter.database.mysql.DatabaseManager;
 import org.windy.guildshelter.command.GuildShelterCommand;
-import org.windy.guildshelter.database.GuildRegionTable;
-import org.windy.guildshelter.database.PlotTable;
 import org.windy.guildshelter.listener.GuildCreateListener;
+import org.windy.guildshelter.listener.GuildMoveListener;
+import org.windy.guildshelter.listener.GuildShelterEnterListener;
 import org.windy.guildshelter.listener.neoforge.BlockInteractListener;
-import org.windy.guildshelter.database.CenterTable;
-import org.windy.guildshelter.database.DatabaseManager;
 
 import java.io.File;
-import java.sql.Connection;
 
 import static net.neoforged.neoforge.common.NeoForge.EVENT_BUS;
-import org.bukkit.ChatColor;
 
 public class plugin extends JavaPlugin {
 
     public static final Logger LOGGER = LogManager.getLogger();
+    private DatabaseManager databaseManager;
 
     @Override
     public void onEnable() {
@@ -32,13 +31,6 @@ public class plugin extends JavaPlugin {
         // 加载语言文件
         FileConfiguration langConfig = getLangConfig();
 
-        // 连接数据库
-        DatabaseManager.init();
-        LOGGER.info(ChatColor.GREEN+"连接到数据库");
-
-        // 初始化表格
-        initializeTables();
-
         // 依赖注册
         registerWorldEdit(langConfig);
 
@@ -48,6 +40,13 @@ public class plugin extends JavaPlugin {
         // 注册命令
         registerCommands();
 
+        // 初始化并连接数据库
+        databaseManager = new DatabaseManager(this);
+        if (databaseManager.isConnected()) {
+            // 在数据库连接成功后创建表格
+            databaseManager.registerTables();
+        }
+
         LOGGER.info(ChatColor.YELLOW + "插件已启用！");
     }
 
@@ -55,25 +54,14 @@ public class plugin extends JavaPlugin {
     public void onDisable() {
         // 注销事件监听器
         EVENT_BUS.unregister(new BlockInteractListener());
-
+        LOGGER.info(ChatColor.YELLOW + "所有Neoforge事件已注销！");
         // 关闭数据库连接
-        DatabaseManager.close();
+        if (databaseManager != null) {
+            databaseManager.closeConnection();
+            LOGGER.info(ChatColor.YELLOW + "数据库已断开连接！");
+        }
 
         LOGGER.info(ChatColor.YELLOW + "插件已禁用！");
-    }
-
-    private void initializeTables() {
-        // 创建数据库表格
-        PlotTable plotTable = new PlotTable();
-        plotTable.createPlotTable();
-
-        GuildRegionTable guildRegionTable = new GuildRegionTable();
-        guildRegionTable.createGuildRegionTable();
-
-        CenterTable centerTable = new CenterTable();
-        centerTable.createCenterTable();
-
-        LOGGER.info(ChatColor.AQUA + "数据库表格已初始化！");
     }
 
     private void registerWorldEdit(FileConfiguration langConfig) {
@@ -88,17 +76,24 @@ public class plugin extends JavaPlugin {
     private void registerEventListeners() {
         // 注册事件监听器
         EVENT_BUS.register(new BlockInteractListener());
-        LOGGER.info(ChatColor.YELLOW + "注册 Neoforge 监听器！");
+        LOGGER.info(ChatColor.YELLOW + "Neoforge监听器注册完毕");
 
         // 注册 GuildCreateListener
         getServer().getPluginManager().registerEvents(new GuildCreateListener(this), this);
-        LOGGER.info(ChatColor.YELLOW + "注册公会创建监听器！");
+        LOGGER.info(ChatColor.YELLOW + "公会创建监听器注册完毕");
+
+        getServer().getPluginManager().registerEvents(new GuildMoveListener(databaseManager), this);
+        LOGGER.info(ChatColor.YELLOW + "位移事件监听器注册完毕");
+        // 注册 GuildShelterEnterListener 监听器
+        getServer().getPluginManager().registerEvents(new GuildShelterEnterListener(), this);
+        LOGGER.info(ChatColor.YELLOW + "进入公会检测监听器注册完毕");
     }
 
     private void registerCommands() {
         // 注册 /gs 命令
         this.getCommand("gs").setExecutor(new GuildShelterCommand(this));
         this.getCommand("gs").setTabCompleter(new GuildShelterCommand(this));
+        LOGGER.info(ChatColor.YELLOW + "/gs指令注册完毕");
     }
 
     private void saveDefaultLangFile() {
