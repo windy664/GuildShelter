@@ -59,7 +59,6 @@ public class Guildshelter {
 
         // 注册NeoForge的事件总线，允许此类直接处理事件
         NeoForge.EVENT_BUS.register(this);
-        NeoForge.EVENT_BUS.register(new BlockInteractListener());
 
         // 注册mod的配置
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);

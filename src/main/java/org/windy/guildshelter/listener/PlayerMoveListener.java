@@ -10,12 +10,12 @@ import org.windy.guildshelter.events.GuildShelterLeaveEvent;
 import java.util.HashSet;
 import java.util.Set;
 
-public class GuildMoveListener implements Listener {
+public class PlayerMoveListener implements Listener {
 
     private DatabaseManager databaseManager;
     private Set<Player> playersInShelter = new HashSet<>();  // 用来存储已进入区域的玩家
 
-    public GuildMoveListener(DatabaseManager databaseManager) {
+    public PlayerMoveListener(DatabaseManager databaseManager) {
         this.databaseManager = databaseManager;
     }
 

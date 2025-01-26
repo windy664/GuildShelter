@@ -9,10 +9,11 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.windy.guildshelter.database.mysql.DatabaseManager;
 import org.windy.guildshelter.command.GuildShelterCommand;
 import org.windy.guildshelter.listener.GuildCreateListener;
-import org.windy.guildshelter.listener.GuildMoveListener;
+import org.windy.guildshelter.listener.PlayerMoveListener;
 import org.windy.guildshelter.listener.GuildShelterEnterListener;
 import org.windy.guildshelter.listener.GuildShelterLeaveListener;
 import org.windy.guildshelter.listener.neoforge.BlockInteractListener;
+import org.windy.guildshelter.util.PermissionCheck;
 
 import java.io.File;
 
@@ -22,6 +23,8 @@ public class plugin extends JavaPlugin {
 
     public static final Logger LOGGER = LogManager.getLogger();
     private DatabaseManager databaseManager;
+    private PermissionCheck permissionCheck;
+    private BlockInteractListener blockInteractListener;
 
     @Override
     public void onEnable() {
@@ -41,12 +44,18 @@ public class plugin extends JavaPlugin {
 
         // 初始化并连接数据库
         databaseManager = new DatabaseManager(this);
+
         if (databaseManager.isConnected()) {
             // 在数据库连接成功后创建表格
             databaseManager.registerTables();
+
+            // 创建 PermissionCheck 实例并传递给 BlockInteractListener
+            permissionCheck = new PermissionCheck(databaseManager);
+            blockInteractListener = new BlockInteractListener(permissionCheck); // 传递 PermissionCheck
+            EVENT_BUS.register(blockInteractListener);  // 这里注册 BlockInteractListener
+            // 注册事件监听器
+            registerEventListeners();
         }
-        // 注册事件监听器
-        registerEventListeners();
 
         LOGGER.info(ChatColor.YELLOW + "插件已启用！");
     }
@@ -55,7 +64,7 @@ public class plugin extends JavaPlugin {
     public void onDisable() {
         this.getServer().getConsoleSender().sendMessage(Texts.logo);
         // 注销事件监听器
-        EVENT_BUS.unregister(new BlockInteractListener());
+        EVENT_BUS.unregister(blockInteractListener);
         LOGGER.info(ChatColor.YELLOW + "所有Neoforge事件已注销！");
         // 关闭数据库连接
         if (databaseManager != null) {
@@ -76,21 +85,20 @@ public class plugin extends JavaPlugin {
     }
 
     private void registerEventListeners() {
-        // 注册事件监听器
-        EVENT_BUS.register(new BlockInteractListener());
         LOGGER.info(ChatColor.YELLOW + "Neoforge监听器注册完毕");
 
         // 注册 GuildCreateListener
         getServer().getPluginManager().registerEvents(new GuildCreateListener(this), this);
         LOGGER.info(ChatColor.YELLOW + "公会创建监听器注册完毕");
 
-        getServer().getPluginManager().registerEvents(new GuildMoveListener(databaseManager), this);
+        getServer().getPluginManager().registerEvents(new PlayerMoveListener(databaseManager), this);
         LOGGER.info(ChatColor.YELLOW + "位移事件监听器注册完毕");
+
         // 注册 GuildShelterEnterListener 监听器
         getServer().getPluginManager().registerEvents(new GuildShelterEnterListener(), this);
         LOGGER.info(ChatColor.YELLOW + "进入公会检测监听器注册完毕");
-        getServer().getPluginManager().registerEvents(new GuildShelterLeaveListener(), this);
 
+        getServer().getPluginManager().registerEvents(new GuildShelterLeaveListener(), this);
     }
 
     private void registerCommands() {

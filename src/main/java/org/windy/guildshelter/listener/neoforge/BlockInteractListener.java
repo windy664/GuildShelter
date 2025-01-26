@@ -1,16 +1,23 @@
 package org.windy.guildshelter.listener.neoforge;
 
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.windy.guildshelter.util.PermissionCheck;
+import org.windy.guildshelter.database.mysql.DatabaseManager;
 
 public class BlockInteractListener {
 
     private static final Logger LOGGER = LogManager.getLogger();
+
+
+    private final PermissionCheck permissionCheck;
+
+    public BlockInteractListener(PermissionCheck permissionCheck) {
+        this.permissionCheck = permissionCheck;
+    }
 
     // 判断是否是假的玩家
     private boolean isFakePlayer(String playerName) {
@@ -53,7 +60,7 @@ public class BlockInteractListener {
         }
 
         // 如果没有权限，阻止事件
-        boolean hasPermission = PermissionCheck.hasPermission(player, worldName, (int) event.getEntity().getX(), (int) event.getEntity().getZ());
+        boolean hasPermission = permissionCheck.hasPermission(player, worldName, (double) event.getEntity().getX(), (double) event.getEntity().getZ());
         if (!hasPermission) {
             event.setCanceled(true);
             LOGGER.info("玩家 {} 没有权限与方块交互，事件被取消。", player);
@@ -66,36 +73,16 @@ public class BlockInteractListener {
         String player = event.getEntity().getName().getString();
         String worldName = getWorldName(event.getLevel());  // 获取正确的世界名称
 
-        // 如果玩家在公会地块范围内，则进行权限检查
         if (isFakePlayer(player)) {
             LOGGER.info("玩家 {} 触发了右键点击事件 (假玩家)。", player);
             return; // 假玩家不处理
         }
 
         // 如果没有权限，阻止事件
-        boolean hasPermission = PermissionCheck.hasPermission(player, worldName, (int) event.getEntity().getX(), (int) event.getEntity().getZ());
+        boolean hasPermission = permissionCheck.hasPermission(player, worldName, (double) event.getEntity().getX(), (double) event.getEntity().getZ());
         if (!hasPermission) {
             event.setCanceled(true);
             LOGGER.info("玩家 {} 没有权限右键点击方块，事件被取消。", player);
-        }
-    }
-
-    // 实体与方块交互事件
-    @SubscribeEvent
-    public void onPlayerInteract(PlayerInteractEvent.EntityInteract event) {
-        String player = event.getEntity().getName().getString();
-        String worldName = getWorldName(event.getLevel());  // 获取正确的世界名称
-
-        if (isFakePlayer(player)) {
-            LOGGER.info("玩家 {} 触发了实体交互事件 (假玩家)。", player);
-            return; // 假玩家不处理
-        }
-
-        // 如果没有权限，阻止事件
-        boolean hasPermission = PermissionCheck.hasPermission(player, worldName, (int) event.getEntity().getX(), (int) event.getEntity().getZ());
-        if (!hasPermission) {
-            event.setCanceled(true);
-            LOGGER.info("玩家 {} 没有权限与实体交互，事件被取消。", player);
         }
     }
 }
