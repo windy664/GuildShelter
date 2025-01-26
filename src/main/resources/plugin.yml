@@ -1,6 +1,6 @@
 name: GuildShelter
 main: org.windy.guildshelter.plugin
-version: ${mod_version}
+version: 1.4-SNAPSHOT
 api-version: 1.21
 depend:
   - Residence

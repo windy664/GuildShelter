@@ -6,10 +6,14 @@ import org.bukkit.event.Listener;
 import org.windy.guildshelter.database.mysql.AreaInfo;
 import org.windy.guildshelter.database.mysql.DatabaseManager;
 import org.windy.guildshelter.events.GuildShelterEnterEvent;
+import org.windy.guildshelter.events.GuildShelterLeaveEvent;
+import java.util.HashSet;
+import java.util.Set;
 
 public class GuildMoveListener implements Listener {
 
-    private final DatabaseManager databaseManager;
+    private DatabaseManager databaseManager;
+    private Set<Player> playersInShelter = new HashSet<>();  // 用来存储已进入区域的玩家
 
     public GuildMoveListener(DatabaseManager databaseManager) {
         this.databaseManager = databaseManager;
@@ -24,19 +28,37 @@ public class GuildMoveListener implements Listener {
 
         // 判断是否在 GuildShelter_plot 区域
         AreaInfo plotInfo = databaseManager.isPointInPlotAreaWithCache(x, z);
-        if (plotInfo.isInArea()) {
-            // 触发 GuildShelterEnterEvent 事件
-            GuildShelterEnterEvent guildShelterEvent = new GuildShelterEnterEvent(player, plotInfo.getGuildname(), plotInfo.getMessage());
-            org.bukkit.Bukkit.getServer().getPluginManager().callEvent(guildShelterEvent);
-            return;  // 如果已经在 GuildShelter_plot 区域，就不再检查 GuildShelter_base
+        boolean isInPlotArea = plotInfo.isInArea();
+
+        // 判断玩家是否离开区域
+        if (playersInShelter.contains(player) && !isInPlotArea) {
+            // 玩家离开 GuildShelter 区域，触发离开事件
+            GuildShelterLeaveEvent leaveEvent = new GuildShelterLeaveEvent(player, plotInfo.getGuildname(), plotInfo.getMessage());
+            org.bukkit.Bukkit.getServer().getPluginManager().callEvent(leaveEvent);
+            playersInShelter.remove(player);  // 从已进入区域的玩家集合中移除
+        }
+
+        // 判断是否在 GuildShelter_plot 区域
+        if (isInPlotArea) {
+            if (!playersInShelter.contains(player)) {
+                // 玩家进入 GuildShelter 区域，触发进入事件
+                GuildShelterEnterEvent enterEvent = new GuildShelterEnterEvent(player, plotInfo.getGuildname(), plotInfo.getMessage());
+                org.bukkit.Bukkit.getServer().getPluginManager().callEvent(enterEvent);
+                playersInShelter.add(player);  // 记录玩家已进入区域
+            }
         }
 
         // 判断是否在 GuildShelter_base 区域
         AreaInfo baseInfo = databaseManager.isPointInBaseAreaWithCache(x, z);
-        if (baseInfo.isInArea()) {
-            // 触发 GuildShelterEnterEvent 事件
-            GuildShelterEnterEvent guildShelterEvent = new GuildShelterEnterEvent(player, baseInfo.getGuildname(), baseInfo.getMessage());
-            org.bukkit.Bukkit.getServer().getPluginManager().callEvent(guildShelterEvent);
+        boolean isInBaseArea = baseInfo.isInArea();
+
+        if (isInBaseArea) {
+            if (!playersInShelter.contains(player)) {
+                // 玩家进入 GuildShelter_base 区域，触发进入事件
+                GuildShelterEnterEvent enterEvent = new GuildShelterEnterEvent(player, baseInfo.getGuildname(), baseInfo.getMessage());
+                org.bukkit.Bukkit.getServer().getPluginManager().callEvent(enterEvent);
+                playersInShelter.add(player);  // 记录玩家已进入区域
+            }
         }
     }
 }

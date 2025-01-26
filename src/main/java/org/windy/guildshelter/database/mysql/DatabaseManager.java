@@ -115,13 +115,21 @@ public class DatabaseManager {
 
     // 查询 GuildShelter_plot 中点是否在区域内，并返回其他信息
     private AreaInfo isPointInPlotArea(double x, double z) {
+        // 创建 SQL 查询，使用占位符进行查询
         String sql = "SELECT member, title, guildname, world, flag, message, owner " +
-                "FROM GuildShelter_plot WHERE ST_Within(ST_GeomFromText('POINT(? ?)'), boundary)";
+                "FROM GuildShelter_plot WHERE ST_Within(ST_GeomFromText(?), boundary)";
+
+        // 构建 POINT(x, z) 格式的字符串
+        String point = String.format("POINT(%f %f)", x, z); // 格式化为 "POINT(x z)"
+
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-            stmt.setDouble(1, x);
-            stmt.setDouble(2, z);
+            // 设置第一个占位符为 POINT(x, z) 字符串
+            stmt.setString(1, point);
+
+            // 执行查询
             ResultSet rs = stmt.executeQuery();
 
+            // 处理结果集
             if (rs.next()) {
                 String member = rs.getString("member");
                 String title = rs.getString("title");
@@ -131,14 +139,17 @@ public class DatabaseManager {
                 String message = rs.getString("message");
                 String owner = rs.getString("owner");
 
+                // 返回包含区域内信息的 AreaInfo 对象
                 return new AreaInfo(true, member, title, guildname, world, flag, message, owner);
             }
         } catch (SQLException e) {
             logger.severe("Point check in GuildShelter_plot failed: " + e.getMessage());
         }
 
-        return new AreaInfo(false, null, null, null, null, null, null, null);  // 如果没有找到，返回默认的 AreaInfo
+        // 如果没有找到，返回默认的 AreaInfo
+        return new AreaInfo(false, null, null, null, null, null, null, null);
     }
+
 
     // 缓存条目类，保存查询结果和时间戳
     private static class CacheEntry {
@@ -155,8 +166,14 @@ public class DatabaseManager {
     public boolean insertGuildShelterPlot(double x1, double z1, double x2, double z2, String member,
                                           String title, String guildname, String world, String flag,
                                           String message, String owner) {
+        // 创建包含多边形坐标的字符串
+        String polygon = String.format("POLYGON((%f %f, %f %f, %f %f, %f %f, %f %f))",
+                x1, z1, x2, z1, x2, z2, x1, z2, x1, z1);
+
+        // SQL 语句，只有一个 ? 对应多边形的坐标字符串
         String sql = "INSERT INTO GuildShelter_plot (x1, z1, x2, z2, member, title, guildname, world, flag, message, owner, boundary) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ST_GeomFromText('POLYGON(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'))";
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ST_GeomFromText(?))";
+
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setDouble(1, x1);
             stmt.setDouble(2, z1);
@@ -170,17 +187,8 @@ public class DatabaseManager {
             stmt.setString(10, message);
             stmt.setString(11, owner);
 
-            // 填充边界坐标
-            stmt.setDouble(12, x1); // x1, z1
-            stmt.setDouble(13, z1);
-            stmt.setDouble(14, x2); // x2, z1
-            stmt.setDouble(15, z1);
-            stmt.setDouble(16, x2); // x2, z2
-            stmt.setDouble(17, z2);
-            stmt.setDouble(18, x1); // x1, z2
-            stmt.setDouble(19, z2);
-            stmt.setDouble(20, x1); // x1, z1 (closing the polygon)
-            stmt.setDouble(21, z1);
+            // 设置多边形坐标字符串为单个参数
+            stmt.setString(12, polygon);
 
             int rowsAffected = stmt.executeUpdate();
             return rowsAffected > 0;
@@ -189,6 +197,8 @@ public class DatabaseManager {
         }
         return false;
     }
+
+
 
     // 更新 GuildShelter_plot 数据（包括 owner 字段）
     public boolean updateGuildShelterPlot(String guildname, String member, String title, String world, String flag,
@@ -226,12 +236,17 @@ public class DatabaseManager {
         return false;
     }
 
-    // 插入 GuildShelter_base 数据
     public boolean insertGuildShelterBase(double x1, double z1, double x2, double z2, String member,
                                           String title, String guildname, String world, String flag,
                                           String message, String owner) {
+        // 创建包含多边形坐标的字符串
+        String polygon = String.format("POLYGON((%f %f, %f %f, %f %f, %f %f, %f %f))",
+                x1, z1, x2, z1, x2, z2, x1, z2, x1, z1);
+
+        // SQL 语句，只有一个 ? 对应多边形的坐标字符串
         String sql = "INSERT INTO GuildShelter_base (x1, z1, x2, z2, member, title, guildname, world, flag, message, owner, boundary) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ST_GeomFromText('POLYGON(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'))";
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ST_GeomFromText(?))";
+
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setDouble(1, x1);
             stmt.setDouble(2, z1);
@@ -245,17 +260,8 @@ public class DatabaseManager {
             stmt.setString(10, message);
             stmt.setString(11, owner);
 
-            // 填充边界坐标
-            stmt.setDouble(12, x1); // x1, z1
-            stmt.setDouble(13, z1);
-            stmt.setDouble(14, x2); // x2, z1
-            stmt.setDouble(15, z1);
-            stmt.setDouble(16, x2); // x2, z2
-            stmt.setDouble(17, z2);
-            stmt.setDouble(18, x1); // x1, z2
-            stmt.setDouble(19, z2);
-            stmt.setDouble(20, x1); // x1, z1 (closing the polygon)
-            stmt.setDouble(21, z1);
+            // 设置多边形坐标字符串为单个参数
+            stmt.setString(12, polygon);
 
             int rowsAffected = stmt.executeUpdate();
             return rowsAffected > 0;
@@ -264,6 +270,9 @@ public class DatabaseManager {
         }
         return false;
     }
+
+
+
     // 更新 GuildShelter_base 数据
     public boolean updateGuildShelterBase(String guildname, String member, String title, String world, String flag,
                                           String message, String owner, double x1, double z1, double x2, double z2) {

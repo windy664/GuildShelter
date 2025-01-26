@@ -11,6 +11,7 @@ import org.windy.guildshelter.command.GuildShelterCommand;
 import org.windy.guildshelter.listener.GuildCreateListener;
 import org.windy.guildshelter.listener.GuildMoveListener;
 import org.windy.guildshelter.listener.GuildShelterEnterListener;
+import org.windy.guildshelter.listener.GuildShelterLeaveListener;
 import org.windy.guildshelter.listener.neoforge.BlockInteractListener;
 
 import java.io.File;
@@ -24,6 +25,7 @@ public class plugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        this.getServer().getConsoleSender().sendMessage(Texts.logo);
         // 保存默认的配置文件
         saveDefaultConfig();
         saveDefaultLangFile();
@@ -34,9 +36,6 @@ public class plugin extends JavaPlugin {
         // 依赖注册
         registerWorldEdit(langConfig);
 
-        // 注册事件监听器
-        registerEventListeners();
-
         // 注册命令
         registerCommands();
 
@@ -46,12 +45,15 @@ public class plugin extends JavaPlugin {
             // 在数据库连接成功后创建表格
             databaseManager.registerTables();
         }
+        // 注册事件监听器
+        registerEventListeners();
 
         LOGGER.info(ChatColor.YELLOW + "插件已启用！");
     }
 
     @Override
     public void onDisable() {
+        this.getServer().getConsoleSender().sendMessage(Texts.logo);
         // 注销事件监听器
         EVENT_BUS.unregister(new BlockInteractListener());
         LOGGER.info(ChatColor.YELLOW + "所有Neoforge事件已注销！");
@@ -87,6 +89,8 @@ public class plugin extends JavaPlugin {
         // 注册 GuildShelterEnterListener 监听器
         getServer().getPluginManager().registerEvents(new GuildShelterEnterListener(), this);
         LOGGER.info(ChatColor.YELLOW + "进入公会检测监听器注册完毕");
+        getServer().getPluginManager().registerEvents(new GuildShelterLeaveListener(), this);
+
     }
 
     private void registerCommands() {

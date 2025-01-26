@@ -2,6 +2,11 @@ package org.windy.guildshelter.util;
 
 import org.windy.guildshelter.database.mysql.DatabaseManager;
 
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -43,8 +48,10 @@ class RectangularArea {
 abstract class CityArea {
     protected RectangularArea area;
 
-    public CityArea(int leftBottomX, int leftBottomY, int rightTopX, int rightTopY) {
-        this.area = new RectangularArea(leftBottomX, leftBottomY, rightTopX, rightTopY);
+    public CityArea(int leftBottomX, int leftBottomY, int length, int width) {
+        // 通过左下角和总长度、总宽度计算右上角坐标
+        this.area = new RectangularArea(leftBottomX, leftBottomY,
+                leftBottomX + length, leftBottomY + width);
     }
 
     public RectangularArea getArea() {
@@ -53,16 +60,16 @@ abstract class CityArea {
 }
 
 class ImperialCity extends CityArea {
-    public ImperialCity(int leftBottomX, int leftBottomY, int rightTopX, int rightTopY) {
-        super(leftBottomX, leftBottomY, rightTopX, rightTopY);
+    public ImperialCity(int leftBottomX, int leftBottomY, int length, int width) {
+        super(leftBottomX, leftBottomY, length, width);
     }
 }
 
 class PalaceCity extends CityArea {
     private List<RectangularArea> civilianAreas;
 
-    public PalaceCity(int leftBottomX, int leftBottomY, int rightTopX, int rightTopY) {
-        super(leftBottomX, leftBottomY, rightTopX, rightTopY);
+    public PalaceCity(int leftBottomX, int leftBottomY, int length, int width) {
+        super(leftBottomX, leftBottomY, length, width);
         this.civilianAreas = new ArrayList<>();
     }
 
@@ -108,23 +115,28 @@ class PalaceCity extends CityArea {
 }
 
 public class GeneraeInitialGuildBase {
+
     private DatabaseManager databaseManager;
 
     public GeneraeInitialGuildBase(DatabaseManager databaseManager) {
         this.databaseManager = databaseManager;
     }
-
     public void create(int startX, int startZ, int totalLength, int totalWidth, int roadWidth, int plotLength, int plotWidth, String world, String guildName) {
-        // 皇城占据中间区域，设定其大小和位置
-        int imperialLength = (int) (totalLength * 0.10); // 假设皇城 占据10%区域
+
+        // 设置皇城的位置和大小
+        int imperialLength = (int) (totalLength * 0.10); // 假设皇城占据10%区域
         int imperialWidth = (int) (totalWidth * 0.10);
         int imperialLeftBottomX = (totalLength - imperialLength) / 2;
         int imperialLeftBottomY = (totalWidth - imperialWidth) / 2;
         ImperialCity imperialCity = new ImperialCity(imperialLeftBottomX, imperialLeftBottomY,
-                imperialLeftBottomX + imperialLength, imperialLeftBottomY + imperialWidth);
+                imperialLength, imperialWidth);
 
-        // 宫城区域
-        PalaceCity palaceCity = new PalaceCity(startX, startZ, totalLength, totalWidth);
+        // 宫城的灵活坐标设置
+        int palaceLeftBottomX = 98;   // 灵活设置的左下角X
+        int palaceLeftBottomY = 586;   // 灵活设置的左下角Y
+        int palaceLength = totalLength;  // 宫城的总长度
+        int palaceWidth = totalWidth;  // 宮城的总宽度
+        PalaceCity palaceCity = new PalaceCity(palaceLeftBottomX, palaceLeftBottomY, palaceLength, palaceWidth);
 
         // 填充宫城中的平民区域，避免与皇城重叠
         palaceCity.fillCivilianAreas(plotLength, plotWidth, roadWidth, imperialCity.getArea());
@@ -140,7 +152,7 @@ public class GeneraeInitialGuildBase {
 
         // 插入平民居住区域信息到 GuildShelter_plot
         for (int i = 0; i < palaceCity.getCivilianAreas().size(); i++) {
-            String title = "guildName" + i+1 + "号";
+            String title = "guildName" + (i + 1) + "号";
 
             RectangularArea civilianArea = palaceCity.getCivilianAreas().get(i);
             databaseManager.insertGuildShelterPlot(civilianArea.getLeftBottomX(), civilianArea.getLeftBottomY(),
@@ -149,5 +161,6 @@ public class GeneraeInitialGuildBase {
             System.out.println("宫城内平民居住区域 " + (i + 1) + " 信息: " + civilianArea);
         }
     }
-
 }
+
+
