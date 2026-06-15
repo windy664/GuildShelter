@@ -1,6 +1,7 @@
 package org.windy.guildshelter;
 
 import org.bukkit.command.PluginCommand;
+import org.bukkit.event.Listener;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.windy.guildshelter.adapter.bukkit.GuildShelterConfig;
 import org.windy.guildshelter.adapter.bukkit.GuildWorldRegistry;
@@ -8,6 +9,7 @@ import org.windy.guildshelter.adapter.bukkit.command.GsCommand;
 import org.windy.guildshelter.adapter.bukkit.listener.RegionTitleListener;
 import org.windy.guildshelter.adapter.bukkit.world.BukkitTerrainPreparer;
 import org.windy.guildshelter.adapter.bukkit.world.WorldManager;
+import org.windy.guildshelter.adapter.provider.LegendaryGuildListener;
 import org.windy.guildshelter.adapter.provider.PlayerGuildListener;
 import org.windy.guildshelter.domain.layout.LayoutCalculator;
 import org.windy.guildshelter.domain.model.GuildWorld;
@@ -20,6 +22,8 @@ import org.windy.guildshelter.persistence.SqliteGuildRepository;
 import org.windy.guildshelter.persistence.SqliteManorRepository;
 
 import java.io.File;
+import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * Bukkit 端入口（装配根）。
@@ -76,13 +80,27 @@ public final class GuildShelterPlugin extends JavaPlugin {
         // 进入公会世界时按位置弹 title（主城/地皮#N/道路），用于可视化验证网格。
         getServer().getPluginManager().registerEvents(new RegionTitleListener(layout, registry), this);
 
-        // 接 PlayerGuild：入会自动分地皮、退会释放、解散清理（软依赖，缺失则跳过）。
-        if (getServer().getPluginManager().getPlugin("PlayerGuild") != null) {
-            getServer().getPluginManager().registerEvents(
-                    new PlayerGuildListener(service, guilds, registry, getLogger()), this);
-            getLogger().info("已挂接 PlayerGuild 事件。");
-        } else {
-            getLogger().info("未检测到 PlayerGuild，仅 /gs admin 手动管理可用。");
+        // 接公会插件：入会自动分地皮、退会/被踢释放、解散清理。
+        // 可插拔——按服务器实际装的公会插件挂对应监听器。未来支持新的公会插件，
+        // 只需新写一个 Listener 适配并在下面 List 里加一行（软依赖：装了哪个就挂哪个，都没装则跳过）。
+        // 监听器工厂用 lambda 延迟构造：插件不在时不实例化，对应的公会插件 API 类也不会被加载。
+        record GuildHook(String pluginName, Supplier<Listener> factory) {}
+        List<GuildHook> hooks = List.of(
+                new GuildHook("PlayerGuild",
+                        () -> new PlayerGuildListener(service, guilds, registry, getLogger())),
+                new GuildHook("LegendaryGuild",
+                        () -> new LegendaryGuildListener(service, guilds, registry, getLogger())));
+
+        boolean hooked = false;
+        for (GuildHook hook : hooks) {
+            if (getServer().getPluginManager().getPlugin(hook.pluginName()) != null) {
+                getServer().getPluginManager().registerEvents(hook.factory().get(), this);
+                getLogger().info("已挂接 " + hook.pluginName() + " 事件。");
+                hooked = true;
+            }
+        }
+        if (!hooked) {
+            getLogger().info("未检测到任何受支持的公会插件，仅 /gs admin 手动管理可用。");
         }
 
         getLogger().info("GuildShelter 已启用。");

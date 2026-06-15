@@ -18,7 +18,7 @@ import java.util.Optional;
 /**
  * 应用服务：协调建会 / 成员加入分配 slot+整地 / 退出释放 / 升级。纯 Java，依赖端口，可脱机测。
  *
- * <p>这是"本插件作为附属品"的核心——上层（PlayerGuild provider 或 admin 命令）只调这里的方法，
+ * <p>这是"本插件作为附属品"的核心——上层（LegendaryGuild provider 或 admin 命令）只调这里的方法，
  * 不关心世界/网格/整地细节。layout 区域换算到世界坐标用 {@link GuildWorld} 的 origin 偏移。
  */
 public final class GuildService {

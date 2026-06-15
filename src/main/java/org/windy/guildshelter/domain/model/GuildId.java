@@ -3,7 +3,7 @@ package org.windy.guildshelter.domain.model;
 import java.util.Objects;
 
 /**
- * 公会标识。公会身份来自外部 provider（如 PlayerGuild），这里只持有其稳定 key。
+ * 公会标识。公会身份来自外部 provider（如 LegendaryGuild），这里只持有其稳定 key。
  */
 public record GuildId(String value) {
 

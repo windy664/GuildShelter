@@ -4,6 +4,7 @@ version: 1.4-SNAPSHOT
 api-version: 1.26
 softdepend:
   - PlayerGuild
+  - LegendaryGuild
 # 运行期由服务端的库加载器拉取(不打进 jar)。Youer(Spigot 系) 1.26 应支持; 若不支持需改为 shade。
 libraries:
   - com.zaxxer:HikariCP:5.0.0
