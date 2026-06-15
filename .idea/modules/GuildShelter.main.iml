@@ -4,7 +4,6 @@
     <facet type="minecraft" name="Minecraft">
       <configuration>
         <autoDetectTypes>
-          <platformType>SPIGOT</platformType>
           <platformType>MIXIN</platformType>
           <platformType>NEOFORGE</platformType>
           <platformType>MCP</platformType>
@@ -14,6 +13,8 @@
     </facet>
   </component>
   <component name="McpModuleSettings">
-    <option name="srgType" value="SRG" />
+    <option name="minecraftVersion" value="1.26.1.2" />
+    <option name="platformVersion" value="26.1.2.76" />
+    <option name="srgType" value="TSRG" />
   </component>
 </module>

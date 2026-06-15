@@ -1,20 +1,14 @@
 name: GuildShelter
-main: org.windy.guildshelter.plugin
+main: org.windy.guildshelter.GuildShelterPlugin
 version: 1.4-SNAPSHOT
-api-version: 1.21
-depend:
-  - Residence
+api-version: 1.26
+softdepend:
+  - PlayerGuild
+# 运行期由服务端的库加载器拉取(不打进 jar)。Youer(Spigot 系) 1.26 应支持; 若不支持需改为 shade。
+libraries:
+  - com.zaxxer:HikariCP:5.0.0
+  - org.xerial:sqlite-jdbc:3.47.1.0
 commands:
   gs:
-    description: GuildShelter插件命令
-    usage: /gs <debug|spawn|setspawn>
-    subcommands:
-      debug:
-        description: 调试命令
-        usage: /gs debug <genplat>
-      spawn:
-        description: 设置或传送到公会出生点
-        usage: /gs spawn
-      setspawn:
-        description: 设置公会出生点
-        usage: /gs setspawn
+    description: GuildShelter 插件命令
+    usage: /gs <spawn|setspawn|home|upgrade|admin>

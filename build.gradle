@@ -2,7 +2,7 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'idea'
-    id 'net.neoforged.moddev' version '2.0.74'
+    id 'net.neoforged.moddev' version '2.0.141'
 }
 
 version = mod_version
@@ -29,7 +29,7 @@ base {
     archivesName = mod_id
 }
 
-java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
 
 neoForge {
     // Specify the version of NeoForge to use.
@@ -68,7 +68,7 @@ neoForge {
         }
 
         data {
-            data()
+            clientData()
 
             // example of overriding the workingDirectory set in configureEach above, uncomment if you want to use it
             // gameDirectory = project.file('run-data')
@@ -129,11 +129,28 @@ dependencies {
     // For more info:
     // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
-    compileOnly("org.spigotmc:spigot-api:1.21.1-R0.1-SNAPSHOT")
+    // Bukkit/Spigot API(org.bukkit)等本地依赖全部走 libs 文件夹:
+    //   - minecraft-server-patched-26.2.0.0.jar : Youer 运行时生成的打补丁服务端,提供 org.bukkit。
+    //       (从 服务端/libraries/net/neoforged/minecraft-server-patched/26.2.0.0/ 复制而来)
+    //       注意:不要放 neoforge-*-universal.jar,它含 net.neoforged 会与 moddev 提供的冲突。
+    //   - PlayerGuild / worldedit : 公会 & WorldEdit API
     compileOnly fileTree("./libs")
     compileOnly 'me.clip:placeholderapi:2.11.5'
-    implementation 'com.zaxxer:HikariCP:5.0.0'
 
+    // 持久层依赖: 编译期 compileOnly, 运行期由 Bukkit 的 libraries 加载器(plugin.yml)提供,不打进 jar
+    compileOnly 'com.zaxxer:HikariCP:5.0.0'
+    compileOnly 'org.xerial:sqlite-jdbc:3.47.1.0'
+
+    // 单元测试: domain 纯 Java 层 + 持久层(对临时文件 SQLite 跑集成测试)
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation 'com.zaxxer:HikariCP:5.0.0'
+    testImplementation 'org.xerial:sqlite-jdbc:3.47.1.0'
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform()
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

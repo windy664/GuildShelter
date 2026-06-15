@@ -1,7 +1,26 @@
-#关于公会大小
-Plot-length: 100
-Plot-width: 100
-Total-length: 500
-Total-width: 500
-Road-width: 5
-Radius: 40
+# GuildShelter 配置（尺寸单位 = chunk，16 方块/chunk）
+
+layout:
+  # 单个成员地皮边长（满级 slot 大小）
+  plot-chunks: 4
+  # 地皮之间的间距/路宽
+  road-chunks: 1
+  # 主城占中心网格格的"半径"：主城 = (2*half+1)² 个格
+  main-city-half-cells: 1
+  # 庄园初始实占边长（1 级），需 ≤ plot-chunks
+  plot-default-chunks: 2
+  # 庄园每升一级实占边长增加多少 chunk
+  plot-chunks-per-level: 1
+  # 地面高度
+  base-y: 64
+  # 世界边界在已分配范围外额外留的余量
+  margin-chunks: 2
+
+# 分配/升级地皮时的整地方式: NONE(不整) | CLEAR_VEGETATION(清植被,保留自然起伏) | FLATTEN(铺平)
+terrain-prep: CLEAR_VEGETATION
+
+# 等级规则
+levels:
+  max-guild-level: 10
+  manor-levels-per-guild-level: 1
+  manor-max-level-cap: 10
