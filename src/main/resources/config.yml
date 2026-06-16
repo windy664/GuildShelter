@@ -19,6 +19,20 @@ layout:
 # 分配/升级地皮时的整地方式: NONE(不整) | CLEAR_VEGETATION(清植被,保留自然起伏) | FLATTEN(铺平)
 terrain-prep: CLEAR_VEGETATION
 
+# Shetuan(社团)接入:该插件不发事件,本插件改用定时 diff 同步成员名单与地皮。
+shetuan:
+  # 同步间隔(秒)。越短越实时,越长越省。仅装了 Shetuan 时生效。
+  sync-interval-seconds: 30
+
+# Guild(com.guild,作者 ya_xzer21145)接入:同样不发事件,用定时 diff 同步。仅装了 Guild 时生效。
+guild:
+  # 同步间隔(秒)。
+  sync-interval-seconds: 30
+  # 是否自动清扫已解散公会的世界。GuildId 是会名无法按形状区分来源,
+  # 若同服还装了其它"以会名为 key"的公会插件(PlayerGuild/LegendaryGuild)可能误删其世界,
+  # 那种情况(不推荐的多公会插件混装)请关掉本项。正常单公会插件保持 true 即可。
+  disband-sweep: true
+
 # 等级规则
 levels:
   max-guild-level: 10

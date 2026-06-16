@@ -9,8 +9,11 @@ import org.windy.guildshelter.adapter.bukkit.command.GsCommand;
 import org.windy.guildshelter.adapter.bukkit.listener.RegionTitleListener;
 import org.windy.guildshelter.adapter.bukkit.world.BukkitTerrainPreparer;
 import org.windy.guildshelter.adapter.bukkit.world.WorldManager;
+import org.windy.guildshelter.adapter.provider.GuildPluginSyncTask;
 import org.windy.guildshelter.adapter.provider.LegendaryGuildListener;
 import org.windy.guildshelter.adapter.provider.PlayerGuildListener;
+import org.windy.guildshelter.adapter.provider.ShetuanAccess;
+import org.windy.guildshelter.adapter.provider.ShetuanSyncTask;
 import org.windy.guildshelter.domain.layout.LayoutCalculator;
 import org.windy.guildshelter.domain.model.GuildWorld;
 import org.windy.guildshelter.domain.port.GuildRepository;
@@ -88,7 +91,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
         List<GuildHook> hooks = List.of(
                 new GuildHook("PlayerGuild",
                         () -> new PlayerGuildListener(service, guilds, registry, getLogger())),
-                new GuildHook("LegendaryGuild",
+                new GuildHook("LegendaryGuildRemapped",
                         () -> new LegendaryGuildListener(service, guilds, registry, getLogger())));
 
         boolean hooked = false;
@@ -99,6 +102,31 @@ public final class GuildShelterPlugin extends JavaPlugin {
                 hooked = true;
             }
         }
+        // Shetuan(社团)不发任何自定义事件 → 自造同步引擎:定时 diff 成员名单与已分配地皮,
+        // 把"入会分地皮/退会释放/解散清理"用轮询补出来。
+        if (getServer().getPluginManager().getPlugin("Shetuan") != null) {
+            ShetuanAccess access = ShetuanAccess.tryCreate(getServer().getPluginManager(), getLogger());
+            if (access != null) {
+                long periodTicks = Math.max(1L, getConfig().getLong("shetuan.sync-interval-seconds", 30)) * 20L;
+                new ShetuanSyncTask(access, service, guilds, manors, registry, getLogger())
+                        .runTaskTimer(this, 20L * 5, periodTicks);
+                getLogger().info("已挂接 Shetuan(轮询同步,每 " + (periodTicks / 20L) + "s)。");
+                hooked = true;
+            } else {
+                getLogger().warning("检测到 Shetuan 但无法接入其管理器,社团同步未启用。");
+            }
+        }
+
+        // Guild(com.guild,作者 ya_xzer21145)同样不发事件 → 复用同步引擎(GuildId=会名)。
+        if (getServer().getPluginManager().getPlugin("Guild") != null) {
+            long periodTicks = Math.max(1L, getConfig().getLong("guild.sync-interval-seconds", 30)) * 20L;
+            boolean disbandSweep = getConfig().getBoolean("guild.disband-sweep", true);
+            new GuildPluginSyncTask(service, guilds, manors, registry, getLogger(), disbandSweep)
+                    .runTaskTimer(this, 20L * 5, periodTicks);
+            getLogger().info("已挂接 Guild(轮询同步,每 " + (periodTicks / 20L) + "s)。");
+            hooked = true;
+        }
+
         if (!hooked) {
             getLogger().info("未检测到任何受支持的公会插件，仅 /gs admin 手动管理可用。");
         }
