@@ -9,8 +9,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LayoutCalculatorTest {
 
-    // 默认配置: P=4, R=1, pitch=5, half=1, base=9, 初始实占2 每级+1
-    private final LayoutCalculator calc = new LayoutCalculator(LayoutConfig.defaults());
+    // 测试用固定配置（不跟生产默认值走，免得 defaults() 调尺寸时几何断言全废）：
+    // P=4, R=1, pitch=5, 主城 initial=max=1(不成长,固定 3×3), base=9, 初始实占2 每级+1
+    private final LayoutCalculator calc =
+            new LayoutCalculator(new LayoutConfig(4, 1, 1, 1, 2, 1, 64, 2));
 
     @Test
     void centerIsMainCity() {
@@ -60,7 +62,7 @@ class LayoutCalculatorTest {
     }
 
     @Test
-    void activeRegionWithinPlotAndCentered() {
+    void activeRegionWithinPlotAnchoredAtMinCorner() {
         for (int slot = 0; slot < 20; slot++) {
             ChunkRegion plot = calc.plotRegion(slot);
             int[] expectedSize = {2, 3, 4, 4, 4}; // level 1..5, 封顶 P=4
@@ -68,6 +70,9 @@ class LayoutCalculatorTest {
                 ChunkRegion active = calc.activeRegion(slot, level);
                 assertEquals(expectedSize[level - 1], active.widthChunks(), "level " + level + " 实占尺寸");
                 assertTrue(contains(plot, active), "实占应 ⊆ 地皮 @ slot " + slot + " level " + level);
+                // 半螺旋式：锚定在地皮最小角，从角落向外扩
+                assertEquals(plot.minChunkX(), active.minChunkX(), "实占应锚定地皮最小角X @ slot " + slot);
+                assertEquals(plot.minChunkZ(), active.minChunkZ(), "实占应锚定地皮最小角Z @ slot " + slot);
             }
         }
     }
@@ -82,7 +87,7 @@ class LayoutCalculatorTest {
     void borderSizeMonotonicInAllocation() {
         double prev = -1;
         for (int allocated = 0; allocated <= 300; allocated++) {
-            double size = calc.borderSizeBlocks(allocated, 1);
+            double size = calc.borderSizeBlocks(allocated);
             assertTrue(size >= prev, "边界应随分配单调不减 @ allocated=" + allocated);
             prev = size;
         }

@@ -8,33 +8,36 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LevelRulesTest {
 
-    private final LevelRules rules = LevelRules.defaults(); // 公会10, 每级1, 庄园上限10
+    private final LevelRules rules = LevelRules.defaults(); // 公会5, 每级5名额, 庄园上限5
 
     @Test
-    void maxManorLevelTracksGuildLevelThenCaps() {
-        assertEquals(1, rules.maxManorLevel(1));
-        assertEquals(5, rules.maxManorLevel(5));
-        assertEquals(10, rules.maxManorLevel(10));
-        assertEquals(10, rules.maxManorLevel(15)); // 封顶
+    void maxMembersScalesWithGuildLevel() {
+        assertEquals(5, rules.maxMembers(1));
+        assertEquals(10, rules.maxMembers(2));
+        assertEquals(25, rules.maxMembers(5));
     }
 
     @Test
-    void manorUpgradeGatedByGuildLevel() {
-        assertFalse(rules.canUpgradeManor(1, 1)); // 1级公会, 庄园上限1, 已满
-        assertTrue(rules.canUpgradeManor(1, 2));
-        assertFalse(rules.canUpgradeManor(10, 10));
+    void manorUpgradeOnlyGatedByPhysicalCap() {
+        // 庄园升级与公会等级无关，只看是否到物理满级（默认 5）。
+        assertEquals(5, rules.manorMaxLevel());
+        assertTrue(rules.canUpgradeManor(1));
+        assertTrue(rules.canUpgradeManor(4));
+        assertFalse(rules.canUpgradeManor(5)); // 已满级
     }
 
     @Test
     void guildUpgradeBoundary() {
-        assertTrue(rules.canUpgradeGuild(9));
-        assertFalse(rules.canUpgradeGuild(10));
+        assertTrue(rules.canUpgradeGuild(4));
+        assertFalse(rules.canUpgradeGuild(5));
     }
 
     @Test
-    void customRatioAndCap() {
-        LevelRules r = new LevelRules(5, 2, 8);
-        assertEquals(6, r.maxManorLevel(3)); // 3*2=6
-        assertEquals(8, r.maxManorLevel(5)); // 5*2=10 -> 封顶8
+    void customCapacityCurve() {
+        LevelRules r = new LevelRules(10, 8, 6); // 公会10级, 每级8名额, 庄园上限6
+        assertEquals(8, r.maxMembers(1));
+        assertEquals(80, r.maxMembers(10));
+        assertEquals(6, r.manorMaxLevel());
+        assertFalse(r.canUpgradeManor(6));
     }
 }

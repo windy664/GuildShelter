@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GuildServiceTest {
@@ -44,7 +45,7 @@ class GuildServiceTest {
         manors = new FakeManorRepo();
         worlds = new FakeWorldControl();
         terrain = new FakeTerrain();
-        service = new GuildService(guilds, manors, worlds, terrain, layout,
+        service = new GuildService(guilds, manors, worlds, terrain, LayoutConfig.defaults(),
                 LevelRules.defaults(), TerrainPrepMode.CLEAR_VEGETATION);
     }
 
@@ -116,15 +117,32 @@ class GuildServiceTest {
     }
 
     @Test
-    void manorUpgradeGatedByGuildLevel() {
-        service.createGuild(g, 1L);
+    void manorUpgradesFreelyToPhysicalCapRegardlessOfGuildLevel() {
+        service.createGuild(g, 1L); // 公会仍 1 级
         PlayerRef p = player();
-        service.assignManor(g, p);
-        // 1级公会, 庄园上限1 → 不能升
-        assertFalse(service.upgradeManor(g, p));
-        service.upgradeGuild(g); // 公会升到2
-        assertTrue(service.upgradeManor(g, p));
-        assertEquals(2, manors.findByOwner(g, p).orElseThrow().level());
+        service.assignManor(g, p); // 庄园 1 级
+        // 庄园升级是成员自己的事，与公会等级无关：1 级公会也能一路升到物理满级(默认 5)。
+        assertTrue(service.upgradeManor(g, p));  // ->2
+        assertTrue(service.upgradeManor(g, p));  // ->3
+        assertTrue(service.upgradeManor(g, p));  // ->4
+        assertTrue(service.upgradeManor(g, p));  // ->5
+        assertEquals(5, manors.findByOwner(g, p).orElseThrow().level());
+        assertFalse(service.upgradeManor(g, p)); // 已满级，不能再升
+    }
+
+    @Test
+    void assignManorBlockedWhenGuildFullThenUnlockedByUpgrade() {
+        service.createGuild(g, 1L); // 1 级容量 = 5
+        for (int i = 0; i < 5; i++) {
+            service.assignManor(g, player());
+        }
+        assertEquals(5, manors.findAll(g).size());
+        // 第 6 个超出当前等级名额 → 抛 GuildFullException
+        assertThrows(GuildFullException.class, () -> service.assignManor(g, player()));
+        // 公会升级 → 容量到 10，新成员可继续加入，复用下一个 slot
+        assertTrue(service.upgradeGuild(g));
+        Manor sixth = service.assignManor(g, player());
+        assertEquals(5, sixth.slot());
     }
 
     private PlayerRef player() {
@@ -185,8 +203,12 @@ class GuildServiceTest {
 
     static final class FakeTerrain implements TerrainPreparer {
         final List<PrepCall> calls = new ArrayList<>();
+        final List<ChunkRegion> roadCalls = new ArrayList<>();
         public void prepare(String worldName, ChunkRegion region, TerrainPrepMode mode) {
             calls.add(new PrepCall(worldName, region, mode));
+        }
+        public void surfaceRoad(String worldName, ChunkRegion region) {
+            roadCalls.add(region);
         }
     }
 }

@@ -1,6 +1,7 @@
 package org.windy.guildshelter.service;
 
 import org.windy.guildshelter.domain.layout.LayoutCalculator;
+import org.windy.guildshelter.domain.layout.LayoutConfig;
 import org.windy.guildshelter.domain.model.ChunkRegion;
 import org.windy.guildshelter.domain.model.GuildId;
 import org.windy.guildshelter.domain.model.GuildWorld;
@@ -27,29 +28,30 @@ public final class GuildService {
     private final ManorRepository manors;
     private final WorldControl worlds;
     private final TerrainPreparer terrain;
-    private final LayoutCalculator layout;
+    /** 仅用于给<b>新建</b>世界盖章的当前 config 布局；已存在世界一律用各自冻结的 {@code gw.layout()}。 */
+    private final LayoutConfig currentLayout;
     private final LevelRules levels;
     private final TerrainPrepMode prepMode;
 
     public GuildService(GuildRepository guilds, ManorRepository manors, WorldControl worlds,
-                        TerrainPreparer terrain, LayoutCalculator layout, LevelRules levels,
+                        TerrainPreparer terrain, LayoutConfig currentLayout, LevelRules levels,
                         TerrainPrepMode prepMode) {
         this.guilds = guilds;
         this.manors = manors;
         this.worlds = worlds;
         this.terrain = terrain;
-        this.layout = layout;
+        this.currentLayout = currentLayout;
         this.levels = levels;
         this.prepMode = prepMode;
     }
 
-    /** 建会：创建（或返回已有的）公会世界（锚定陆地、随机种子由 worlds 决定）。 */
+    /** 建会：创建（或返回已有的）公会世界，按<b>当前 config</b> 冻结其布局参数。 */
     public GuildWorld createGuild(GuildId guild, long seed) {
         Optional<GuildWorld> existing = guilds.find(guild);
         if (existing.isPresent()) {
             return existing.get();
         }
-        GuildWorld gw = GuildWorld.create(guild, worlds.worldName(guild), seed);
+        GuildWorld gw = GuildWorld.create(guild, worlds.worldName(guild), seed, currentLayout);
         gw = worlds.ensureWorld(gw);
         guilds.save(gw);
         return gw;
@@ -69,7 +71,14 @@ public final class GuildService {
             return owned.get();
         }
 
+        // 容量门控：公会等级决定名额数，名额满了不能再分新地皮（需先升级公会）。
+        // 成员 slot 从 0 起紧凑铺，前 capacity 个为合法名额；nextFreeSlot 会复用退会留下的空缺，
+        // 故"下一个空缺 ≥ capacity"即等价于"在册成员已达 capacity"。
         int slot = manors.nextFreeSlot(guild);
+        int capacity = levels.maxMembers(gw.guildLevel());
+        if (slot >= capacity) {
+            throw new GuildFullException(guild, capacity, gw.guildLevel());
+        }
         Manor manor = Manor.create(slot, guild, player);
         manors.save(manor);
 
@@ -109,7 +118,7 @@ public final class GuildService {
     public boolean upgradeManor(GuildId guild, PlayerRef player) {
         GuildWorld gw = guilds.find(guild).orElseThrow();
         Manor manor = manors.findByOwner(guild, player).orElseThrow();
-        if (!levels.canUpgradeManor(manor.level(), gw.guildLevel())) {
+        if (!levels.canUpgradeManor(manor.level())) { // 庄园只受物理满级限制，与公会等级无关
             return false;
         }
         Manor upgraded = manor.withLevel(manor.level() + 1);
@@ -130,13 +139,27 @@ public final class GuildService {
         return true;
     }
 
-    /** 把庄园当前实占范围（layout 坐标）平移到世界坐标后整地。 */
+    /** 清空成员当前实占范围的地表建筑（清植被式：清掉自然地面以上的方块）。供 /gs clear 用。 */
+    public void clearManor(GuildId guild, PlayerRef player) {
+        GuildWorld gw = guilds.find(guild).orElseThrow();
+        Manor manor = manors.findByOwner(guild, player).orElseThrow();
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        ChunkRegion active = layout.activeRegion(manor.slot(), manor.level())
+                .shift(gw.originChunkX(), gw.originChunkZ());
+        terrain.prepare(gw.worldName(), active, TerrainPrepMode.CLEAR_VEGETATION);
+    }
+
+    /** 把庄园当前实占范围（layout 坐标）平移到世界坐标后整地，并把本格道路铺成土径。 */
     private void prepareManorTerrain(GuildWorld gw, Manor manor) {
         if (prepMode == TerrainPrepMode.NONE) {
             return;
         }
+        LayoutCalculator layout = new LayoutCalculator(gw.layout()); // 用该世界冻结的布局
         ChunkRegion active = layout.activeRegion(manor.slot(), manor.level());
-        ChunkRegion world = active.shift(gw.originChunkX(), gw.originChunkZ());
-        terrain.prepare(gw.worldName(), world, prepMode);
+        terrain.prepare(gw.worldName(), active.shift(gw.originChunkX(), gw.originChunkZ()), prepMode);
+        // 顺带把本格的道路顶层铺成土径（清掉路上植被/树）。
+        for (ChunkRegion road : layout.roadStripsFor(manor.slot())) {
+            terrain.surfaceRoad(gw.worldName(), road.shift(gw.originChunkX(), gw.originChunkZ()));
+        }
     }
 }

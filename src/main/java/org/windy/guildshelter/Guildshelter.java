@@ -4,7 +4,9 @@ import com.mojang.logging.LogUtils;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.common.NeoForge;
 import org.slf4j.Logger;
+import org.windy.guildshelter.neoforge.NeoForgeProtection;
 
 /**
  * NeoForge 端入口。
@@ -22,6 +24,8 @@ public class Guildshelter {
 
     public Guildshelter(IEventBus modEventBus, ModContainer modContainer) {
         LOGGER.info("[GuildShelter] NeoForge 端已加载");
-        // 保护监听器（Phase 5）会在此注册到 NeoForge.EVENT_BUS。
+        // 混合端领地保护：注册到游戏事件总线（覆盖模组方块/交互）。判定复用 Bukkit 侧的 ClaimGuard。
+        NeoForge.EVENT_BUS.register(new NeoForgeProtection());
+        LOGGER.info("[GuildShelter] 领地保护已注册到 NeoForge EVENT_BUS");
     }
 }

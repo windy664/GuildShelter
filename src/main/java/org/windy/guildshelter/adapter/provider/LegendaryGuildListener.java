@@ -17,6 +17,7 @@ import org.windy.guildshelter.domain.model.GuildWorld;
 import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
 import org.windy.guildshelter.domain.port.GuildRepository;
+import org.windy.guildshelter.service.GuildFullException;
 import org.windy.guildshelter.service.GuildService;
 
 import java.util.UUID;
@@ -70,7 +71,17 @@ public final class LegendaryGuildListener implements Listener {
             registry.register(gw);
         }
         UUID uuid = resolveUuid(playerName);
-        Manor manor = service.assignManor(guild, PlayerRef.of(uuid));
+        Manor manor;
+        try {
+            manor = service.assignManor(guild, PlayerRef.of(uuid));
+        } catch (GuildFullException e) {
+            Player full = Bukkit.getPlayerExact(playerName);
+            if (full != null) {
+                full.sendMessage("§e[公会营地] 公会名额已满（" + e.capacity() + " 人），需公会升级后才能分配地皮。");
+            }
+            logger.info("[GuildShelter] " + guildName + " 名额已满(" + e.capacity() + ")，" + playerName + " 暂未分配地皮。");
+            return;
+        }
         Player p = Bukkit.getPlayerExact(playerName);
         if (p != null) {
             p.sendMessage("§a[公会营地] 已为你分配地皮 #" + manor.slot() + "，使用 /gs 前往。");

@@ -10,9 +10,9 @@ import org.windy.guildshelter.domain.layout.SpiralIndex;
 import org.windy.guildshelter.domain.model.GuildId;
 import org.windy.guildshelter.domain.model.GuildWorld;
 import org.windy.guildshelter.domain.port.WorldControl;
+import org.windy.guildshelter.domain.rule.LevelRules;
 
 import java.util.Locale;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Logger;
 
 /**
@@ -28,11 +28,11 @@ public final class WorldManager implements WorldControl {
     /** 锚定陆地时最多探测多少个候选 chunk（螺旋向外）。 */
     private static final int MAX_LAND_PROBES = 200;
 
-    private final LayoutCalculator layout;
+    private final LevelRules levels;
     private final Logger logger;
 
-    public WorldManager(LayoutCalculator layout, Logger logger) {
-        this.layout = layout;
+    public WorldManager(LevelRules levels, Logger logger) {
+        this.levels = levels;
         this.logger = logger;
     }
 
@@ -55,7 +55,7 @@ public final class WorldManager implements WorldControl {
         if (world == null) {
             throw new IllegalStateException("创建公会世界失败: " + gw.worldName());
         }
-        int[] origin = anchorOnLand(world);
+        int[] origin = anchorOnLand(world, new LayoutCalculator(gw.layout()));
         GuildWorld anchored = gw.withOrigin(origin[0], origin[1]);
         world.setSpawnLocation(safeSpawn(world, anchored));
         applyBorderTo(world, anchored);
@@ -66,7 +66,7 @@ public final class WorldManager implements WorldControl {
      * 把网格原点锚定到陆地：从世界原版出生点所在 chunk 起螺旋向外探测，
      * 找到第一个"主城中心列不是液体"的位置，返回网格 origin 偏移（chunk）。
      */
-    private int[] anchorOnLand(World world) {
+    private int[] anchorOnLand(World world, LayoutCalculator layout) {
         int layoutCityChunkX = layout.spawnBlockX() >> 4;
         int layoutCityChunkZ = layout.spawnBlockZ() >> 4;
         Location vanilla = world.getSpawnLocation();
@@ -91,6 +91,7 @@ public final class WorldManager implements WorldControl {
 
     /** 主城中心列的安全出生位置（含 origin 偏移）：强制生成所在区块后取地表最高点上方一格。 */
     public Location safeSpawn(World world, GuildWorld gw) {
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
         int sx = (layout.spawnBlockX()) + (gw.originChunkX() << 4);
         int sz = (layout.spawnBlockZ()) + (gw.originChunkZ() << 4);
         world.loadChunk(sx >> 4, sz >> 4, true);
@@ -107,11 +108,14 @@ public final class WorldManager implements WorldControl {
     }
 
     private void applyBorderTo(World world, GuildWorld gw) {
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
         WorldBorder border = world.getWorldBorder();
         double cx = layout.borderCenterBlockX() + (gw.originChunkX() << 4) + 0.5;
         double cz = layout.borderCenterBlockZ() + (gw.originChunkZ() << 4) + 0.5;
         border.setCenter(cx, cz);
-        border.setSize(layout.borderSizeBlocks(gw.allocatedSlots(), gw.guildLevel()));
+        // 边界圈住 max(已分配, 当前等级名额容量) 个 slot：升级放开更多名额时即可见到预留的空地。
+        int reserved = Math.max(gw.allocatedSlots(), levels.maxMembers(gw.guildLevel()));
+        border.setSize(layout.borderSizeBlocks(reserved));
     }
 
     @Override

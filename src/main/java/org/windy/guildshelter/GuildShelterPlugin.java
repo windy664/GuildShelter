@@ -3,28 +3,31 @@ package org.windy.guildshelter;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.event.Listener;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.windy.guildshelter.adapter.bukkit.ClaimGuard;
 import org.windy.guildshelter.adapter.bukkit.GuildShelterConfig;
 import org.windy.guildshelter.adapter.bukkit.GuildWorldRegistry;
+import org.windy.guildshelter.adapter.bukkit.ManorLookup;
 import org.windy.guildshelter.adapter.bukkit.command.GsCommand;
+import org.windy.guildshelter.adapter.bukkit.listener.ManorFlagListener;
+import org.windy.guildshelter.adapter.bukkit.listener.ManorProtectionListener;
 import org.windy.guildshelter.adapter.bukkit.listener.RegionTitleListener;
 import org.windy.guildshelter.adapter.bukkit.world.BukkitTerrainPreparer;
 import org.windy.guildshelter.adapter.bukkit.world.WorldManager;
+import org.windy.guildshelter.adapter.provider.GuildCommandListener;
 import org.windy.guildshelter.adapter.provider.GuildPluginSyncTask;
 import org.windy.guildshelter.adapter.provider.LegendaryGuildListener;
 import org.windy.guildshelter.adapter.provider.PlayerGuildListener;
 import org.windy.guildshelter.adapter.provider.ShetuanAccess;
 import org.windy.guildshelter.adapter.provider.ShetuanSyncTask;
-import org.windy.guildshelter.domain.layout.LayoutCalculator;
 import org.windy.guildshelter.domain.model.GuildWorld;
 import org.windy.guildshelter.domain.port.GuildRepository;
 import org.windy.guildshelter.domain.port.ManorRepository;
 import org.windy.guildshelter.domain.port.TerrainPreparer;
+import org.windy.guildshelter.domain.rule.PermissionRules;
 import org.windy.guildshelter.service.GuildService;
-import org.windy.guildshelter.persistence.SqliteDatabase;
-import org.windy.guildshelter.persistence.SqliteGuildRepository;
-import org.windy.guildshelter.persistence.SqliteManorRepository;
+import org.windy.guildshelter.persistence.Storage;
+import org.windy.guildshelter.persistence.StorageFactory;
 
-import java.io.File;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -38,11 +41,27 @@ public final class GuildShelterPlugin extends JavaPlugin {
 
     private static GuildShelterPlugin instance;
 
-    private SqliteDatabase database;
+    private Storage storage;
     private WorldManager worldManager;
+    private ClaimGuard claimGuard;
 
     public static GuildShelterPlugin get() {
         return instance;
+    }
+
+    /** 供 NeoForge 端(混合端)的保护监听器在事件时取用共享判定;onEnable 前为 null。 */
+    public static ClaimGuard protectionGuard() {
+        return instance == null ? null : instance.claimGuard;
+    }
+
+    /** 探测是否混合端(NeoForge 在)。用字符串反射，纯 Bukkit 端不会因此加载到 NeoForge 类。 */
+    private static boolean isNeoForgePresent() {
+        try {
+            Class.forName("net.neoforged.fml.loading.FMLLoader");
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
     }
 
     @Override
@@ -54,21 +73,25 @@ public final class GuildShelterPlugin extends JavaPlugin {
         saveDefaultConfig();
 
         GuildShelterConfig config = GuildShelterConfig.from(getConfig());
-        LayoutCalculator layout = new LayoutCalculator(config.layout());
+        // 注意：不再用全局 LayoutCalculator。每个世界用自己冻结的 gw.layout()；
+        // config.layout() 仅用于①给新世界盖章②老库无快照时回退。
 
-        this.database = SqliteDatabase.forFile(new File(getDataFolder(), "database.db").toPath());
-        GuildRepository guilds = new SqliteGuildRepository(database);
-        ManorRepository manors = new SqliteManorRepository(database);
+        // 存储后端按 config 选(sqlite/mysql/flatfile);领域只认端口仓库。
+        this.storage = StorageFactory.create(config.storage(), getDataFolder().toPath(), config.layout());
+        GuildRepository guilds = storage.guilds();
+        ManorRepository manors = storage.manors();
+        getLogger().info("存储后端: " + config.storage().type());
 
-        this.worldManager = new WorldManager(layout, getLogger());
+        this.worldManager = new WorldManager(config.levels(), getLogger());
         TerrainPreparer terrain = new BukkitTerrainPreparer(this);
 
         GuildService service = new GuildService(guilds, manors, worldManager, terrain,
-                layout, config.levels(), config.terrainPrep());
+                config.layout(), config.levels(), config.terrainPrep());
 
         GuildWorldRegistry registry = new GuildWorldRegistry();
 
-        GsCommand command = new GsCommand(worldManager, guilds, service, registry, layout);
+        GsCommand command = new GsCommand(worldManager, guilds, manors, service, registry,
+                config.levels(), getLogger());
         PluginCommand gs = getCommand("gs");
         if (gs != null) {
             gs.setExecutor(command);
@@ -81,7 +104,28 @@ public final class GuildShelterPlugin extends JavaPlugin {
         }
 
         // 进入公会世界时按位置弹 title（主城/地皮#N/道路），用于可视化验证网格。
-        getServer().getPluginManager().registerEvents(new RegionTitleListener(layout, registry), this);
+        getServer().getPluginManager().registerEvents(
+                new RegionTitleListener(registry, manors, config.levels()), this);
+
+        // 领地保护：判定逻辑抽到平台中立的 ClaimGuard，Bukkit/NeoForge 两侧共用。
+        // 只在开启时构造 guard——关闭时 protectionGuard() 为 null，NeoForge 端也随之放行（开关两端通吃）。
+        if (getConfig().getBoolean("protection", true)) {
+            this.claimGuard = new ClaimGuard(registry, manors, new PermissionRules());
+            if (isNeoForgePresent()) {
+                // 混合端：全盘交给 NeoForge EVENT_BUS（见 Guildshelter @Mod），Bukkit 监听器跳过避免双重拦截。
+                getLogger().info("领地保护：检测到 NeoForge，由 NeoForge 端统一处理。");
+            } else {
+                getServer().getPluginManager().registerEvents(new ManorProtectionListener(claimGuard), this);
+                getLogger().info("领地保护已启用（纯 Bukkit 端）。");
+            }
+            // 地皮 flag 执行(A 类:pvp/怪物/爆炸/火/怪物破坏)。Bukkit 侧,Youer 上即生效;
+            // NeoForge 侧 flag 后端作为后续补(与保护同思路)。
+            getServer().getPluginManager().registerEvents(
+                    new ManorFlagListener(new ManorLookup(registry, manors)), this);
+            getLogger().info("地皮 Flag 执行已启用（Bukkit）。");
+        } else {
+            getLogger().info("领地保护已禁用。");
+        }
 
         // 接公会插件：入会自动分地皮、退会/被踢释放、解散清理。
         // 可插拔——按服务器实际装的公会插件挂对应监听器。未来支持新的公会插件，
@@ -119,10 +163,17 @@ public final class GuildShelterPlugin extends JavaPlugin {
 
         // Guild(com.guild,作者 ya_xzer21145)同样不发事件 → 复用同步引擎(GuildId=会名)。
         if (getServer().getPluginManager().getPlugin("Guild") != null) {
-            long periodTicks = Math.max(1L, getConfig().getLong("guild.sync-interval-seconds", 30)) * 20L;
-            boolean disbandSweep = getConfig().getBoolean("guild.disband-sweep", true);
-            new GuildPluginSyncTask(service, guilds, manors, registry, getLogger(), disbandSweep)
-                    .runTaskTimer(this, 20L * 5, periodTicks);
+            long periodTicks = Math.max(1L, getConfig().getLong("guild-plugin.sync-interval-seconds", 30)) * 20L;
+            boolean disbandSweep = getConfig().getBoolean("guild-plugin.disband-sweep", true);
+            GuildPluginSyncTask guildTask =
+                    new GuildPluginSyncTask(service, guilds, manors, registry, getLogger(), disbandSweep);
+            guildTask.runTaskTimer(this, 20L * 5, periodTicks);
+            // 即时触发：玩家敲 /guild 后主动踢一次同步，建会/入会近即时出世界(轮询仍是安全网)。
+            if (getConfig().getBoolean("guild-plugin.instant-trigger", true)) {
+                long delayTicks = Math.max(1L, getConfig().getLong("guild-plugin.instant-trigger-delay-ticks", 2));
+                getServer().getPluginManager()
+                        .registerEvents(new GuildCommandListener(guildTask, this, delayTicks), this);
+            }
             getLogger().info("已挂接 Guild(轮询同步,每 " + (periodTicks / 20L) + "s)。");
             hooked = true;
         }
@@ -136,8 +187,8 @@ public final class GuildShelterPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        if (database != null) {
-            database.close();
+        if (storage != null) {
+            storage.close();
         }
         getLogger().info("GuildShelter 已禁用。");
         instance = null;

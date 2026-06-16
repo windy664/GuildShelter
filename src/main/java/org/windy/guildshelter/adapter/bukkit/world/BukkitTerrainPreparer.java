@@ -3,7 +3,9 @@ package org.windy.guildshelter.adapter.bukkit.world;
 import org.bukkit.Bukkit;
 import org.bukkit.HeightMap;
 import org.bukkit.Material;
+import org.bukkit.Tag;
 import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.windy.guildshelter.domain.model.ChunkRegion;
@@ -74,6 +76,64 @@ public final class BukkitTerrainPreparer implements TerrainPreparer {
                 }
             }
         }.runTaskTimer(plugin, 1L, 1L);
+    }
+
+    @Override
+    public void surfaceRoad(String worldName, ChunkRegion region) {
+        World world = Bukkit.getWorld(worldName);
+        if (world == null) {
+            return;
+        }
+        plugin.getLogger().info("[GuildShelter] 铺土径 " + worldName + " 区域 ("
+                + region.minBlockX() + "," + region.minBlockZ() + ")~("
+                + region.maxBlockX() + "," + region.maxBlockZ() + ")");
+        Deque<int[]> queue = new ArrayDeque<>();
+        for (int x = region.minBlockX(); x <= region.maxBlockX(); x++) {
+            for (int z = region.minBlockZ(); z <= region.maxBlockZ(); z++) {
+                queue.add(new int[]{x, z});
+            }
+        }
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                int n = 0;
+                while (n < COLUMNS_PER_TICK && !queue.isEmpty()) {
+                    int[] c = queue.poll();
+                    pathColumn(world, c[0], c[1]);
+                    n++;
+                }
+                if (queue.isEmpty()) {
+                    cancel();
+                }
+            }
+        }.runTaskTimer(plugin, 1L, 1L);
+    }
+
+    /** 把一列道路顶层铺成土径：向下穿过并清掉植被/树/雪，定位真正的自然地面再铺；水/虚空跳过。 */
+    private void pathColumn(World world, int x, int z) {
+        world.loadChunk(x >> 4, z >> 4, true); // 道路条带常在地皮远端，确保区块已生成再操作
+        int min = world.getMinHeight();
+        int y = world.getHighestBlockYAt(x, z, HeightMap.WORLD_SURFACE);
+        while (y > min) {
+            Block b = world.getBlockAt(x, y, z);
+            if (isNaturalGround(b.getType())) {
+                break;
+            }
+            if (b.getType() != Material.AIR) {
+                b.setType(Material.AIR, false); // 清掉植被/树木/积雪
+            }
+            y--;
+        }
+        Block ground = world.getBlockAt(x, y, z);
+        if (ground.isLiquid() || ground.getType().isAir()) {
+            return; // 水面/虚空不铺路
+        }
+        ground.setType(Material.DIRT_PATH, false);
+    }
+
+    /** 自然地面 = 实心方块且非原木/树叶（避免把路铺到树干/树冠上）。 */
+    private static boolean isNaturalGround(Material m) {
+        return m.isSolid() && !Tag.LOGS.isTagged(m) && !Tag.LEAVES.isTagged(m);
     }
 
     /** 清掉实心地面以上的植被/积雪/树木（保留自然起伏的地面）。 */

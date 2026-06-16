@@ -10,4 +10,10 @@ import org.windy.guildshelter.domain.model.TerrainPrepMode;
 public interface TerrainPreparer {
 
     void prepare(String worldName, ChunkRegion worldRegion, TerrainPrepMode mode);
+
+    /**
+     * 把给定区域的<b>道路顶层</b>铺成土径：穿过并清掉植被/树木/积雪定位真正的自然地面，
+     * 再把地面顶层换成土径；水面/虚空跳过。实现侧负责异步/分批。
+     */
+    void surfaceRoad(String worldName, ChunkRegion worldRegion);
 }

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.windy.guildshelter.domain.layout.LayoutConfig;
 import org.windy.guildshelter.domain.model.GuildId;
 import org.windy.guildshelter.domain.model.GuildWorld;
 import org.windy.guildshelter.domain.model.Manor;
@@ -21,17 +22,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SqliteRepositoryTest {
 
-    private SqliteDatabase db;
-    private SqliteGuildRepository guilds;
-    private SqliteManorRepository manors;
+    private JdbcDatabase db;
+    private JdbcGuildRepository guilds;
+    private JdbcManorRepository manors;
 
     private final GuildId g = new GuildId("guild-A");
 
     @BeforeEach
     void setup(@TempDir Path dir) {
-        db = SqliteDatabase.forFile(dir.resolve("test.db"));
-        guilds = new SqliteGuildRepository(db);
-        manors = new SqliteManorRepository(db);
+        String url = "jdbc:sqlite:" + dir.resolve("test.db").toString().replace('\\', '/');
+        SqlDialect dialect = new SqliteDialect();
+        db = new JdbcDatabase(url, null, null, null, "PRAGMA busy_timeout=5000", dialect);
+        guilds = new JdbcGuildRepository(db, dialect, LayoutConfig.defaults());
+        manors = new JdbcManorRepository(db, dialect);
     }
 
     @AfterEach
@@ -42,7 +45,7 @@ class SqliteRepositoryTest {
     @Test
     void guildWorldSaveFindUpdateDelete() {
         assertFalse(guilds.exists(g));
-        guilds.save(GuildWorld.create(g, "guild_A", 123456789L).withOrigin(5, -7));
+        guilds.save(GuildWorld.create(g, "guild_A", 123456789L, LayoutConfig.defaults()).withOrigin(5, -7));
         assertTrue(guilds.exists(g));
 
         GuildWorld loaded = guilds.find(g).orElseThrow();

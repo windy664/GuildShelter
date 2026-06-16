@@ -35,10 +35,13 @@ neoForge {
     // Specify the version of NeoForge to use.
     version = project.neo_version
 
-    parchment {
-        mappingsVersion = project.parchment_mappings_version
-        minecraftVersion = project.parchment_minecraft_version
-    }
+    // Parchment 仅给反编译的 MC 补参数名/javadoc，对编译产物无影响。它绑的是 nightly-SNAPSHOT，
+    // 元数据 24h 过期就要重连 maven.neoforged.net，国内常 Connection reset 卡死构建，故停用。
+    // 网络稳定想恢复开发期手感时，取消下面注释 + gradle.properties 里的 parchment_* 两行即可。
+    // parchment {
+    //     mappingsVersion = project.parchment_mappings_version
+    //     minecraftVersion = project.parchment_minecraft_version
+    // }
 
     // This line is optional. Access Transformers are automatically detected
     // accessTransformers.add('src/main/resources/META-INF/accesstransformer.cfg')
@@ -132,7 +135,10 @@ dependencies {
     // Bukkit/Spigot API(org.bukkit)等本地依赖全部走 libs 文件夹:
     //   - minecraft-server-patched-26.2.0.0.jar : Youer 运行时生成的打补丁服务端,提供 org.bukkit。
     //       (从 服务端/libraries/net/neoforged/minecraft-server-patched/26.2.0.0/ 复制而来)
-    //       注意:不要放 neoforge-*-universal.jar,它含 net.neoforged 会与 moddev 提供的冲突。
+    //   - neoforge-26.2.0.0-universal.jar : 有意保留——补 moddev(neo 26.1.2.76)所缺的 26.2 NeoForge API
+    //       (如 event.level.block.BreakBlockEvent)。此 universal 仅含 net.neoforged(0 个 net.minecraft),
+    //       不会与 Youer/moddev 的 minecraft 冲突;compileOnly 不打进 jar;BreakBlockEvent 只此一处故能正确解析。
+    //       待 moddev 的 neo_version 能对齐 26.2 后可移除。
     //   - PlayerGuild / worldedit : 公会 & WorldEdit API
     compileOnly fileTree("./libs")
     compileOnly 'me.clip:placeholderapi:2.11.5'

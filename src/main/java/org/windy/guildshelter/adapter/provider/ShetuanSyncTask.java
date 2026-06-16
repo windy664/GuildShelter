@@ -12,6 +12,7 @@ import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
 import org.windy.guildshelter.domain.port.GuildRepository;
 import org.windy.guildshelter.domain.port.ManorRepository;
+import org.windy.guildshelter.service.GuildFullException;
 import org.windy.guildshelter.service.GuildService;
 
 import java.util.HashSet;
@@ -78,14 +79,21 @@ public final class ShetuanSyncTask extends BukkitRunnable {
         }
 
         Set<UUID> memberUuids = new HashSet<>();
+        boolean full = false;
         for (ClubMember member : access.membersOf(club.id())) {
             UUID uuid = member.uuid();
             memberUuids.add(uuid);
             PlayerRef ref = PlayerRef.of(uuid);
-            if (manors.findByOwner(guild, ref).isEmpty()) {
-                Manor manor = service.assignManor(guild, ref);
-                notifyIfOnline(uuid, manor);
-                logger.info("[GuildShelter] " + display(club) + " 新成员 " + uuid + " → 地皮 #" + manor.slot());
+            if (!full && manors.findByOwner(guild, ref).isEmpty()) {
+                try {
+                    Manor manor = service.assignManor(guild, ref);
+                    notifyIfOnline(uuid, manor);
+                    logger.info("[GuildShelter] " + display(club) + " 新成员 " + uuid + " → 地皮 #" + manor.slot());
+                } catch (GuildFullException e) {
+                    logger.info("[GuildShelter] " + display(club) + " 名额已满(" + e.capacity()
+                            + ")，余下成员需公会升级后再分配。");
+                    full = true; // 满了就别再试，但仍要把名单收全以便下面正确释放退会者
+                }
             }
         }
 

@@ -53,6 +53,26 @@ public final class LayoutCalculator {
         return c.isPlot() ? OptionalInt.of(c.slot()) : OptionalInt.empty();
     }
 
+    /**
+     * 成员 slot 所属网格格的<b>道路条带</b>（该格的右侧竖条 + 底部横条，呈 L 形）。
+     * 相邻格的条带彼此拼接成连续路网；用于给道路铺土径。roadChunks=0 时返回空。
+     */
+    public java.util.List<ChunkRegion> roadStripsFor(int slot) {
+        if (config.roadChunks() <= 0) {
+            return java.util.List.of();
+        }
+        ChunkRegion plotR = plotRegion(slot);
+        int cellMinX = plotR.minChunkX();
+        int cellMinZ = plotR.minChunkZ();
+        int plotMaxX = plotR.maxChunkX();
+        int plotMaxZ = plotR.maxChunkZ();
+        int cellMaxX = cellMinX + pitch - 1;
+        int cellMaxZ = cellMinZ + pitch - 1;
+        ChunkRegion right = new ChunkRegion(plotMaxX + 1, cellMinZ, cellMaxX, cellMaxZ);
+        ChunkRegion bottom = new ChunkRegion(cellMinX, plotMaxZ + 1, plotMaxX, cellMaxZ);
+        return java.util.List.of(right, bottom);
+    }
+
     /** 成员 slot → 其满级地皮的整 chunk 范围（P×P）。 */
     public ChunkRegion plotRegion(int slot) {
         if (slot < 0) {
@@ -64,19 +84,37 @@ public final class LayoutCalculator {
         return new ChunkRegion(ox, oz, ox + plot - 1, oz + plot - 1);
     }
 
-    /** 成员 slot + 庄园等级 → 当前实占范围（在满级地皮内居中的子方形，⊆ plotRegion）。 */
+    /**
+     * 成员 slot + 庄园等级 → 当前实占范围（"半螺旋式"：锚定在满级地皮的<b>最小角</b>，
+     * 从角落向 +x/+z 方向逐级向外扩，满级铺满整块；⊆ plotRegion）。
+     *
+     * <p>角落锚定让玩家地皮的原点固定、只朝一个方向长，规整可预测；避免居中算法的奇偶歪斜。
+     */
     public ChunkRegion activeRegion(int slot, int manorLevel) {
         ChunkRegion full = plotRegion(slot);
         int active = config.plotChunksByLevel(manorLevel);
-        int margin = (plot - active) / 2;
-        int ox = full.minChunkX() + margin;
-        int oz = full.minChunkZ() + margin;
+        int ox = full.minChunkX();
+        int oz = full.minChunkZ();
         return new ChunkRegion(ox, oz, ox + active - 1, oz + active - 1);
     }
 
-    /** 主城整 chunk 范围（中心 (2*half+1) 个格全占，含路沟，连续）。 */
+    /**
+     * 主城<b>预留(最大)</b>整 chunk 范围（中心 (2*max+1) 个格全占，含路沟，连续）。
+     * 这是按最大尺寸永久预留的中心区，成员地皮一律排在它之外；世界边界、出生点等都以它为基准。
+     */
     public ChunkRegion mainCityRegion() {
-        int half = config.mainCityHalfCells();
+        return cityRegion(config.mainCityHalfCellsMax());
+    }
+
+    /**
+     * 给定公会等级下<b>当前实际</b>主城范围（从 initial 长到 max，⊆ {@link #mainCityRegion()}）。
+     * 用于按等级铺城/整地/围墙；当前与最大之间那圈是"留给未来扩城"的预留空地。
+     */
+    public ChunkRegion currentCityRegion(int guildLevel, int maxGuildLevel) {
+        return cityRegion(config.cityHalfAtLevel(guildLevel, maxGuildLevel));
+    }
+
+    private ChunkRegion cityRegion(int half) {
         int min = -half * pitch;
         int max = (half + 1) * pitch - 1;
         return new ChunkRegion(min, min, max, max);
@@ -94,15 +132,14 @@ public final class LayoutCalculator {
     // ---- 世界边界（WorldBorder）派生 ----
 
     /**
-     * 已分配 {@code allocatedSlots} 个成员地皮、公会等级 {@code guildLevel} 时，
-     * 世界边界需覆盖到的外环（格）。取"成员分配所需"与"公会等级下限"的较大者。
+     * 要把 {@code reservedSlots} 个成员地皮全部圈进去时，世界边界需覆盖到的外环（格）。
+     * {@code reservedSlots} 由上层给出 = max(已分配, 当前公会等级的名额容量)，
+     * 这样边界按"当前等级能容纳多少人"画出预留空地，公会升级放开更多名额时边界随之外扩。
      */
-    public int borderRingCells(int allocatedSlots, int guildLevel) {
-        int memberRing = allocatedSlots > 0
-                ? SpiralIndex.ringOf(base + allocatedSlots - 1)
-                : config.mainCityHalfCells();
-        int levelRing = config.mainCityHalfCells() + Math.max(guildLevel - 1, 0);
-        return Math.max(memberRing, levelRing);
+    public int borderRingCells(int reservedSlots) {
+        return reservedSlots > 0
+                ? SpiralIndex.ringOf(base + reservedSlots - 1)
+                : config.mainCityHalfCellsMax(); // 无成员时也至少圈住预留(最大)主城
     }
 
     /** 世界边界中心方块 X（= 主城中心）。 */
@@ -115,8 +152,8 @@ public final class LayoutCalculator {
     }
 
     /** 世界边界全宽（方块），以中心向四周覆盖到外环地皮外沿 + margin（取偏宽的安全上界）。 */
-    public double borderSizeBlocks(int allocatedSlots, int guildLevel) {
-        int ring = borderRingCells(allocatedSlots, guildLevel);
+    public double borderSizeBlocks(int reservedSlots) {
+        int ring = borderRingCells(reservedSlots);
         int outerChunks = ring * pitch + plot + config.marginChunks();
         return (double) outerChunks * 2 * 16;
     }

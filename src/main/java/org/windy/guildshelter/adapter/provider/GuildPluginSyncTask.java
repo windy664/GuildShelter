@@ -5,6 +5,7 @@ import com.guild.guild.Guild;
 import com.guild.guild.GuildManager;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.windy.guildshelter.adapter.bukkit.GuildWorldRegistry;
 import org.windy.guildshelter.domain.model.GuildId;
@@ -13,6 +14,7 @@ import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
 import org.windy.guildshelter.domain.port.GuildRepository;
 import org.windy.guildshelter.domain.port.ManorRepository;
+import org.windy.guildshelter.service.GuildFullException;
 import org.windy.guildshelter.service.GuildService;
 
 import java.util.HashSet;
@@ -42,6 +44,9 @@ public final class GuildPluginSyncTask extends BukkitRunnable {
     private final Logger logger;
     private final boolean disbandSweep;
 
+    /** 命令触发的即时同步是否已有一个在途，去抖用：仅主线程读写。 */
+    private boolean immediatePending = false;
+
     public GuildPluginSyncTask(GuildService service, GuildRepository guilds, ManorRepository manors,
                                GuildWorldRegistry registry, Logger logger, boolean disbandSweep) {
         this.service = service;
@@ -50,6 +55,24 @@ public final class GuildPluginSyncTask extends BukkitRunnable {
         this.registry = registry;
         this.logger = logger;
         this.disbandSweep = disbandSweep;
+    }
+
+    /**
+     * 由 {@link GuildCommandListener} 在玩家敲 /guild 后调用：延迟 {@code delayTicks} 跑一次同步，
+     * 把"建会/入会即时出世界"补出来，不必干等下一轮定时轮询。
+     *
+     * <p>去抖：同一时刻最多一个在途，连发 /guild 只会合并成一次 diff（diff 本身幂等）。
+     * 延迟是为了等 Guild 在本 tick 内把命令处理完（成员名单已更新）再读。必须在主线程调用。
+     */
+    public void requestImmediateSync(Plugin plugin, long delayTicks) {
+        if (immediatePending) {
+            return;
+        }
+        immediatePending = true;
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            immediatePending = false;
+            run();
+        }, Math.max(1L, delayTicks));
     }
 
     @Override
@@ -85,9 +108,15 @@ public final class GuildPluginSyncTask extends BukkitRunnable {
         for (UUID uuid : memberUuids) {
             PlayerRef ref = PlayerRef.of(uuid);
             if (manors.findByOwner(id, ref).isEmpty()) {
-                Manor manor = service.assignManor(id, ref);
-                notifyIfOnline(uuid, manor);
-                logger.info("[GuildShelter] " + guild.getName() + " 新成员 " + uuid + " → 地皮 #" + manor.slot());
+                try {
+                    Manor manor = service.assignManor(id, ref);
+                    notifyIfOnline(uuid, manor);
+                    logger.info("[GuildShelter] " + guild.getName() + " 新成员 " + uuid + " → 地皮 #" + manor.slot());
+                } catch (GuildFullException e) {
+                    logger.info("[GuildShelter] " + guild.getName() + " 名额已满(" + e.capacity()
+                            + ")，余下成员需公会升级后再分配。");
+                    break; // 满了，余下成员同样分不进；跳出仍继续下面的退会释放
+                }
             }
         }
 

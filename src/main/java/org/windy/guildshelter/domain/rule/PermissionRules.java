@@ -21,20 +21,15 @@ import java.util.function.IntFunction;
  */
 public final class PermissionRules {
 
-    private final LayoutCalculator layout;
-
-    public PermissionRules(LayoutCalculator layout) {
-        this.layout = layout;
-    }
-
     /**
      * 玩家能否在该公会世界的 chunk (chunkX,chunkZ) 改动方块。
      *
+     * @param layout       <b>该世界</b>的布局计算器（用世界自己冻结的参数，不能用全局）
      * @param player       行为玩家
      * @param playerInGuild 该玩家是否属于本世界对应的公会（由 GuildProvider 判定后传入）
      * @param manorBySlot  slot → 该 slot 的庄园（不存在返回 null）
      */
-    public boolean canModify(PlayerRef player, boolean playerInGuild,
+    public boolean canModify(LayoutCalculator layout, PlayerRef player, boolean playerInGuild,
                              IntFunction<Manor> manorBySlot, int chunkX, int chunkZ) {
         if (!playerInGuild) {
             return false;

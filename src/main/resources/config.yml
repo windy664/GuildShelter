@@ -1,40 +1,65 @@
-# GuildShelter 配置（尺寸单位 = chunk，16 方块/chunk）
+# GuildShelter 配置
+# 单位说明：chunk = 16 方块；cell(格) = 一块地皮 + 一条路（网格的基本单元）
 
-layout:
-  # 单个成员地皮边长（满级 slot 大小）
-  plot-chunks: 4
-  # 地皮之间的间距/路宽
-  road-chunks: 1
-  # 主城占中心网格格的"半径"：主城 = (2*half+1)² 个格
-  main-city-half-cells: 1
-  # 庄园初始实占边长（1 级），需 ≤ plot-chunks
-  plot-default-chunks: 2
-  # 庄园每升一级实占边长增加多少 chunk
-  plot-chunks-per-level: 1
-  # 地面高度
-  base-y: 64
-  # 世界边界在已分配范围外额外留的余量
-  margin-chunks: 2
+# ========================= 常用设置（你通常只需要改这里）=========================
 
-# 分配/升级地皮时的整地方式: NONE(不整) | CLEAR_VEGETATION(清植被,保留自然起伏) | FLATTEN(铺平)
+# 成员地皮：每个成员一块，随庄园升级从初始长到满级。
+# 半螺旋式——锚定地皮一角，从角落向外逐级扩，满级铺满整块。
+member-plot:
+  initial-chunks: 6     # 初始边长（1 级）= 96×96 方块
+  max-chunks: 15        # 满级边长 = 240×240 方块
+  grow-per-level: 1     # 每升一级 +1 chunk（+16 方块）→ 升满需 (15-6)/1+1 = 10 级
+                        # (庄园满级数由这三项自动推出，无需另设)
+
+# 公会主城：全公会共享的中央出生广场，随公会升级从初始长到最大。
+# 重要：中心永久按 max 预留，成员地皮一律排在最大主城之外 → 扩城不会压到成员地皮。
+main-city:
+  initial-cells: 1      # 初始"半径"（格）→ 3×3 格 = 768×768 方块
+  max-cells: 2          # 最大"半径"（格）→ 5×5 格 = 1280×1280 方块（公会满级时达到）
+                        # (pitch = 地皮15+路1 = 16 chunk = 256 方块/格)
+
+# 道路宽度（路面顶层会自动铺成土径，并清掉路上的植被/树；terrain-prep=NONE 时不铺）
+road-chunks: 1          # = 16 方块
+
+# 公会等级与容量
+guild:
+  max-level: 5          # 公会最高等级
+  members-per-level: 5  # 每升一级放开的成员名额（容量 = 等级 × 本值，满级 5×5 = 25 人）
+                        # 名额满了新成员加不进，需先升级公会；边界按当前容量画出预留空地
+
+# 分配/升级地皮时的整地方式: NONE(不整) | CLEAR_VEGETATION(清植被,保留起伏) | FLATTEN(铺平)
 terrain-prep: CLEAR_VEGETATION
 
-# Shetuan(社团)接入:该插件不发事件,本插件改用定时 diff 同步成员名单与地皮。
+# 存储后端：sqlite(默认,单文件免配置) | mysql(多服共享) | flatfile(不用数据库,纯文本文件)
+storage:
+  type: sqlite
+  # 仅 type=mysql 时用：
+  mysql:
+    host: localhost
+    port: 3306
+    database: guildshelter
+    user: root
+    password: ""
+
+# 领地保护：开启后非授权者不能在公会世界破坏/放置/交互/倒水。
+# 规则：非本公会成员全禁；成员可建主城；路任何人不可动；地皮仅庄主且在实占范围内可动。
+# OP 与持 guildshelter.admin 权限者一律放行。
+protection: true
+
+# ===================== 公会插件适配（按你服务器实际装的插件）=====================
+
+# Shetuan(社团)：不发事件 → 定时 diff 同步成员名单与地皮。仅装了 Shetuan 时生效。
 shetuan:
-  # 同步间隔(秒)。越短越实时,越长越省。仅装了 Shetuan 时生效。
-  sync-interval-seconds: 30
+  sync-interval-seconds: 30   # 同步间隔（秒），越短越实时越短越省
 
-# Guild(com.guild,作者 ya_xzer21145)接入:同样不发事件,用定时 diff 同步。仅装了 Guild 时生效。
-guild:
-  # 同步间隔(秒)。
-  sync-interval-seconds: 30
-  # 是否自动清扫已解散公会的世界。GuildId 是会名无法按形状区分来源,
-  # 若同服还装了其它"以会名为 key"的公会插件(PlayerGuild/LegendaryGuild)可能误删其世界,
-  # 那种情况(不推荐的多公会插件混装)请关掉本项。正常单公会插件保持 true 即可。
-  disband-sweep: true
+# Guild(com.guild)：不发事件 → 定时同步 + 玩家敲 /guild 后命令即时触发。仅装了 Guild 时生效。
+guild-plugin:
+  sync-interval-seconds: 30       # 轮询间隔（秒），即时触发的安全网
+  instant-trigger: true           # 玩家敲 /guild 后主动同步一次，建会/入会近即时出世界
+  instant-trigger-delay-ticks: 2  # 即时触发延迟多少 tick 再读名单（20 tick = 1 秒）
+  disband-sweep: true             # 自动清扫已解散公会的世界（单公会插件保持 true）
 
-# 等级规则
-levels:
-  max-guild-level: 10
-  manor-levels-per-guild-level: 1
-  manor-max-level-cap: 10
+# ============================ 高级（一般不用动）============================
+advanced:
+  base-y: 64            # 地面高度
+  margin-chunks: 2      # 世界边界在已分配范围外额外留的余量 = 32 方块
