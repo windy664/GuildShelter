@@ -6,8 +6,10 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.windy.guildshelter.adapter.bukkit.ClaimGuard;
 import org.windy.guildshelter.adapter.bukkit.GuildShelterConfig;
 import org.windy.guildshelter.adapter.bukkit.GuildWorldRegistry;
+import org.windy.guildshelter.adapter.bukkit.ManorBuffTask;
 import org.windy.guildshelter.adapter.bukkit.ManorLookup;
 import org.windy.guildshelter.adapter.bukkit.command.GsCommand;
+import org.windy.guildshelter.adapter.bukkit.listener.ManorAccessListener;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorFlagListener;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorProtectionListener;
 import org.windy.guildshelter.adapter.bukkit.listener.RegionTitleListener;
@@ -44,6 +46,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
     private Storage storage;
     private WorldManager worldManager;
     private ClaimGuard claimGuard;
+    private ManorLookup manorLookup;
 
     public static GuildShelterPlugin get() {
         return instance;
@@ -52,6 +55,11 @@ public final class GuildShelterPlugin extends JavaPlugin {
     /** 供 NeoForge 端(混合端)的保护监听器在事件时取用共享判定;onEnable 前为 null。 */
     public static ClaimGuard protectionGuard() {
         return instance == null ? null : instance.claimGuard;
+    }
+
+    /** 供 NeoForge 端的 flag 后端取用地皮解析;onEnable 前/未启用为 null。 */
+    public static ManorLookup manorLookup() {
+        return instance == null ? null : instance.manorLookup;
     }
 
     /** 探测是否混合端(NeoForge 在)。用字符串反射，纯 Bukkit 端不会因此加载到 NeoForge 类。 */
@@ -118,11 +126,20 @@ public final class GuildShelterPlugin extends JavaPlugin {
                 getServer().getPluginManager().registerEvents(new ManorProtectionListener(claimGuard), this);
                 getLogger().info("领地保护已启用（纯 Bukkit 端）。");
             }
-            // 地皮 flag 执行(A 类:pvp/怪物/爆炸/火/怪物破坏)。Bukkit 侧,Youer 上即生效;
-            // NeoForge 侧 flag 后端作为后续补(与保护同思路)。
-            getServer().getPluginManager().registerEvents(
-                    new ManorFlagListener(new ManorLookup(registry, manors)), this);
-            getLogger().info("地皮 Flag 执行已启用（Bukkit）。");
+            // 地皮 flag 执行(A 氛围:pvp/怪物/爆炸/火/怪物破坏;B 访问:deny-entry/greeting/farewell)。
+            // Bukkit 侧,Youer 上即生效;NeoForge 侧 flag 后端作为后续补(与保护同思路)。
+            ManorLookup lookup = new ManorLookup(registry, manors);
+            this.manorLookup = lookup; // 供 NeoForge flag 后端(混合端)惰性取用
+            // 氛围类(A:pvp/怪物/爆炸/怪物破坏)按载体分流:NeoForge 在则交其 EVENT_BUS(覆盖模组),否则 Bukkit。
+            if (isNeoForgePresent()) {
+                getLogger().info("地皮 Flag 氛围类由 NeoForge 端处理（见 @Mod）。");
+            } else {
+                getServer().getPluginManager().registerEvents(new ManorFlagListener(lookup), this);
+            }
+            // 访问类(B)与个人增益(C)是玩家行为,Youer 上 Bukkit 全覆盖,始终走 Bukkit。
+            getServer().getPluginManager().registerEvents(new ManorAccessListener(lookup), this);
+            new ManorBuffTask(lookup).runTaskTimer(this, 20L, 20L);
+            getLogger().info("地皮 Flag 执行已启用（访问/增益走 Bukkit，氛围按载体分流）。");
         } else {
             getLogger().info("领地保护已禁用。");
         }

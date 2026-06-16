@@ -6,6 +6,7 @@ import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import org.slf4j.Logger;
+import org.windy.guildshelter.neoforge.NeoForgeFlags;
 import org.windy.guildshelter.neoforge.NeoForgeProtection;
 
 /**
@@ -26,6 +27,8 @@ public class Guildshelter {
         LOGGER.info("[GuildShelter] NeoForge 端已加载");
         // 混合端领地保护：注册到游戏事件总线（覆盖模组方块/交互）。判定复用 Bukkit 侧的 ClaimGuard。
         NeoForge.EVENT_BUS.register(new NeoForgeProtection());
-        LOGGER.info("[GuildShelter] 领地保护已注册到 NeoForge EVENT_BUS");
+        // 混合端地皮 flag 氛围类（pvp/怪物/爆炸/怪物破坏，覆盖模组实体）。判定复用 ManorLookup。
+        NeoForge.EVENT_BUS.register(new NeoForgeFlags());
+        LOGGER.info("[GuildShelter] 领地保护 + Flag 已注册到 NeoForge EVENT_BUS");
     }
 }

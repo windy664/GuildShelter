@@ -16,7 +16,10 @@ public enum Flag {
     MOB_GRIEFING("mob-griefing", FlagType.BOOLEAN, "false", "怪物是否能破坏方块(苦力怕/末影人等)"),
     DENY_ENTRY("deny-entry", FlagType.BOOLEAN, "false", "是否禁止非成员进入本地皮"),
     GREETING("greeting", FlagType.STRING, "", "进入本地皮时显示的消息(空=无,&颜色码)"),
-    FAREWELL("farewell", FlagType.STRING, "", "离开本地皮时显示的消息(空=无,&颜色码)");
+    FAREWELL("farewell", FlagType.STRING, "", "离开本地皮时显示的消息(空=无,&颜色码)"),
+    FLY("fly", FlagType.BOOLEAN, "false", "在本地皮内是否允许飞行"),
+    FEED("feed", FlagType.BOOLEAN, "false", "在本地皮内是否保持饱食"),
+    HEAL("heal", FlagType.BOOLEAN, "false", "在本地皮内是否缓慢恢复生命");
 
     private final String id;
     private final FlagType type;
@@ -52,6 +55,12 @@ public enum Flag {
         return v == null ? Boolean.parseBoolean(defaultValue) : Boolean.parseBoolean(v);
     }
 
+    /** 解析字符串值；未设返回默认。 */
+    public String resolveString(Map<String, String> flags) {
+        String v = flags.get(id);
+        return v == null ? defaultValue : v;
+    }
+
     /** 校验并归一化一个待写入的值(布尔型只认 true/false)。非法返回 empty。 */
     public Optional<String> normalize(String raw) {
         if (type == FlagType.BOOLEAN) {
@@ -67,7 +76,7 @@ public enum Flag {
                 return Optional.empty();
             }
         }
-        return Optional.of(raw); // STRING
+        return Optional.of(raw.replace(';', ',')); // STRING：分号是 flag 存储分隔符，替成逗号避免串行
     }
 
     public static Optional<Flag> byId(String id) {

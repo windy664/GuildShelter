@@ -12,6 +12,7 @@ import org.windy.guildshelter.adapter.bukkit.GridAsciiMap;
 import org.windy.guildshelter.adapter.bukkit.GuildWorldRegistry;
 import org.windy.guildshelter.adapter.bukkit.world.WorldManager;
 import org.windy.guildshelter.domain.flag.Flag;
+import org.windy.guildshelter.domain.flag.FlagType;
 import org.windy.guildshelter.domain.layout.LayoutCalculator;
 import org.windy.guildshelter.domain.model.ChunkRegion;
 import org.windy.guildshelter.domain.model.GuildId;
@@ -342,7 +343,11 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                     sender.sendMessage("§c未知 flag: " + args[2] + "（/gs flag 查看可用）");
                     return;
                 }
-                String value = f.normalize(args[3]).orElse(null);
+                // 字符串型(greeting/farewell)取后面所有词；布尔/整数取单个。
+                String raw = f.type() == FlagType.STRING
+                        ? String.join(" ", java.util.Arrays.copyOfRange(args, 3, args.length))
+                        : args[3];
+                String value = f.normalize(raw).orElse(null);
                 if (value == null) {
                     sender.sendMessage("§c值非法（布尔型需 true / false）。");
                     return;
