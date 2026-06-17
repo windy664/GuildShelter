@@ -8,6 +8,7 @@ softdepend:
   - LegendaryGuildRemapped
   - Shetuan
   - Guild
+  - Vault
 # 运行期由服务端的库加载器拉取(不打进 jar)。Youer(Spigot 系) 1.26 应支持; 若不支持需改为 shade。
 libraries:
   - com.zaxxer:HikariCP:5.0.0
@@ -16,13 +17,52 @@ libraries:
 commands:
   gs:
     description: GuildShelter 插件命令
-    usage: /gs <home|spawn|upgrade|info|trust|untrust|list|visit|clear> | /gs admin ...
+    usage: /gs <home|spawn|upgrade|info|trust|untrust|list|visit|clear|flag|card> | /gs admin ...
 permissions:
   guildshelter.admin:
-    description: 全权管理 GuildShelter（bypass 一切保护/flag/黑名单，可管理任意庄园）
+    description: 全权管理 GuildShelter（自动拥有所有 admin 子节点）
+    default: op
+  guildshelter.admin.build.other:
+    description: 在别人地皮建造
+    default: op
+  guildshelter.admin.build.road:
+    description: 在道路建造
+    default: op
+  guildshelter.admin.destroy.other:
+    description: 在别人地皮破坏
+    default: op
+  guildshelter.admin.destroy.road:
+    description: 在道路破坏
+    default: op
+  guildshelter.admin.interact.other:
+    description: 在别人地皮交互
+    default: op
+  guildshelter.admin.interact.road:
+    description: 在道路交互
+    default: op
+  guildshelter.admin.flag.other:
+    description: 管理别人地皮的 flag
+    default: op
+  guildshelter.admin.trust.other:
+    description: 管理别人地皮的 trust/member/deny
+    default: op
+  guildshelter.admin.bypass.border:
+    description: 无视世界边界
+    default: op
+  guildshelter.admin.bypass.entry:
+    description: 无视 deny-entry（可进入被谢客的地皮）
     default: op
   guildshelter.bypass.deny:
-    description: 无视黑名单与 deny-entry（可进入/交互被拉黑或谢客的地皮，但不等于可建造）
+    description: 旧版兼容节点（等效 admin.bypass.entry）
+    default: op
+  guildshelter.flag.set:
+    description: flag 设置总开关（庄主天然有，此节点控制非庄主能否设 flag）
+    default: true
+  guildshelter.trust.everyone:
+    description: 允许用 * 批量 trust
+    default: op
+  guildshelter.deny.everyone:
+    description: 允许用 * 批量 deny
     default: op
   # 各 /gs 玩家子命令的开关，默认全放行；服主想按等级收紧时改 default 或在权限组里改。
   guildshelter.command.home: { default: true }
@@ -38,3 +78,4 @@ permissions:
   guildshelter.command.visit: { default: true }
   guildshelter.command.clear: { default: true }
   guildshelter.command.flag: { default: true }
+  guildshelter.command.card: { default: true }

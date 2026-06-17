@@ -23,6 +23,7 @@ repositories {
     maven { url = 'https://oss.sonatype.org/content/repositories/snapshots/' }
     maven { url = 'https://maven.neoforged.net/releases' }
     maven { url = 'https://files.minecraftforge.net/maven/' }
+    maven { url 'https://jitpack.io' }  // VaultAPI
 }
 
 base {
@@ -142,6 +143,7 @@ dependencies {
     //   - PlayerGuild / worldedit : 公会 & WorldEdit API
     compileOnly fileTree("./libs")
     compileOnly 'me.clip:placeholderapi:2.11.5'
+    compileOnly 'com.github.MilkBowl:VaultAPI:1.7.1'  // 经济接口(price flag)
 
     // 持久层依赖: 编译期 compileOnly, 运行期由 Bukkit 的 libraries 加载器(plugin.yml)提供,不打进 jar
     compileOnly 'com.zaxxer:HikariCP:5.0.0'

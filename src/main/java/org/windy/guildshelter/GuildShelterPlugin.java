@@ -10,9 +10,11 @@ import org.windy.guildshelter.adapter.bukkit.InteractionPolicy;
 import org.windy.guildshelter.adapter.bukkit.ManorBuffTask;
 import org.windy.guildshelter.adapter.bukkit.ManorEntityCensus;
 import org.windy.guildshelter.adapter.bukkit.ManorLookup;
+import org.windy.guildshelter.adapter.bukkit.VaultEconomy;
 import org.windy.guildshelter.adapter.bukkit.command.GsCommand;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorAccessListener;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorCapListener;
+import org.windy.guildshelter.adapter.bukkit.listener.ManorCommandListener;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorEntityListener;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorEnvListener;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorFireListener;
@@ -29,6 +31,7 @@ import org.windy.guildshelter.adapter.provider.PlayerGuildListener;
 import org.windy.guildshelter.adapter.provider.ShetuanAccess;
 import org.windy.guildshelter.adapter.provider.ShetuanSyncTask;
 import org.windy.guildshelter.domain.model.GuildWorld;
+import org.windy.guildshelter.domain.port.EconomyPort;
 import org.windy.guildshelter.domain.port.GuildRepository;
 import org.windy.guildshelter.domain.port.ManorRepository;
 import org.windy.guildshelter.domain.port.TerrainPreparer;
@@ -128,9 +131,10 @@ public final class GuildShelterPlugin extends JavaPlugin {
                 config.layout(), config.levels(), config.terrainPrep());
 
         GuildWorldRegistry registry = new GuildWorldRegistry();
+        this.entityCensus = new ManorEntityCensus(registry); // 提前创建，card 命令和 caps 都要用
 
         GsCommand command = new GsCommand(worldManager, guilds, manors, service, registry,
-                config.levels(), getLogger());
+                config.levels(), entityCensus, getLogger());
         PluginCommand gs = getCommand("gs");
         if (gs != null) {
             gs.setExecutor(command);
@@ -154,7 +158,6 @@ public final class GuildShelterPlugin extends JavaPlugin {
             ManorLookup lookup = new ManorLookup(registry, manors);
             this.manorLookup = lookup; // 供 NeoForge flag 后端(混合端)惰性取用
             this.interactionPolicy = new InteractionPolicy(claimGuard, lookup); // 访客交互按类放宽,两载体共用
-            this.entityCensus = new ManorEntityCensus(registry); // 实体计数:caps 拦截 + 未来家园卡等复用
             if (isNeoForgePresent()) {
                 // 混合端：从 Bukkit 侧直接挂 NeoForge EVENT_BUS（@Mod 入口不会被 FML 加载）。
                 // 注册保护(含交互放宽+实体保护) + flag 氛围类两个 NeoForge 处理器;Bukkit 对应监听器随之跳过避免双重。
@@ -183,7 +186,10 @@ public final class GuildShelterPlugin extends JavaPlugin {
             // 混合端模组生物另由 NeoForge 侧 FinalizeSpawn 补足(对原版幂等,未设 cap 时零开销)。
             getServer().getPluginManager().registerEvents(new ManorCapListener(lookup, entityCensus), this);
             // 访问类(B)与个人增益(C)是玩家行为,Youer 上 Bukkit 全覆盖,始终走 Bukkit。
-            getServer().getPluginManager().registerEvents(new ManorAccessListener(lookup), this);
+            EconomyPort economy = VaultEconomy.tryCreate(getLogger());
+            getServer().getPluginManager().registerEvents(new ManorAccessListener(lookup, economy), this);
+            // 命令拦截(blocked-cmds flag):始终走 Bukkit(PlayerCommandPreprocessEvent 是 Bukkit API)。
+            getServer().getPluginManager().registerEvents(new ManorCommandListener(lookup), this);
             new ManorBuffTask(lookup).runTaskTimer(this, 20L, 20L);
             getLogger().info("地皮 Flag 执行已启用（访问/增益走 Bukkit，氛围按载体分流）。");
         } else {

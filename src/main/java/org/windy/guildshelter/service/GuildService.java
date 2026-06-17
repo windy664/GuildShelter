@@ -1,5 +1,6 @@
 package org.windy.guildshelter.service;
 
+import org.windy.guildshelter.domain.flag.Flag;
 import org.windy.guildshelter.domain.layout.LayoutCalculator;
 import org.windy.guildshelter.domain.layout.LayoutConfig;
 import org.windy.guildshelter.domain.model.ChunkRegion;
@@ -93,16 +94,22 @@ public final class GuildService {
         return manor;
     }
 
-    /** 成员退出：释放其庄园 slot（留空缺，下次分配复用，保持螺旋紧凑）。 */
+    /** 成员退出：释放其庄园 slot（留空缺，下次分配复用，保持螺旋紧凑）。keep flag 为 true 时跳过。 */
     public void releaseManor(GuildId guild, PlayerRef player) {
-        manors.findByOwner(guild, player)
-                .ifPresent(m -> manors.delete(guild, m.slot()));
+        manors.findByOwner(guild, player).ifPresent(m -> {
+            if (!Flag.KEEP.resolveBool(m.flags())) {
+                manors.delete(guild, m.slot());
+            }
+        });
     }
 
-    /** 成员退出（不需事先知道公会）：找到其庄园并释放。 */
+    /** 成员退出（不需事先知道公会）：找到其庄园并释放。keep flag 为 true 时跳过。 */
     public void releaseManorAnywhere(PlayerRef player) {
-        manors.findByOwnerAnywhere(player)
-                .ifPresent(m -> manors.delete(m.guild(), m.slot()));
+        manors.findByOwnerAnywhere(player).ifPresent(m -> {
+            if (!Flag.KEEP.resolveBool(m.flags())) {
+                manors.delete(m.guild(), m.slot());
+            }
+        });
     }
 
     /** 解散公会：卸载世界、删除其全部庄园与世界记录。 */

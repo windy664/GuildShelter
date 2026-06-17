@@ -12,6 +12,7 @@ import org.windy.guildshelter.adapter.bukkit.Permissions;
 import org.windy.guildshelter.domain.flag.Flag;
 import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
+import org.windy.guildshelter.domain.port.EconomyPort;
 
 import java.util.Map;
 import java.util.UUID;
@@ -22,20 +23,23 @@ import java.util.concurrent.ConcurrentHashMap;
  * <ul>
  *   <li>deny-entry / deny-exit：挡非成员进入 / 困住非成员不让离开；</li>
  *   <li>greeting / farewell：进出消息（titles flag 开则用屏幕标题显示，否则聊天框）；</li>
- *   <li>notify-enter / notify-leave：有人进出时私信在线成员（庄主/共建人）。</li>
+ *   <li>notify-enter / notify-leave：有人进出时私信在线成员（庄主/共建人）；</li>
+ *   <li>price：访客进入收费地皮时自动扣费（需 Vault；成员/管理免付）。</li>
  * </ul>
  * 仅在跨 chunk 时查库（性能），按"当前所在地皮"变化触发进出。OP / guildshelter.admin 不受进出限制。
  */
 public final class ManorAccessListener implements Listener {
 
-    private static final String ADMIN_BYPASS = "guildshelter.admin";
-
     private final ManorLookup lookup;
+    private final EconomyPort economy; // null = 无 Vault，price flag 不生效
     private final Map<UUID, long[]> lastChunk = new ConcurrentHashMap<>();
     private final Map<UUID, Manor> lastManor = new ConcurrentHashMap<>();
+    /** 已付过入场费的玩家 → 已付费的地皮 slot+guild 组合（离开地皮时清除，下次再进要再付）。 */
+    private final Map<UUID, String> paidManors = new ConcurrentHashMap<>();
 
-    public ManorAccessListener(ManorLookup lookup) {
+    public ManorAccessListener(ManorLookup lookup, EconomyPort economy) {
         this.lookup = lookup;
+        this.economy = economy;
     }
 
     @EventHandler
@@ -57,8 +61,7 @@ public final class ManorAccessListener implements Listener {
                 event.getTo().getBlockX(), event.getTo().getBlockZ()).orElse(null);
         Manor prev = lastManor.get(id);
         PlayerRef ref = PlayerRef.of(id);
-        boolean bypass = player.hasPermission(ADMIN_BYPASS) || player.isOp()
-                || player.hasPermission(Permissions.BYPASS_DENY);
+        boolean bypass = Permissions.canBypassEntry(player) || player.isOp();
 
         // 黑名单：denied 玩家禁止进入（覆盖一切；owner 不会被判 denied），推回不更新 last*
         if (cur != null && !bypass && ManorRoles.isDenied(cur, ref)) {
@@ -93,9 +96,16 @@ public final class ManorAccessListener implements Listener {
             if (Flag.NOTIFY_LEAVE.resolveBool(prev.flags())) {
                 notifyMembers(prev, player, "§7离开了你的地皮 §f#" + prev.slot());
             }
+            paidManors.remove(id); // 离开地皮后下次再进要重新付费
         }
         // 进入 cur
         if (cur != null) {
+            // 入场费：成员/管理免付；访客每次进入收费地皮都要付
+            if (!chargeEntry(player, cur, ref)) {
+                // 余额不足 → 推回
+                event.setTo(event.getFrom());
+                return;
+            }
             String hi = Flag.GREETING.resolveString(cur.flags());
             if (!hi.isBlank()) {
                 showMessage(player, cur, hi);
@@ -140,8 +150,36 @@ public final class ManorAccessListener implements Listener {
 
     /** 可无视 deny-entry 进入者：管理 + owner/trusted/member（member 不论上级是否在线都可进入）。 */
     private boolean canEnter(Player p, Manor m) {
-        return p.hasPermission(ADMIN_BYPASS) || p.isOp()
+        return Permissions.canBypassEntry(p) || p.isOp()
                 || ManorRoles.isMemberOrAbove(m, PlayerRef.of(p.getUniqueId()));
+    }
+
+    /**
+     * 入场费扣费。返回 true=允许进入（已付/免费/成员/管理），false=余额不足被拒。
+     * 同一地皮同一玩家只收一次（离开后重新进入再收）。
+     */
+    private boolean chargeEntry(Player player, Manor manor, PlayerRef ref) {
+        double price = Flag.PRICE.resolveDouble(manor.flags());
+        if (price <= 0 || economy == null) {
+            return true; // 免费或无经济插件
+        }
+        // 成员/管理免付
+        if (ManorRoles.isMemberOrAbove(manor, ref) || Permissions.canBypassEntry(player) || player.isOp()) {
+            return true;
+        }
+        String manorKey = manor.guild().value() + ":" + manor.slot();
+        String paidKey = paidManors.get(player.getUniqueId());
+        if (manorKey.equals(paidKey)) {
+            return true; // 已付过
+        }
+        if (!economy.has(ref, price)) {
+            player.sendMessage("§c进入此地皮需要 " + economy.format(price) + "，你的余额不足。");
+            return false;
+        }
+        economy.withdraw(ref, price);
+        paidManors.put(player.getUniqueId(), manorKey);
+        player.sendMessage("§7已收取入场费 §e" + economy.format(price) + " §7进入地皮 #" + manor.slot());
+        return true;
     }
 
     private static boolean sameManor(Manor a, Manor b) {

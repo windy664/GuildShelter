@@ -54,7 +54,13 @@ public enum Flag {
     ANIMAL_CAP("animal-cap", FlagType.INTEGER, "-1", "本地皮被动生物(动物)数量上限,-1=无限"),
     HOSTILE_CAP("hostile-cap", FlagType.INTEGER, "-1", "本地皮敌对生物数量上限,-1=无限"),
     MOB_CAP("mob-cap", FlagType.INTEGER, "-1", "本地皮生物总数(动物+敌对+其它)上限,-1=无限"),
-    VEHICLE_CAP("vehicle-cap", FlagType.INTEGER, "-1", "本地皮载具(船/矿车)数量上限,-1=无限");
+    VEHICLE_CAP("vehicle-cap", FlagType.INTEGER, "-1", "本地皮载具(船/矿车)数量上限,-1=无限"),
+
+    // --- 经济杂项组 ---
+    DESCRIPTION("description", FlagType.STRING, "", "地皮描述(显示在 /gs info)"),
+    BLOCKED_CMDS("blocked-cmds", FlagType.STRING, "", "本地皮内禁止使用的命令(逗号分隔,不含/;如 spawn,tp,home)"),
+    KEEP("keep", FlagType.BOOLEAN, "false", "庄主退会时是否保留地皮不清扫"),
+    PRICE("price", FlagType.DOUBLE, "0", "访客进入本地皮需支付的费用(需 Vault;0=免费)");
 
     private final String id;
     private final FlagType type;
@@ -110,6 +116,20 @@ public enum Flag {
         return v == null ? defaultValue : v;
     }
 
+    /** 解析浮点值；未设/非法返回默认。用于 DOUBLE 型(如 price)。 */
+    public double resolveDouble(Map<String, String> flags) {
+        String v = flags.getOrDefault(id, defaultValue);
+        try {
+            return Double.parseDouble(v.trim());
+        } catch (NumberFormatException e) {
+            try {
+                return Double.parseDouble(defaultValue.trim());
+            } catch (NumberFormatException ex) {
+                return 0;
+            }
+        }
+    }
+
     /** 校验并归一化一个待写入的值(布尔型只认 true/false)。非法返回 empty。 */
     public Optional<String> normalize(String raw) {
         if (type == FlagType.BOOLEAN) {
@@ -121,6 +141,14 @@ public enum Flag {
         if (type == FlagType.INTEGER) {
             try {
                 return Optional.of(Integer.toString(Integer.parseInt(raw.trim())));
+            } catch (NumberFormatException e) {
+                return Optional.empty();
+            }
+        }
+        if (type == FlagType.DOUBLE) {
+            try {
+                double d = Double.parseDouble(raw.trim());
+                return Optional.of(Double.toString(d));
             } catch (NumberFormatException e) {
                 return Optional.empty();
             }
