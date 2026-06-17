@@ -80,6 +80,10 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
                 ? topSolidY(level, (minX + maxX) / 2, (minZ + maxZ) / 2)
                 : 0;
 
+        long totalCols = (long) (maxX - minX + 1) * (maxZ - minZ + 1);
+        plugin.getLogger().info("[GuildShelter] 整地开始(NeoForge/" + mode + ") " + worldName + " ("
+                + minX + "," + minZ + ")~(" + maxX + "," + maxZ + ") 共 " + totalCols + " 列");
+        long t0 = System.currentTimeMillis();
         Deque<int[]> queue = columns(minX, maxX, minZ, maxZ);
         new BukkitRunnable() {
             @Override
@@ -96,6 +100,8 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
                 }
                 if (queue.isEmpty()) {
                     cancel();
+                    plugin.getLogger().info("[GuildShelter] 整地完成(NeoForge/" + mode + ") " + worldName
+                            + " 共 " + totalCols + " 列, 耗时 " + (System.currentTimeMillis() - t0) + "ms");
                 }
             }
         }.runTaskTimer(plugin, 1L, 1L);
@@ -107,15 +113,17 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
         if (level == null) {
             return;
         }
-        plugin.getLogger().info("[GuildShelter] 铺土径(NeoForge) " + worldName + " 区域 ("
-                + region.minBlockX() + "," + region.minBlockZ() + ")~("
-                + region.maxBlockX() + "," + region.maxBlockZ() + ")");
         int minX = region.minBlockX();
         int maxX = region.maxBlockX();
         int minZ = region.minBlockZ();
         int maxZ = region.maxBlockZ();
         // 护栏放在路条带"窄轴"的两条长边上（竖条→x 两侧；横条→z 两侧）。
         boolean narrowIsX = (maxX - minX) <= (maxZ - minZ);
+        long totalCols = (long) (maxX - minX + 1) * (maxZ - minZ + 1);
+        plugin.getLogger().info("[GuildShelter] 铺路开始(NeoForge) " + worldName + " ("
+                + minX + "," + minZ + ")~(" + maxX + "," + maxZ + ") 共 " + totalCols + " 列");
+        long t0 = System.currentTimeMillis();
+        int[] stat = new int[2]; // [0]=土径列 [1]=架桥列
         Deque<int[]> queue = columns(minX, maxX, minZ, maxZ);
         new BukkitRunnable() {
             @Override
@@ -125,11 +133,16 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
                     int[] c = queue.poll();
                     boolean edge = narrowIsX ? (c[0] == minX || c[0] == maxX)
                                              : (c[1] == minZ || c[1] == maxZ);
-                    pathColumn(level, c[0], c[1], edge);
+                    int r = pathColumn(level, c[0], c[1], edge);
+                    if (r == 1) stat[0]++;
+                    else if (r == 2) stat[1]++;
                     n++;
                 }
                 if (queue.isEmpty()) {
                     cancel();
+                    plugin.getLogger().info("[GuildShelter] 铺路完成(NeoForge) " + worldName
+                            + " 土径 " + stat[0] + " 列, 架桥 " + stat[1] + " 列, 耗时 "
+                            + (System.currentTimeMillis() - t0) + "ms");
                 }
             }
         }.runTaskTimer(plugin, 1L, 1L);
@@ -179,8 +192,10 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
     /**
      * 把一列道路铺好：向下穿过并清掉植被/树/雪，定位真正的自然地面铺土径；
      * 遇水改架<b>木板栈桥</b>（保留桥下水源，edge 列加栅栏护栏）；纯虚空列跳过。
+     *
+     * @return 1=铺了土径 2=架了桥 0=跳过（纯虚空列），供调用方统计。
      */
-    private void pathColumn(ServerLevel level, int x, int z, boolean edge) {
+    private int pathColumn(ServerLevel level, int x, int z, boolean edge) {
         level.getChunk(x >> 4, z >> 4); // 道路条带常在地皮远端，确保区块已生成再操作
         int min = level.getMinY();
         int y = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
@@ -190,18 +205,18 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
             BlockState b = level.getBlockState(pos);
             if (isNaturalGround(b)) {
                 level.setBlock(pos, DIRT_PATH, FLAGS); // 自然地面顶层→土径
-                return;
+                return 1;
             }
             if (!b.getFluidState().isEmpty()) {
                 bridgeColumn(level, x, y, z, edge); // 水面：架桥而非铺路/填水
-                return;
+                return 2;
             }
             if (!b.isAir()) {
                 level.setBlock(pos, AIR, FLAGS); // 清掉植被/树木/积雪
             }
             y--;
         }
-        // 落到底仍没遇到地面（纯虚空列）：不铺。
+        return 0; // 落到底仍没遇到地面（纯虚空列）：不铺。
     }
 
     /** 在水面那一列架木板桥面（保留桥下水源）；edge 列在桥面上加栅栏护栏。木材按群系挑。 */
