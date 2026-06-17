@@ -53,7 +53,8 @@ public final class ClaimGuard {
         boolean inGuild = manors.findByOwner(guild, ref).isPresent();
         IntFunction<Manor> bySlot = slot -> manors.findBySlot(guild, slot).orElse(null);
         LayoutCalculator layout = new LayoutCalculator(gw.layout()); // 用该世界冻结的布局
-        return rules.canModify(layout, ref, inGuild, bySlot, lx, lz);
+        // 地皮内建造判定走身份分级 + member 在线门控（ManorRoles），非纯 hasBuildAccess。
+        return rules.canModify(layout, ref, inGuild, bySlot, lx, lz, ManorRoles::effectiveBuild);
     }
 
     /** 被拦截时限频提示玩家（3 秒内不重复）。 */

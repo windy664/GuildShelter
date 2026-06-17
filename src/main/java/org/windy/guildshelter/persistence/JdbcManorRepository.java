@@ -40,7 +40,10 @@ public final class JdbcManorRepository implements ManorRepository {
                 PlayerRef owner = PlayerRef.of(UUID.fromString(rs.getString("owner_uuid")));
                 int level = rs.getInt("level");
                 return Optional.of(new Manor(slot, guild, owner, level,
-                        loadCoBuilders(c, guild, slot), FlagsCsv.parse(rs.getString("flags"))));
+                        loadPlayers(c, "manor_cobuilder", guild, slot),
+                        loadPlayers(c, "manor_member", guild, slot),
+                        loadPlayers(c, "manor_denied", guild, slot),
+                        FlagsCsv.parse(rs.getString("flags"))));
             }
         } catch (SQLException e) {
             throw new PersistenceException("查询庄园失败: " + guild.value() + "#" + slot, e);
@@ -60,7 +63,10 @@ public final class JdbcManorRepository implements ManorRepository {
                 int slot = rs.getInt("slot");
                 int level = rs.getInt("level");
                 return Optional.of(new Manor(slot, guild, owner, level,
-                        loadCoBuilders(c, guild, slot), FlagsCsv.parse(rs.getString("flags"))));
+                        loadPlayers(c, "manor_cobuilder", guild, slot),
+                        loadPlayers(c, "manor_member", guild, slot),
+                        loadPlayers(c, "manor_denied", guild, slot),
+                        FlagsCsv.parse(rs.getString("flags"))));
             }
         } catch (SQLException e) {
             throw new PersistenceException("按庄主查询庄园失败: " + guild.value(), e);
@@ -80,7 +86,10 @@ public final class JdbcManorRepository implements ManorRepository {
                 int slot = rs.getInt("slot");
                 int level = rs.getInt("level");
                 return Optional.of(new Manor(slot, guild, owner, level,
-                        loadCoBuilders(c, guild, slot), FlagsCsv.parse(rs.getString("flags"))));
+                        loadPlayers(c, "manor_cobuilder", guild, slot),
+                        loadPlayers(c, "manor_member", guild, slot),
+                        loadPlayers(c, "manor_denied", guild, slot),
+                        FlagsCsv.parse(rs.getString("flags"))));
             }
         } catch (SQLException e) {
             throw new PersistenceException("跨公会按 owner 查庄园失败", e);
@@ -99,7 +108,10 @@ public final class JdbcManorRepository implements ManorRepository {
                     PlayerRef owner = PlayerRef.of(UUID.fromString(rs.getString("owner_uuid")));
                     int level = rs.getInt("level");
                     result.add(new Manor(slot, guild, owner, level,
-                            loadCoBuilders(c, guild, slot), FlagsCsv.parse(rs.getString("flags"))));
+                            loadPlayers(c, "manor_cobuilder", guild, slot),
+                        loadPlayers(c, "manor_member", guild, slot),
+                        loadPlayers(c, "manor_denied", guild, slot),
+                        FlagsCsv.parse(rs.getString("flags"))));
                 }
             }
         } catch (SQLException e) {
@@ -121,24 +133,9 @@ public final class JdbcManorRepository implements ManorRepository {
                     ps.setString(5, FlagsCsv.toCsv(manor.flags()));
                     ps.executeUpdate();
                 }
-                try (PreparedStatement del = c.prepareStatement(
-                        "DELETE FROM manor_cobuilder WHERE guild_id=? AND slot=?")) {
-                    del.setString(1, manor.guild().value());
-                    del.setInt(2, manor.slot());
-                    del.executeUpdate();
-                }
-                if (!manor.coBuilders().isEmpty()) {
-                    try (PreparedStatement ins = c.prepareStatement(
-                            "INSERT INTO manor_cobuilder(guild_id, slot, player_uuid) VALUES(?,?,?)")) {
-                        for (PlayerRef co : manor.coBuilders()) {
-                            ins.setString(1, manor.guild().value());
-                            ins.setInt(2, manor.slot());
-                            ins.setString(3, co.uuid().toString());
-                            ins.addBatch();
-                        }
-                        ins.executeBatch();
-                    }
-                }
+                replacePlayers(c, "manor_cobuilder", manor.guild(), manor.slot(), manor.coBuilders());
+                replacePlayers(c, "manor_member", manor.guild(), manor.slot(), manor.members());
+                replacePlayers(c, "manor_denied", manor.guild(), manor.slot(), manor.denied());
                 c.commit();
             } catch (SQLException e) {
                 c.rollback();
@@ -161,11 +158,13 @@ public final class JdbcManorRepository implements ManorRepository {
                     ps.setInt(2, slot);
                     ps.executeUpdate();
                 }
-                try (PreparedStatement ps = c.prepareStatement(
-                        "DELETE FROM manor_cobuilder WHERE guild_id=? AND slot=?")) {
-                    ps.setString(1, guild.value());
-                    ps.setInt(2, slot);
-                    ps.executeUpdate();
+                for (String table : new String[]{"manor_cobuilder", "manor_member", "manor_denied"}) {
+                    try (PreparedStatement ps = c.prepareStatement(
+                            "DELETE FROM " + table + " WHERE guild_id=? AND slot=?")) {
+                        ps.setString(1, guild.value());
+                        ps.setInt(2, slot);
+                        ps.executeUpdate();
+                    }
                 }
                 c.commit();
             } catch (SQLException e) {
@@ -200,18 +199,43 @@ public final class JdbcManorRepository implements ManorRepository {
         }
     }
 
-    private Set<PlayerRef> loadCoBuilders(Connection c, GuildId guild, int slot) throws SQLException {
-        Set<PlayerRef> co = new HashSet<>();
+    /** 从某成员表(manor_cobuilder/manor_member/manor_denied)读该 slot 的玩家集。table 为代码内常量，无注入风险。 */
+    private Set<PlayerRef> loadPlayers(Connection c, String table, GuildId guild, int slot) throws SQLException {
+        Set<PlayerRef> out = new HashSet<>();
         try (PreparedStatement ps = c.prepareStatement(
-                "SELECT player_uuid FROM manor_cobuilder WHERE guild_id=? AND slot=?")) {
+                "SELECT player_uuid FROM " + table + " WHERE guild_id=? AND slot=?")) {
             ps.setString(1, guild.value());
             ps.setInt(2, slot);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    co.add(PlayerRef.of(UUID.fromString(rs.getString("player_uuid"))));
+                    out.add(PlayerRef.of(UUID.fromString(rs.getString("player_uuid"))));
                 }
             }
         }
-        return co;
+        return out;
+    }
+
+    /** 全量替换某成员表里该 slot 的玩家集（先删后批量插，事务内调用）。 */
+    private void replacePlayers(Connection c, String table, GuildId guild, int slot,
+                                Set<PlayerRef> players) throws SQLException {
+        try (PreparedStatement del = c.prepareStatement(
+                "DELETE FROM " + table + " WHERE guild_id=? AND slot=?")) {
+            del.setString(1, guild.value());
+            del.setInt(2, slot);
+            del.executeUpdate();
+        }
+        if (players.isEmpty()) {
+            return;
+        }
+        try (PreparedStatement ins = c.prepareStatement(
+                "INSERT INTO " + table + "(guild_id, slot, player_uuid) VALUES(?,?,?)")) {
+            for (PlayerRef p : players) {
+                ins.setString(1, guild.value());
+                ins.setInt(2, slot);
+                ins.setString(3, p.uuid().toString());
+                ins.addBatch();
+            }
+            ins.executeBatch();
+        }
     }
 }

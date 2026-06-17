@@ -136,12 +136,16 @@ public final class BukkitTerrainPreparer implements TerrainPreparer {
         return m.isSolid() && !Tag.LOGS.isTagged(m) && !Tag.LEAVES.isTagged(m);
     }
 
-    /** 清掉实心地面以上的植被/积雪/树木（保留自然起伏的地面）。 */
+    /** 清掉实心地面以上的植被/积雪/树木（保留自然起伏的地面；跳过水/岩浆，不破坏水源）。 */
     private void clearColumn(World world, int x, int z) {
-        int groundY = world.getHighestBlockYAt(x, z, HeightMap.OCEAN_FLOOR);   // 实心地面顶
-        int surfaceY = world.getHighestBlockYAt(x, z, HeightMap.WORLD_SURFACE); // 含植被/树的顶
+        int groundY = world.getHighestBlockYAt(x, z, HeightMap.OCEAN_FLOOR);   // 实心地面顶（水下为河床/海床）
+        int surfaceY = world.getHighestBlockYAt(x, z, HeightMap.WORLD_SURFACE); // 含植被/树/水的顶
         for (int y = groundY + 1; y <= surfaceY; y++) {
-            world.getBlockAt(x, y, z).setType(Material.AIR, false);
+            Block b = world.getBlockAt(x, y, z);
+            if (b.isLiquid()) {
+                continue; // 保留水/岩浆，避免破坏水源
+            }
+            b.setType(Material.AIR, false);
         }
     }
 

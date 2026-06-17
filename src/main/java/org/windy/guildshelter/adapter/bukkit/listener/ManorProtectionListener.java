@@ -11,19 +11,26 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerBucketFillEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.InventoryHolder;
 import org.windy.guildshelter.adapter.bukkit.ClaimGuard;
+import org.windy.guildshelter.adapter.bukkit.InteractionPolicy;
+import org.windy.guildshelter.domain.flag.InteractCategory;
 
 /**
  * 领地保护的 <b>Bukkit 后端</b>：把 {@link ClaimGuard} 接到 Bukkit 事件上，
- * 挡住非授权的破坏/放置/交互/倒水。<b>仅在纯 Bukkit 端注册</b>——混合端(NeoForge 在)
- * 改由 NeoForge EVENT_BUS 侧统一处理，避免双重拦截。
+ * 挡住非授权的破坏/放置/倒水（硬保护，访客一律不能改）。右键交互改走
+ * {@link InteractionPolicy}——按类(use/container)对访客放宽。实体交互(展示框/载具)见
+ * {@code ManorEntityListener}。<b>仅在纯 Bukkit 端注册</b>——混合端(NeoForge 在)改由
+ * NeoForge EVENT_BUS 侧统一处理，避免双重拦截。
  */
 public final class ManorProtectionListener implements Listener {
 
     private final ClaimGuard guard;
+    private final InteractionPolicy policy;
 
-    public ManorProtectionListener(ClaimGuard guard) {
+    public ManorProtectionListener(ClaimGuard guard, InteractionPolicy policy) {
         this.guard = guard;
+        this.policy = policy;
     }
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
@@ -38,10 +45,17 @@ public final class ManorProtectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onInteract(PlayerInteractEvent event) {
-        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || event.getClickedBlock() == null) {
+        Block block = event.getClickedBlock();
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || block == null) {
             return; // 只管右键方块（开箱/门/拉杆/红石等）
         }
-        guard(event.getPlayer(), event.getClickedBlock(), () -> event.setCancelled(true));
+        // 带库存的方块归 container，其余可交互方块归 use；访客按地皮对应 flag 放宽。
+        InteractCategory cat = block.getState() instanceof InventoryHolder
+                ? InteractCategory.CONTAINER : InteractCategory.USE;
+        if (!policy.allowed(event.getPlayer(), block.getX(), block.getZ(), cat)) {
+            event.setCancelled(true);
+            policy.notifyDenied(event.getPlayer());
+        }
     }
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)

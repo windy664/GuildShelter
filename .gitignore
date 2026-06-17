@@ -1,0 +1,27 @@
+# ==== 构建产物 ====
+/build/
+
+# ==== Gradle 缓存（保留 /gradle/ wrapper、gradlew）====
+/.gradle/
+
+# ==== IDE：IntelliJ IDEA ====
+/.idea/
+*.iml
+
+# ==== IDE：Eclipse / 其它 ====
+/.settings/
+/bin/
+.classpath
+.project
+
+# ==== 运行时 / 本地仓库 ====
+/run/
+/repo/
+
+# ==== 本地依赖 jar（Minecraft/NeoForge/WorldEdit/公会插件等，按需自行补齐，不入库）====
+/libs/
+
+# ==== 日志 / 系统杂项 ====
+*.log
+.DS_Store
+Thumbs.db

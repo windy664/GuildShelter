@@ -2,25 +2,27 @@ package org.windy.guildshelter.adapter.bukkit.listener;
 
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.block.BlockBurnEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
-import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.projectiles.ProjectileSource;
 import org.windy.guildshelter.adapter.bukkit.ManorLookup;
 import org.windy.guildshelter.domain.flag.Flag;
 
 /**
- * 地皮 flag 的 <b>Bukkit 后端</b>（A 类氛围保护）：pvp / mob-spawn / explosion / fire-spread / mob-griefing。
- * 通过 {@link ManorLookup} 把事件落点解析到地皮再查该地皮 flag。混合端模组内容的完整覆盖由后续 NeoForge 侧补。
+ * 地皮 flag 的 <b>Bukkit 后端</b>（A 氛围类，除 fire-spread）：pvp / mob-spawn / explosion / mob-griefing。
+ * 仅在<b>纯 Bukkit 端</b>注册(NeoForge 在则由 NeoForgeFlags 处理这几个,免双重)。
+ * fire-spread 因 NeoForge 26 无对应事件,拆到 {@link ManorFireListener}(两载体都注册)。
  */
 public final class ManorFlagListener implements Listener {
 
@@ -39,22 +41,41 @@ public final class ManorFlagListener implements Listener {
         return denied(loc.getWorld(), loc.getBlockX(), loc.getBlockZ(), flag);
     }
 
-    // ---- pvp ----
+    // ---- pvp / pve / invincible（统一在一个 EntityDamageEvent 里判，避免父/子事件 HandlerList 共享坑）----
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
-    public void onDamage(EntityDamageByEntityEvent event) {
-        if (!(event.getEntity() instanceof Player victim)) {
+    public void onDamage(EntityDamageEvent event) {
+        if (!(event.getEntity() instanceof LivingEntity victim)) {
             return;
         }
-        Player attacker = resolveAttacker(event.getDamager());
-        if (attacker == null || attacker.equals(victim)) {
-            return;
-        }
-        if (denied(victim.getLocation(), Flag.PVP)) {
+        boolean victimIsPlayer = victim instanceof Player;
+
+        // invincible：玩家在地皮内免一切伤害
+        if (victimIsPlayer && flagOn(victim.getLocation(), Flag.INVINCIBLE)) {
             event.setCancelled(true);
+            return;
+        }
+        if (!(event instanceof EntityDamageByEntityEvent ev)) {
+            return;
+        }
+        Player attacker = resolveAttacker(ev.getDamager());
+        if (victimIsPlayer) {
+            if (attacker != null && !attacker.equals(victim)) {
+                if (denied(victim.getLocation(), Flag.PVP)) { // 玩家打玩家
+                    event.setCancelled(true);
+                }
+            } else if (isMob(ev.getDamager())) {
+                if (denied(victim.getLocation(), Flag.PVE)) { // 怪打玩家
+                    event.setCancelled(true);
+                }
+            }
+        } else if (attacker != null) {
+            if (denied(victim.getLocation(), Flag.PVE)) { // 玩家打怪
+                event.setCancelled(true);
+            }
         }
     }
 
-    private Player resolveAttacker(org.bukkit.entity.Entity damager) {
+    private Player resolveAttacker(Entity damager) {
         if (damager instanceof Player p) {
             return p;
         }
@@ -65,6 +86,25 @@ public final class ManorFlagListener implements Listener {
             }
         }
         return null;
+    }
+
+    private static boolean isMob(Entity damager) {
+        if (damager instanceof Player) {
+            return false;
+        }
+        if (damager instanceof LivingEntity) {
+            return true;
+        }
+        if (damager instanceof Projectile proj) {
+            return proj.getShooter() instanceof LivingEntity && !(proj.getShooter() instanceof Player);
+        }
+        return false;
+    }
+
+    /** 该位置地皮该 flag 是否为 true(开)。用于 invincible 这种"开=拦"的反向语义。 */
+    private boolean flagOn(Location loc, Flag flag) {
+        return lookup.at(loc.getWorld(), loc.getBlockX(), loc.getBlockZ())
+                .map(m -> flag.resolveBool(m.flags())).orElse(false);
     }
 
     // ---- mob-spawn(挡环境刷怪,放行玩家召唤/刷怪笼蛋/繁殖)----
@@ -92,23 +132,7 @@ public final class ManorFlagListener implements Listener {
         event.blockList().removeIf(b -> denied(b.getWorld(), b.getX(), b.getZ(), Flag.EXPLOSION));
     }
 
-    // ---- fire-spread ----
-    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
-    public void onIgnite(BlockIgniteEvent event) {
-        BlockIgniteEvent.IgniteCause cause = event.getCause();
-        if (cause == BlockIgniteEvent.IgniteCause.SPREAD || cause == BlockIgniteEvent.IgniteCause.LAVA) {
-            if (denied(event.getBlock().getLocation(), Flag.FIRE_SPREAD)) {
-                event.setCancelled(true);
-            }
-        }
-    }
-
-    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
-    public void onBurn(BlockBurnEvent event) {
-        if (denied(event.getBlock().getLocation(), Flag.FIRE_SPREAD)) {
-            event.setCancelled(true);
-        }
-    }
+    // 注：fire-spread 拆到 ManorFireListener(始终 Bukkit，因 NeoForge 26 无对应事件)。
 
     // ---- mob-griefing(非玩家实体改方块：苦力怕坑/末影人搬块/僵尸破门等)----
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)

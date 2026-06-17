@@ -17,3 +17,24 @@ commands:
   gs:
     description: GuildShelter 插件命令
     usage: /gs <home|spawn|upgrade|info|trust|untrust|list|visit|clear> | /gs admin ...
+permissions:
+  guildshelter.admin:
+    description: 全权管理 GuildShelter（bypass 一切保护/flag/黑名单，可管理任意庄园）
+    default: op
+  guildshelter.bypass.deny:
+    description: 无视黑名单与 deny-entry（可进入/交互被拉黑或谢客的地皮，但不等于可建造）
+    default: op
+  # 各 /gs 玩家子命令的开关，默认全放行；服主想按等级收紧时改 default 或在权限组里改。
+  guildshelter.command.home: { default: true }
+  guildshelter.command.spawn: { default: true }
+  guildshelter.command.upgrade: { default: true }
+  guildshelter.command.info: { default: true }
+  guildshelter.command.trust: { default: true }
+  guildshelter.command.untrust: { default: true }
+  guildshelter.command.member: { default: true }
+  guildshelter.command.deny: { default: true }
+  guildshelter.command.undeny: { default: true }
+  guildshelter.command.list: { default: true }
+  guildshelter.command.visit: { default: true }
+  guildshelter.command.clear: { default: true }
+  guildshelter.command.flag: { default: true }

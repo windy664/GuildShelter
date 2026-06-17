@@ -5,6 +5,7 @@ import org.windy.guildshelter.domain.layout.LayoutCalculator;
 import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
 
+import java.util.function.BiPredicate;
 import java.util.function.IntFunction;
 
 /**
@@ -31,6 +32,17 @@ public final class PermissionRules {
      */
     public boolean canModify(LayoutCalculator layout, PlayerRef player, boolean playerInGuild,
                              IntFunction<Manor> manorBySlot, int chunkX, int chunkZ) {
+        // 默认建造判定 = 庄主/共建人（纯域语义，脱机可测）。
+        return canModify(layout, player, playerInGuild, manorBySlot, chunkX, chunkZ, Manor::hasBuildAccess);
+    }
+
+    /**
+     * 同上，但地皮内的"可建造"判定由调用方注入（{@code canBuild}）。适配层借此接入需要运行期信息的规则
+     * （如 member 的"上级在线才生效"），domain 仍保持纯。
+     */
+    public boolean canModify(LayoutCalculator layout, PlayerRef player, boolean playerInGuild,
+                             IntFunction<Manor> manorBySlot, int chunkX, int chunkZ,
+                             BiPredicate<Manor, PlayerRef> canBuild) {
         if (!playerInGuild) {
             return false;
         }
@@ -40,7 +52,7 @@ public final class PermissionRules {
             case ROAD -> false;
             case PLOT -> {
                 Manor m = manorBySlot.apply(c.slot());
-                if (m == null || !m.hasBuildAccess(player)) {
+                if (m == null || !canBuild.test(m, player)) {
                     yield false;
                 }
                 yield layout.activeRegion(c.slot(), m.level()).containsChunk(chunkX, chunkZ);

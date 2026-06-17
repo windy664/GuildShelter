@@ -158,14 +158,12 @@ public final class FlatFileStorage implements Storage {
                 int slot = Integer.parseInt(f[1]);
                 PlayerRef owner = PlayerRef.of(UUID.fromString(f[2]));
                 int level = Integer.parseInt(f[3]);
-                Set<PlayerRef> co = new HashSet<>();
-                if (f.length > 4 && !f[4].isBlank()) {
-                    for (String u : f[4].split(",")) {
-                        co.add(PlayerRef.of(UUID.fromString(u.trim())));
-                    }
-                }
+                Set<PlayerRef> co = parseUuidSet(f.length > 4 ? f[4] : null);
                 Map<String, String> flags = FlagsCsv.parse(f.length > 5 ? f[5] : null);
-                bySlot.put(key(g, slot), new Manor(slot, g, owner, level, co, flags));
+                // members/denied 追加在 flags 之后(列 6/7);旧文件无这两列→空集。
+                Set<PlayerRef> members = parseUuidSet(f.length > 6 ? f[6] : null);
+                Set<PlayerRef> denied = parseUuidSet(f.length > 7 ? f[7] : null);
+                bySlot.put(key(g, slot), new Manor(slot, g, owner, level, co, members, denied, flags));
             }
         }
 
@@ -231,19 +229,36 @@ public final class FlatFileStorage implements Storage {
         private void persist() {
             List<String> lines = new ArrayList<>();
             for (Manor m : bySlot.values()) {
-                StringBuilder co = new StringBuilder();
-                for (PlayerRef p : m.coBuilders()) {
-                    if (co.length() > 0) {
-                        co.append(',');
-                    }
-                    co.append(p.uuid());
-                }
+                // 列序: guild slot owner level coBuilders flags members denied
+                // (members/denied 追加在 flags 后, 保持旧列索引不变=向后兼容)
                 lines.add(String.join("\t",
                         clean(m.guild().value()), Integer.toString(m.slot()),
                         m.owner().uuid().toString(), Integer.toString(m.level()),
-                        co.toString(), FlagsCsv.toCsv(m.flags())));
+                        joinUuids(m.coBuilders()), FlagsCsv.toCsv(m.flags()),
+                        joinUuids(m.members()), joinUuids(m.denied())));
             }
             writeLines(file, lines);
+        }
+
+        private static Set<PlayerRef> parseUuidSet(String csv) {
+            Set<PlayerRef> out = new HashSet<>();
+            if (csv != null && !csv.isBlank()) {
+                for (String u : csv.split(",")) {
+                    out.add(PlayerRef.of(UUID.fromString(u.trim())));
+                }
+            }
+            return out;
+        }
+
+        private static String joinUuids(Set<PlayerRef> players) {
+            StringBuilder sb = new StringBuilder();
+            for (PlayerRef p : players) {
+                if (sb.length() > 0) {
+                    sb.append(',');
+                }
+                sb.append(p.uuid());
+            }
+            return sb.toString();
         }
     }
 }

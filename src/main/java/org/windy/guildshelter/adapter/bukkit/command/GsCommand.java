@@ -45,6 +45,9 @@ import java.util.logging.Logger;
 public final class GsCommand implements CommandExecutor, TabCompleter {
 
     private static final String ADMIN_PERM = "guildshelter.admin";
+    /** 受 guildshelter.command.<sub> 节点管控的玩家子命令（节点默认放行，见 plugin.yml）。 */
+    private static final Set<String> PLAYER_SUBS = Set.of("home", "spawn", "upgrade", "info",
+            "trust", "untrust", "member", "deny", "undeny", "list", "visit", "clear", "flag");
 
     private final WorldManager worlds;
     private final GuildRepository guilds;
@@ -69,6 +72,11 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         String sub = args.length >= 1 ? args[0].toLowerCase() : "";
+        // 玩家子命令权限节点把关(默认放行)；admin 另由 ADMIN_PERM 管，未知子命令落到帮助。
+        if (PLAYER_SUBS.contains(sub) && !sender.hasPermission("guildshelter.command." + sub)) {
+            sender.sendMessage("§c你没有权限使用 /gs " + sub + "。");
+            return true;
+        }
         switch (sub) {
             case "home" -> { home(sender); return true; }
             case "spawn" -> { spawn(sender); return true; }
@@ -76,13 +84,16 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             case "info" -> { info(sender); return true; }
             case "trust" -> { trust(sender, args); return true; }
             case "untrust" -> { untrust(sender, args); return true; }
+            case "member" -> { member(sender, args); return true; }
+            case "deny" -> { deny(sender, args); return true; }
+            case "undeny" -> { undeny(sender, args); return true; }
             case "list" -> { list(sender); return true; }
             case "visit" -> { visit(sender, args); return true; }
             case "clear" -> { clear(sender); return true; }
             case "flag" -> { flag(sender, args); return true; }
             case "admin" -> { /* 落到下面的管理分支 */ }
             default -> {
-                sender.sendMessage("§e/gs <home|spawn|upgrade|info|trust|untrust|list|visit|clear|flag>  §7玩家命令");
+                sender.sendMessage("§e/gs <home|spawn|upgrade|info|trust|untrust|member|deny|undeny|list|visit|clear|flag>  §7玩家命令");
                 sender.sendMessage("§7/gs admin ...  §8管理命令");
                 return true;
             }
@@ -201,8 +212,13 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                 + "/" + levels.maxGuildLevel() + ", 成员 " + members + "/" + capacity + ")");
         sender.sendMessage("§7你的地皮: §f#" + manor.slot() + " §7庄园 Lv" + manor.level()
                 + "/" + levels.manorMaxLevel() + " §7尺寸 " + side + "×" + side);
-        sender.sendMessage("§7共建人: §f"
-                + (manor.coBuilders().isEmpty() ? "§8无" : manor.coBuilders().size() + " 人"));
+        sender.sendMessage("§7共建人(trusted): §f" + sizeOrNone(manor.coBuilders())
+                + " §7成员(member): §f" + sizeOrNone(manor.members())
+                + " §7黑名单: §c" + sizeOrNone(manor.denied()));
+    }
+
+    private static String sizeOrNone(Set<PlayerRef> set) {
+        return set.isEmpty() ? "§8无" : set.size() + " 人";
     }
 
     /** /gs trust <玩家>：给自己的地皮加共建人。 */
@@ -225,12 +241,18 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage("§e不用把自己加进去。");
             return;
         }
+        PlayerRef tref = PlayerRef.of(target.getUniqueId());
         Set<PlayerRef> co = new HashSet<>(manor.coBuilders());
-        if (!co.add(PlayerRef.of(target.getUniqueId()))) {
+        if (!co.add(tref)) {
             sender.sendMessage("§e" + args[1] + " 已经是共建人了。");
             return;
         }
-        manors.save(manor.withCoBuilders(co));
+        // 身份互斥：升为 trusted 时清除其 member/denied 身份。
+        Set<PlayerRef> members = new HashSet<>(manor.members());
+        Set<PlayerRef> denied = new HashSet<>(manor.denied());
+        members.remove(tref);
+        denied.remove(tref);
+        manors.save(manor.withCoBuilders(co).withMembers(members).withDenied(denied));
         sender.sendMessage("§a已把 " + args[1] + " 加为地皮 #" + manor.slot() + " 的共建人。");
     }
 
@@ -257,6 +279,110 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
         manors.save(manor.withCoBuilders(co));
         sender.sendMessage("§a已移除共建人 " + args[1] + "。");
+    }
+
+    /** /gs member <add|remove> <玩家>：管理受限成员（仅 owner/trusted 在线时才有建造/交互权）。 */
+    private void member(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        if (args.length < 3 || (!args[1].equalsIgnoreCase("add") && !args[1].equalsIgnoreCase("remove"))) {
+            sender.sendMessage("用法: /gs member <add|remove> <玩家>");
+            return;
+        }
+        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        if (manor == null) {
+            sender.sendMessage("§e你还没有地皮。");
+            return;
+        }
+        org.bukkit.OfflinePlayer target = org.bukkit.Bukkit.getOfflinePlayer(args[2]);
+        if (target.getUniqueId().equals(player.getUniqueId())) {
+            sender.sendMessage("§e不用把自己加进去。");
+            return;
+        }
+        PlayerRef tref = PlayerRef.of(target.getUniqueId());
+        Set<PlayerRef> members = new HashSet<>(manor.members());
+        if (args[1].equalsIgnoreCase("add")) {
+            if (!members.add(tref)) {
+                sender.sendMessage("§e" + args[2] + " 已经是成员了。");
+                return;
+            }
+            // 身份互斥：设为 member 时清除其 trusted/denied 身份。
+            Set<PlayerRef> co = new HashSet<>(manor.coBuilders());
+            Set<PlayerRef> denied = new HashSet<>(manor.denied());
+            co.remove(tref);
+            denied.remove(tref);
+            manors.save(manor.withCoBuilders(co).withMembers(members).withDenied(denied));
+            sender.sendMessage("§a已把 " + args[2] + " 加为成员（仅你或共建人在线时其可建造/交互）。");
+        } else {
+            if (!members.remove(tref)) {
+                sender.sendMessage("§e" + args[2] + " 不是成员。");
+                return;
+            }
+            manors.save(manor.withMembers(members));
+            sender.sendMessage("§a已移除成员 " + args[2] + "。");
+        }
+    }
+
+    /** /gs deny <玩家>：拉黑（禁止进入/交互，覆盖访客 flag；同时清除其共建人/成员身份）。 */
+    private void deny(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage("用法: /gs deny <玩家>");
+            return;
+        }
+        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        if (manor == null) {
+            sender.sendMessage("§e你还没有地皮。");
+            return;
+        }
+        org.bukkit.OfflinePlayer target = org.bukkit.Bukkit.getOfflinePlayer(args[1]);
+        if (target.getUniqueId().equals(player.getUniqueId())) {
+            sender.sendMessage("§e不能拉黑自己。");
+            return;
+        }
+        PlayerRef tref = PlayerRef.of(target.getUniqueId());
+        Set<PlayerRef> denied = new HashSet<>(manor.denied());
+        if (!denied.add(tref)) {
+            sender.sendMessage("§e" + args[1] + " 已在黑名单。");
+            return;
+        }
+        // 拉黑时清除其共建人/成员身份，避免身份冲突。
+        Set<PlayerRef> co = new HashSet<>(manor.coBuilders());
+        Set<PlayerRef> members = new HashSet<>(manor.members());
+        co.remove(tref);
+        members.remove(tref);
+        manors.save(manor.withCoBuilders(co).withMembers(members).withDenied(denied));
+        sender.sendMessage("§a已将 " + args[1] + " 加入地皮 #" + manor.slot() + " 黑名单。");
+    }
+
+    /** /gs undeny <玩家>：移出黑名单。 */
+    private void undeny(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage("用法: /gs undeny <玩家>");
+            return;
+        }
+        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        if (manor == null) {
+            sender.sendMessage("§e你还没有地皮。");
+            return;
+        }
+        org.bukkit.OfflinePlayer target = org.bukkit.Bukkit.getOfflinePlayer(args[1]);
+        Set<PlayerRef> denied = new HashSet<>(manor.denied());
+        if (!denied.remove(PlayerRef.of(target.getUniqueId()))) {
+            sender.sendMessage("§e" + args[1] + " 不在黑名单。");
+            return;
+        }
+        manors.save(manor.withDenied(denied));
+        sender.sendMessage("§a已将 " + args[1] + " 移出黑名单。");
     }
 
     /** /gs list：列出所有公会营地。 */
@@ -668,7 +794,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         List<String> out = new ArrayList<>();
         if (args.length == 1) {
             for (String s : new String[]{"home", "spawn", "upgrade", "info", "trust", "untrust",
-                    "list", "visit", "clear", "flag", "admin"}) {
+                    "member", "deny", "undeny", "list", "visit", "clear", "flag", "admin"}) {
                 out.add(s);
             }
         } else if (args.length == 2 && args[0].equalsIgnoreCase("flag")) {
@@ -678,8 +804,16 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             for (Flag f : Flag.values()) {
                 out.add(f.id());
             }
+        } else if (args.length == 2 && args[0].equalsIgnoreCase("member")) {
+            out.add("add");
+            out.add("remove");
         } else if (args.length == 2 && (args[0].equalsIgnoreCase("trust")
-                || args[0].equalsIgnoreCase("untrust"))) {
+                || args[0].equalsIgnoreCase("untrust") || args[0].equalsIgnoreCase("deny")
+                || args[0].equalsIgnoreCase("undeny"))) {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                out.add(p.getName());
+            }
+        } else if (args.length == 3 && args[0].equalsIgnoreCase("member")) {
             for (Player p : Bukkit.getOnlinePlayers()) {
                 out.add(p.getName());
             }
