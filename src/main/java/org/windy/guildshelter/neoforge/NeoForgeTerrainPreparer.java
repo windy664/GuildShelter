@@ -1,10 +1,13 @@
 package org.windy.guildshelter.neoforge;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.BiomeTags;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -107,15 +110,22 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
         plugin.getLogger().info("[GuildShelter] 铺土径(NeoForge) " + worldName + " 区域 ("
                 + region.minBlockX() + "," + region.minBlockZ() + ")~("
                 + region.maxBlockX() + "," + region.maxBlockZ() + ")");
-        Deque<int[]> queue = columns(region.minBlockX(), region.maxBlockX(),
-                region.minBlockZ(), region.maxBlockZ());
+        int minX = region.minBlockX();
+        int maxX = region.maxBlockX();
+        int minZ = region.minBlockZ();
+        int maxZ = region.maxBlockZ();
+        // 护栏放在路条带"窄轴"的两条长边上（竖条→x 两侧；横条→z 两侧）。
+        boolean narrowIsX = (maxX - minX) <= (maxZ - minZ);
+        Deque<int[]> queue = columns(minX, maxX, minZ, maxZ);
         new BukkitRunnable() {
             @Override
             public void run() {
                 int n = 0;
                 while (n < COLUMNS_PER_TICK && !queue.isEmpty()) {
                     int[] c = queue.poll();
-                    pathColumn(level, c[0], c[1]);
+                    boolean edge = narrowIsX ? (c[0] == minX || c[0] == maxX)
+                                             : (c[1] == minZ || c[1] == maxZ);
+                    pathColumn(level, c[0], c[1], edge);
                     n++;
                 }
                 if (queue.isEmpty()) {
@@ -166,8 +176,11 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
         level.setBlock(pos.set(x, targetY, z), GRASS_BLOCK, FLAGS);
     }
 
-    /** 把一列道路顶层铺成土径：向下穿过并清掉植被/树/雪，定位真正的自然地面再铺；水/虚空跳过。 */
-    private void pathColumn(ServerLevel level, int x, int z) {
+    /**
+     * 把一列道路铺好：向下穿过并清掉植被/树/雪，定位真正的自然地面铺土径；
+     * 遇水改架<b>木板栈桥</b>（保留桥下水源，edge 列加栅栏护栏）；纯虚空列跳过。
+     */
+    private void pathColumn(ServerLevel level, int x, int z, boolean edge) {
         level.getChunk(x >> 4, z >> 4); // 道路条带常在地皮远端，确保区块已生成再操作
         int min = level.getMinY();
         int y = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
@@ -176,18 +189,42 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
             pos.set(x, y, z);
             BlockState b = level.getBlockState(pos);
             if (isNaturalGround(b)) {
-                break;
+                level.setBlock(pos, DIRT_PATH, FLAGS); // 自然地面顶层→土径
+                return;
+            }
+            if (!b.getFluidState().isEmpty()) {
+                bridgeColumn(level, x, y, z, edge); // 水面：架桥而非铺路/填水
+                return;
             }
             if (!b.isAir()) {
                 level.setBlock(pos, AIR, FLAGS); // 清掉植被/树木/积雪
             }
             y--;
         }
-        BlockState ground = level.getBlockState(pos.set(x, y, z));
-        if (!ground.getFluidState().isEmpty() || ground.isAir()) {
-            return; // 水面/虚空不铺路
+        // 落到底仍没遇到地面（纯虚空列）：不铺。
+    }
+
+    /** 在水面那一列架木板桥面（保留桥下水源）；edge 列在桥面上加栅栏护栏。木材按群系挑。 */
+    private void bridgeColumn(ServerLevel level, int x, int waterTopY, int z, boolean edge) {
+        BlockState[] wood = woodFor(level, new BlockPos(x, waterTopY, z)); // [0]=木板 [1]=栅栏
+        BlockPos deck = new BlockPos(x, waterTopY, z);
+        level.setBlock(deck, wood[0], FLAGS); // 顶层水→木板，下方的水保留
+        if (edge) {
+            // 护栏带邻居更新，让相邻栅栏自动连成一条；非 deck/清理那种怕引发水流连锁的场景。
+            level.setBlock(deck.above(), wood[1], Block.UPDATE_NEIGHBORS | Block.UPDATE_CLIENTS);
         }
-        level.setBlock(pos.set(x, y, z), DIRT_PATH, FLAGS);
+    }
+
+    /** 按所在群系挑桥用木材：针叶林→云杉，丛林→丛林木，其余→橡木（用 BiomeTags，覆盖各变体）。 */
+    private static BlockState[] woodFor(ServerLevel level, BlockPos pos) {
+        Holder<Biome> biome = level.getBiome(pos);
+        if (biome.is(BiomeTags.IS_TAIGA)) {
+            return new BlockState[]{Blocks.SPRUCE_PLANKS.defaultBlockState(), Blocks.SPRUCE_FENCE.defaultBlockState()};
+        }
+        if (biome.is(BiomeTags.IS_JUNGLE)) {
+            return new BlockState[]{Blocks.JUNGLE_PLANKS.defaultBlockState(), Blocks.JUNGLE_FENCE.defaultBlockState()};
+        }
+        return new BlockState[]{Blocks.OAK_PLANKS.defaultBlockState(), Blocks.OAK_FENCE.defaultBlockState()};
     }
 
     /** 实心地面顶的 y（OCEAN_FLOOR：忽略流体，水下取河床/海床）。 */

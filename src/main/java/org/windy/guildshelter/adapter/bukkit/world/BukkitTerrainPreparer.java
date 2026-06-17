@@ -87,9 +87,15 @@ public final class BukkitTerrainPreparer implements TerrainPreparer {
         plugin.getLogger().info("[GuildShelter] 铺土径 " + worldName + " 区域 ("
                 + region.minBlockX() + "," + region.minBlockZ() + ")~("
                 + region.maxBlockX() + "," + region.maxBlockZ() + ")");
+        int minX = region.minBlockX();
+        int maxX = region.maxBlockX();
+        int minZ = region.minBlockZ();
+        int maxZ = region.maxBlockZ();
+        // 护栏放在路条带"窄轴"的两条长边上（竖条→x 两侧；横条→z 两侧）。
+        boolean narrowIsX = (maxX - minX) <= (maxZ - minZ);
         Deque<int[]> queue = new ArrayDeque<>();
-        for (int x = region.minBlockX(); x <= region.maxBlockX(); x++) {
-            for (int z = region.minBlockZ(); z <= region.maxBlockZ(); z++) {
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
                 queue.add(new int[]{x, z});
             }
         }
@@ -99,7 +105,9 @@ public final class BukkitTerrainPreparer implements TerrainPreparer {
                 int n = 0;
                 while (n < COLUMNS_PER_TICK && !queue.isEmpty()) {
                     int[] c = queue.poll();
-                    pathColumn(world, c[0], c[1]);
+                    boolean edge = narrowIsX ? (c[0] == minX || c[0] == maxX)
+                                             : (c[1] == minZ || c[1] == maxZ);
+                    pathColumn(world, c[0], c[1], edge);
                     n++;
                 }
                 if (queue.isEmpty()) {
@@ -109,26 +117,52 @@ public final class BukkitTerrainPreparer implements TerrainPreparer {
         }.runTaskTimer(plugin, 1L, 1L);
     }
 
-    /** 把一列道路顶层铺成土径：向下穿过并清掉植被/树/雪，定位真正的自然地面再铺；水/虚空跳过。 */
-    private void pathColumn(World world, int x, int z) {
+    /**
+     * 把一列道路铺好：向下穿过并清掉植被/树/雪，定位真正的自然地面铺土径；
+     * 遇水改架<b>木板栈桥</b>（保留桥下水源，edge 列加栅栏护栏）；纯虚空列跳过。
+     */
+    private void pathColumn(World world, int x, int z, boolean edge) {
         world.loadChunk(x >> 4, z >> 4, true); // 道路条带常在地皮远端，确保区块已生成再操作
         int min = world.getMinHeight();
         int y = world.getHighestBlockYAt(x, z, HeightMap.WORLD_SURFACE);
         while (y > min) {
             Block b = world.getBlockAt(x, y, z);
             if (isNaturalGround(b.getType())) {
-                break;
+                b.setType(Material.DIRT_PATH, false); // 自然地面顶层→土径
+                return;
+            }
+            if (b.isLiquid()) {
+                bridgeColumn(world, x, y, z, edge); // 水面：架桥而非铺路/填水
+                return;
             }
             if (b.getType() != Material.AIR) {
                 b.setType(Material.AIR, false); // 清掉植被/树木/积雪
             }
             y--;
         }
-        Block ground = world.getBlockAt(x, y, z);
-        if (ground.isLiquid() || ground.getType().isAir()) {
-            return; // 水面/虚空不铺路
+        // 落到底仍没遇到地面（纯虚空列）：不铺。
+    }
+
+    /** 在水面那一列架木板桥面（保留桥下水源）；edge 列在桥面上加栅栏护栏。木材按群系挑。 */
+    private void bridgeColumn(World world, int x, int waterTopY, int z, boolean edge) {
+        Material[] wood = woodFor(world, x, waterTopY, z); // [0]=木板 [1]=栅栏
+        world.getBlockAt(x, waterTopY, z).setType(wood[0], false); // 顶层水→木板，下方的水保留
+        if (edge) {
+            world.getBlockAt(x, waterTopY + 1, z).setType(wood[1], true); // 护栏：带物理让栅栏相连
         }
-        ground.setType(Material.DIRT_PATH, false);
+    }
+
+    /** 按所在群系挑桥用木材：针叶/雪地→云杉，丛林→丛林木，其余→橡木。 */
+    private static Material[] woodFor(World world, int x, int y, int z) {
+        String biome = world.getBiome(x, y, z).getKey().getKey(); // 群系 id 路径（小写）
+        if (biome.contains("taiga") || biome.contains("snowy") || biome.contains("frozen")
+                || biome.contains("grove") || biome.contains("pine")) {
+            return new Material[]{Material.SPRUCE_PLANKS, Material.SPRUCE_FENCE};
+        }
+        if (biome.contains("jungle") || biome.contains("bamboo")) {
+            return new Material[]{Material.JUNGLE_PLANKS, Material.JUNGLE_FENCE};
+        }
+        return new Material[]{Material.OAK_PLANKS, Material.OAK_FENCE};
     }
 
     /** 自然地面 = 实心方块且非原木/树叶（避免把路铺到树干/树冠上）。 */
