@@ -57,6 +57,30 @@ public final class MysqlDialect implements SqlDialect {
                     slot        INT NOT NULL,
                     player_uuid VARCHAR(36) NOT NULL,
                     PRIMARY KEY (guild_id, slot, player_uuid)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_rating (
+                    guild_id    VARCHAR(255) NOT NULL,
+                    slot        INT NOT NULL,
+                    rater_uuid  VARCHAR(36) NOT NULL,
+                    score       INT NOT NULL,
+                    PRIMARY KEY (guild_id, slot, rater_uuid)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_comment (
+                    id          INT AUTO_INCREMENT PRIMARY KEY,
+                    guild_id    VARCHAR(255) NOT NULL,
+                    slot        INT NOT NULL,
+                    author_uuid VARCHAR(36) NOT NULL,
+                    message     TEXT NOT NULL,
+                    created_at  BIGINT NOT NULL
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_merge (
+                    guild_id      VARCHAR(255) NOT NULL,
+                    primary_slot  INT NOT NULL,
+                    absorbed_slot INT NOT NULL,
+                    PRIMARY KEY (guild_id, primary_slot, absorbed_slot)
                 )""");
     }
 

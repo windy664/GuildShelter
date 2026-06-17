@@ -53,19 +53,39 @@ public final class ClaimGuard {
         boolean inGuild = manors.findByOwner(guild, ref).isPresent();
         IntFunction<Manor> bySlot = slot -> manors.findBySlot(guild, slot).orElse(null);
         LayoutCalculator layout = new LayoutCalculator(gw.layout()); // 用该世界冻结的布局
-        // 地皮内建造判定走身份分级 + member 在线门控（ManorRoles），非纯 hasBuildAccess。
-        if (rules.canModify(layout, ref, inGuild, bySlot, lx, lz, ManorRoles::effectiveBuild)) {
-            return true;
+
+        // 合并感知：先用原始 classify，如果是 ROAD 再查 merge 表
+        Classification raw = layout.classify(lx, lz);
+        Classification effective = raw;
+        if (raw.type() == RegionType.ROAD) {
+            MergeAwareClassifier merger = new MergeAwareClassifier(layout, manors, guild);
+            effective = merger.classify(lx, lz);
         }
+
+        if (effective.type() == RegionType.PLOT) {
+            // 合并后的路 或 原始地皮：按地皮权限判定
+            Manor m = bySlot.apply(effective.slot());
+            if (m != null && ManorRoles.effectiveBuild(m, ref)) {
+                // 检查是否在实占范围内（合并后的路 chunk 视为在范围内）
+                if (raw.type() == RegionType.ROAD || layout.activeRegion(effective.slot(), m.level()).containsChunk(lx, lz)) {
+                    return true;
+                }
+            }
+        } else {
+            // 非合并的原始判定
+            if (rules.canModify(layout, ref, inGuild, bySlot, lx, lz, ManorRoles::effectiveBuild)) {
+                return true;
+            }
+        }
+
         // 规则拒绝 → 检查细粒度 admin 权限（按区域类型分流）
         if (player.isOp()) {
             return true;
         }
-        Classification c = layout.classify(lx, lz);
-        return switch (c.type()) {
+        return switch (raw.type()) {
             case ROAD -> Permissions.hasAdminPerm(player, Permissions.ADMIN_BUILD_ROAD);
             case PLOT -> Permissions.hasAdminPerm(player, Permissions.ADMIN_BUILD_OTHER);
-            case MAIN_CITY -> false; // 主城只需是本公会成员，上面 canModify 已判
+            case MAIN_CITY -> false;
         };
     }
 

@@ -57,6 +57,30 @@ public final class SqliteDialect implements SqlDialect {
                     slot        INTEGER NOT NULL,
                     player_uuid TEXT NOT NULL,
                     PRIMARY KEY (guild_id, slot, player_uuid)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_rating (
+                    guild_id    TEXT NOT NULL,
+                    slot        INTEGER NOT NULL,
+                    rater_uuid  TEXT NOT NULL,
+                    score       INTEGER NOT NULL,
+                    PRIMARY KEY (guild_id, slot, rater_uuid)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_comment (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id    TEXT NOT NULL,
+                    slot        INTEGER NOT NULL,
+                    author_uuid TEXT NOT NULL,
+                    message     TEXT NOT NULL,
+                    created_at  INTEGER NOT NULL
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_merge (
+                    guild_id      TEXT NOT NULL,
+                    primary_slot  INTEGER NOT NULL,
+                    absorbed_slot INTEGER NOT NULL,
+                    PRIMARY KEY (guild_id, primary_slot, absorbed_slot)
                 )""");
     }
 

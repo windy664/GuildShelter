@@ -7,6 +7,7 @@ import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
 import org.windy.guildshelter.domain.port.GuildRepository;
 import org.windy.guildshelter.domain.port.ManorRepository;
+import org.windy.guildshelter.domain.port.ManorRepository.CommentEntry;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -259,6 +260,109 @@ public final class FlatFileStorage implements Storage {
                 sb.append(p.uuid());
             }
             return sb.toString();
+        }
+
+        // ===== 评分/留言/合并：平铺文件版用内存存储（重启丢失，原型够用）=====
+        private final Map<String, Map<String, Integer>> ratings = new LinkedHashMap<>();
+        private final List<CommentEntry> comments = new ArrayList<>();
+        private final Map<String, Map<Integer, Integer>> merges = new LinkedHashMap<>(); // guild → absorbed→primary
+
+        private static String rateKey(GuildId g, int slot) { return g.value() + "#" + slot; }
+
+        @Override
+        public void rate(GuildId guild, int slot, PlayerRef rater, int score) {
+            ratings.computeIfAbsent(rateKey(guild, slot), k -> new LinkedHashMap<>())
+                    .put(rater.uuid().toString(), score);
+        }
+
+        @Override
+        public int getRating(GuildId guild, int slot, PlayerRef rater) {
+            Map<String, Integer> m = ratings.get(rateKey(guild, slot));
+            return m != null ? m.getOrDefault(rater.uuid().toString(), 0) : 0;
+        }
+
+        @Override
+        public double getAverageRating(GuildId guild, int slot) {
+            Map<String, Integer> m = ratings.get(rateKey(guild, slot));
+            if (m == null || m.isEmpty()) return 0;
+            return m.values().stream().mapToInt(Integer::intValue).average().orElse(0);
+        }
+
+        @Override
+        public List<Integer> getTopRatedSlots(GuildId guild, int limit) {
+            return ratings.entrySet().stream()
+                    .filter(e -> e.getKey().startsWith(guild.value() + "#"))
+                    .sorted((a, b) -> Double.compare(
+                            b.getValue().values().stream().mapToInt(Integer::intValue).average().orElse(0),
+                            a.getValue().values().stream().mapToInt(Integer::intValue).average().orElse(0)))
+                    .limit(limit)
+                    .map(e -> Integer.parseInt(e.getKey().split("#")[1]))
+                    .toList();
+        }
+
+        @Override
+        public int getRatingCount(GuildId guild, int slot) {
+            Map<String, Integer> m = ratings.get(rateKey(guild, slot));
+            return m != null ? m.size() : 0;
+        }
+
+        @Override
+        public void addComment(GuildId guild, int slot, PlayerRef author, String message) {
+            comments.add(new CommentEntry(guild, slot, author, message, System.currentTimeMillis()));
+        }
+
+        @Override
+        public List<CommentEntry> getComments(GuildId guild, int slot, int limit) {
+            return comments.stream()
+                    .filter(c -> c.guild().equals(guild) && c.slot() == slot)
+                    .sorted((a, b) -> Long.compare(b.timestamp(), a.timestamp()))
+                    .limit(limit)
+                    .toList();
+        }
+
+        @Override
+        public List<CommentEntry> getInbox(PlayerRef owner, int limit) {
+            Set<String> ownedSlots = new HashSet<>();
+            for (Manor m : bySlot.values()) {
+                if (m.owner().equals(owner)) {
+                    ownedSlots.add(rateKey(m.guild(), m.slot()));
+                }
+            }
+            return comments.stream()
+                    .filter(c -> ownedSlots.contains(rateKey(c.guild(), c.slot())))
+                    .sorted((a, b) -> Long.compare(b.timestamp(), a.timestamp()))
+                    .limit(limit)
+                    .toList();
+        }
+
+        @Override
+        public void merge(int primarySlot, int absorbedSlot, GuildId guild) {
+            merges.computeIfAbsent(guild.value(), k -> new LinkedHashMap<>())
+                    .put(absorbedSlot, primarySlot);
+        }
+
+        @Override
+        public int getMergedTarget(GuildId guild, int slot) {
+            Map<Integer, Integer> m = merges.get(guild.value());
+            return m != null ? m.getOrDefault(slot, slot) : slot;
+        }
+
+        @Override
+        public List<Integer> getMergedSlots(GuildId guild, int primarySlot) {
+            Map<Integer, Integer> m = merges.get(guild.value());
+            if (m == null) return List.of();
+            return m.entrySet().stream()
+                    .filter(e -> e.getValue() == primarySlot)
+                    .map(Map.Entry::getKey)
+                    .toList();
+        }
+
+        @Override
+        public void unmerge(GuildId guild, int primarySlot) {
+            Map<Integer, Integer> m = merges.get(guild.value());
+            if (m != null) {
+                m.values().removeIf(v -> v == primarySlot);
+            }
         }
     }
 }

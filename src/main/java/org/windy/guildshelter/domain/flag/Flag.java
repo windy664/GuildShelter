@@ -60,7 +60,14 @@ public enum Flag {
     DESCRIPTION("description", FlagType.STRING, "", "地皮描述(显示在 /gs info)"),
     BLOCKED_CMDS("blocked-cmds", FlagType.STRING, "", "本地皮内禁止使用的命令(逗号分隔,不含/;如 spawn,tp,home)"),
     KEEP("keep", FlagType.BOOLEAN, "false", "庄主退会时是否保留地皮不清扫"),
-    PRICE("price", FlagType.DOUBLE, "0", "访客进入本地皮需支付的费用(需 Vault;0=免费)");
+    PRICE("price", FlagType.DOUBLE, "0", "访客进入本地皮需支付的费用(需 Vault;0=免费)"),
+
+    // --- 地皮管理组 ---
+    ALIAS("alias", FlagType.STRING, "", "地皮别名(显示在 /gs info 和家园卡)"),
+    HOME_X("home-x", FlagType.INTEGER, "0", "/gs home 传送点 X 坐标(0=使用地皮中心)"),
+    HOME_Y("home-y", FlagType.INTEGER, "0", "/gs home 传送点 Y 坐标"),
+    HOME_Z("home-z", FlagType.INTEGER, "0", "/gs home 传送点 Z 坐标"),
+    DONE("done", FlagType.BOOLEAN, "false", "地皮是否已完工标记");
 
     private final String id;
     private final FlagType type;

@@ -11,10 +11,13 @@ import org.bukkit.entity.Player;
 import org.windy.guildshelter.adapter.bukkit.GridAsciiMap;
 import org.windy.guildshelter.adapter.bukkit.GuildWorldRegistry;
 import org.windy.guildshelter.adapter.bukkit.ManorEntityCensus;
+import org.windy.guildshelter.adapter.bukkit.ManorRoles;
+import org.windy.guildshelter.adapter.bukkit.MergeAwareClassifier;
 import org.windy.guildshelter.adapter.bukkit.Permissions;
 import org.windy.guildshelter.adapter.bukkit.world.WorldManager;
 import org.windy.guildshelter.domain.flag.Flag;
 import org.windy.guildshelter.domain.flag.FlagType;
+import org.windy.guildshelter.domain.layout.Classification;
 import org.windy.guildshelter.domain.layout.LayoutCalculator;
 import org.windy.guildshelter.domain.model.ChunkRegion;
 import org.windy.guildshelter.domain.model.GuildId;
@@ -49,7 +52,9 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     private static final String ADMIN_PERM = Permissions.ADMIN;
     /** 受 guildshelter.command.<sub> 节点管控的玩家子命令（节点默认放行，见 plugin.yml）。 */
     private static final Set<String> PLAYER_SUBS = Set.of("home", "spawn", "upgrade", "info",
-            "trust", "untrust", "member", "deny", "undeny", "list", "visit", "clear", "flag", "card");
+            "trust", "untrust", "member", "deny", "undeny", "list", "visit", "clear", "flag", "card",
+            "alias", "sethome", "done", "kick", "near", "rate", "top", "middle",
+            "comment", "inbox", "swap", "grant", "merge");
 
     private final WorldManager worlds;
     private final GuildRepository guilds;
@@ -96,9 +101,22 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             case "clear" -> { clear(sender); return true; }
             case "flag" -> { flag(sender, args); return true; }
             case "card" -> { card(sender, args); return true; }
+            case "alias" -> { alias(sender, args); return true; }
+            case "sethome" -> { sethome(sender); return true; }
+            case "done" -> { done(sender); return true; }
+            case "kick" -> { kick(sender, args); return true; }
+            case "near" -> { near(sender); return true; }
+            case "rate" -> { rate(sender, args); return true; }
+            case "top" -> { top(sender); return true; }
+            case "middle" -> { middle(sender); return true; }
+            case "comment" -> { comment(sender, args); return true; }
+            case "inbox" -> { inbox(sender); return true; }
+            case "swap" -> { swap(sender, args); return true; }
+            case "grant" -> { grant(sender, args); return true; }
+            case "merge" -> { mergeCmd(sender, args); return true; }
             case "admin" -> { /* 落到下面的管理分支 */ }
             default -> {
-                sender.sendMessage("§e/gs <home|spawn|upgrade|info|trust|untrust|member|deny|undeny|list|visit|clear|flag|card>  §7玩家命令");
+                sender.sendMessage("§e/gs <home|spawn|upgrade|info|trust|untrust|member|deny|undeny|list|visit|clear|flag|card|alias|sethome|done|kick|near|rate|top|middle|comment|inbox|swap|grant|merge>  §7玩家命令");
                 sender.sendMessage("§7/gs admin ...  §8管理命令");
                 return true;
             }
@@ -126,7 +144,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
 
     // ===== 玩家命令（自管模式：以"拥有地皮"判定归属公会）=====
 
-    /** /gs home：传送到自己地皮的实占范围中心。 */
+    /** /gs home：传送到自己地皮（优先用 sethome 坐标，否则实占中心）。 */
     private void home(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage("§c只有玩家能用此命令。");
@@ -142,13 +160,28 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         World world = org.bukkit.Bukkit.getWorld(gw.worldName());
-        ChunkRegion active = new LayoutCalculator(gw.layout())
-                .activeRegion(manor.slot(), manor.level())
-                .shift(gw.originChunkX(), gw.originChunkZ());
-        int cx = (active.minBlockX() + active.maxBlockX()) / 2;
-        int cz = (active.minBlockZ() + active.maxBlockZ()) / 2;
+        int hx = Flag.HOME_X.resolveInt(manor.flags());
+        int hz = Flag.HOME_Z.resolveInt(manor.flags());
+        int cx, cz, cy;
+        if (hx != 0 || hz != 0) {
+            // 有自定义 home 坐标
+            cx = hx;
+            cz = hz;
+            cy = Flag.HOME_Y.resolveInt(manor.flags());
+            if (cy == 0) {
+                cy = world.getHighestBlockYAt(cx, cz) + 1;
+            }
+        } else {
+            // 默认：实占中心
+            ChunkRegion active = new LayoutCalculator(gw.layout())
+                    .activeRegion(manor.slot(), manor.level())
+                    .shift(gw.originChunkX(), gw.originChunkZ());
+            cx = (active.minBlockX() + active.maxBlockX()) / 2;
+            cz = (active.minBlockZ() + active.maxBlockZ()) / 2;
+            world.loadChunk(cx >> 4, cz >> 4, true);
+            cy = world.getHighestBlockYAt(cx, cz) + 1;
+        }
         world.loadChunk(cx >> 4, cz >> 4, true);
-        int cy = world.getHighestBlockYAt(cx, cz) + 1;
         player.teleport(new Location(world, cx + 0.5, cy, cz + 0.5));
         sender.sendMessage("§a已回到你的地皮 #" + manor.slot() + "。");
     }
@@ -213,10 +246,13 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         int capacity = levels.maxMembers(gw.guildLevel());
         int members = manors.findAll(manor.guild()).size();
         sender.sendMessage("§6==== 公会营地信息 ====");
+        String alias = Flag.ALIAS.resolveString(manor.flags());
+        String title = alias.isBlank() ? "地皮 #" + manor.slot() : alias + " (#" + manor.slot() + ")";
         sender.sendMessage("§7公会: §f" + manor.guild().value() + " §7(Lv" + gw.guildLevel()
                 + "/" + levels.maxGuildLevel() + ", 成员 " + members + "/" + capacity + ")");
-        sender.sendMessage("§7你的地皮: §f#" + manor.slot() + " §7庄园 Lv" + manor.level()
-                + "/" + levels.manorMaxLevel() + " §7尺寸 " + side + "×" + side);
+        sender.sendMessage("§7你的地皮: §f" + title + " §7庄园 Lv" + manor.level()
+                + "/" + levels.manorMaxLevel() + " §7尺寸 " + side + "×" + side
+                + (Flag.DONE.resolveBool(manor.flags()) ? " §a✔ 已完工" : " §e🔨 建造中"));
         sender.sendMessage("§7共建人(trusted): §f" + sizeOrNone(manor.coBuilders())
                 + " §7成员(member): §f" + sizeOrNone(manor.members())
                 + " §7黑名单: §c" + sizeOrNone(manor.denied()));
@@ -663,11 +699,19 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                     return f != null && !e.getValue().equals(f.defaultValue());
                 }).count();
 
+        String alias = Flag.ALIAS.resolveString(manor.flags());
+        String title = alias.isBlank() ? "#" + manor.slot() : alias + " (#" + manor.slot() + ")";
+        boolean done = Flag.DONE.resolveBool(manor.flags());
+
         sender.sendMessage("§6┌─────────── §e家园卡 §6───────────");
-        sender.sendMessage("§6│ §7地皮: §f#" + manor.slot() + "  §7公会: §f" + manor.guild().value()
-                + "  §7等级: §f" + manor.guildLevel());
+        sender.sendMessage("§6│ §7地皮: §f" + title + "  §7公会: §f" + manor.guild().value()
+                + "  §7等级: §f" + gw.guildLevel()
+                + (done ? "  §a✔ 已完工" : "  §e🔨 建造中"));
         sender.sendMessage("§6│ §7庄主: §f" + targetName + "  §7庄园Lv: §f" + manor.level()
                 + "/" + levels.manorMaxLevel() + "  §7尺寸: §f" + side + "×" + side);
+        if (!alias.isBlank()) {
+            sender.sendMessage("§6│ §7别名: §f" + alias);
+        }
         if (!desc.isBlank()) {
             sender.sendMessage("§6│ §7描述: §f" + desc);
         }
@@ -683,6 +727,489 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§6│");
         sender.sendMessage("§6│ §e综合评分: §a§l" + score + " §7分");
         sender.sendMessage("§6└─────────────────────────");
+    }
+
+    // ===== 新增命令：alias / sethome / done / kick =====
+
+    /** /gs alias <名称>：设置地皮别名（空参清除）。 */
+    private void alias(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        if (manor == null) {
+            sender.sendMessage("§e你还没有地皮。");
+            return;
+        }
+        String name = args.length >= 2
+                ? String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length))
+                : "";
+        Map<String, String> flags = new HashMap<>(manor.flags());
+        if (name.isBlank()) {
+            flags.remove(Flag.ALIAS.id());
+            manors.save(manor.withFlags(flags));
+            sender.sendMessage("§a已清除地皮别名。");
+        } else {
+            flags.put(Flag.ALIAS.id(), name.replace(';', ','));
+            manors.save(manor.withFlags(flags));
+            sender.sendMessage("§a地皮别名已设为: §f" + name);
+        }
+    }
+
+    /** /gs sethome：把当前位置设为 /gs home 的传送点。 */
+    private void sethome(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        if (manor == null) {
+            sender.sendMessage("§e你还没有地皮。");
+            return;
+        }
+        // 检查是否在自己的地皮上
+        GuildWorld gw = registry.get(player.getWorld().getName());
+        if (gw == null || !gw.guild().equals(manor.guild())) {
+            sender.sendMessage("§c你不在自己的公会世界里。");
+            return;
+        }
+        Location loc = player.getLocation();
+        Map<String, String> flags = new HashMap<>(manor.flags());
+        flags.put(Flag.HOME_X.id(), Integer.toString(loc.getBlockX()));
+        flags.put(Flag.HOME_Y.id(), Integer.toString(loc.getBlockY()));
+        flags.put(Flag.HOME_Z.id(), Integer.toString(loc.getBlockZ()));
+        manors.save(manor.withFlags(flags));
+        sender.sendMessage("§a/home 传送点已设为: §f" + loc.getBlockX() + ", " + loc.getBlockY() + ", " + loc.getBlockZ());
+    }
+
+    /** /gs done：切换地皮完工标记。 */
+    private void done(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        if (manor == null) {
+            sender.sendMessage("§e你还没有地皮。");
+            return;
+        }
+        boolean current = Flag.DONE.resolveBool(manor.flags());
+        Map<String, String> flags = new HashMap<>(manor.flags());
+        flags.put(Flag.DONE.id(), Boolean.toString(!current));
+        manors.save(manor.withFlags(flags));
+        if (current) {
+            sender.sendMessage("§e已取消完工标记（建造中）。");
+        } else {
+            sender.sendMessage("§a已标记地皮为 §a✔ 已完工。");
+        }
+    }
+
+    /** /gs kick <玩家>：把非成员从你的地皮上踢出去（传送到边界外）。 */
+    private void kick(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage("用法: /gs kick <玩家>");
+            return;
+        }
+        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        if (manor == null) {
+            sender.sendMessage("§e你还没有地皮。");
+            return;
+        }
+        Player target = Bukkit.getPlayer(args[1]);
+        if (target == null || !target.isOnline()) {
+            sender.sendMessage("§c玩家 " + args[1] + " 不在线。");
+            return;
+        }
+        if (target.getUniqueId().equals(player.getUniqueId())) {
+            sender.sendMessage("§e不能踢自己。");
+            return;
+        }
+        // 检查目标是否在自己的地皮上
+        GuildWorld gw = registry.get(target.getWorld().getName());
+        if (gw == null || !gw.guild().equals(manor.guild())) {
+            sender.sendMessage("§e" + target.getName() + " 不在你的公会世界里。");
+            return;
+        }
+        PlayerRef targetRef = PlayerRef.of(target.getUniqueId());
+        // 成员不能踢（用 deny 拉黑）
+        if (ManorRoles.isMemberOrAbove(manor, targetRef)) {
+            sender.sendMessage("§e" + target.getName() + " 是地皮成员，不能踢。用 /gs deny 拉黑。");
+            return;
+        }
+        // 传送到公会主城
+        World world = Bukkit.getWorld(gw.worldName());
+        if (world != null) {
+            target.teleport(worlds.safeSpawn(world, gw));
+            target.sendMessage("§e你被 " + player.getName() + " 从地皮 #" + manor.slot() + " 踢出了。");
+            sender.sendMessage("§a已将 " + target.getName() + " 踢出你的地皮。");
+        }
+    }
+
+    // ===== near / rate / top / middle =====
+
+    /** /gs near：列出附近地皮（按距离排序，显示庄主+距离）。 */
+    private void near(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        GuildWorld gw = registry.get(player.getWorld().getName());
+        if (gw == null) {
+            sender.sendMessage("§c你不在公会世界里。");
+            return;
+        }
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        int px = (player.getLocation().getBlockX() >> 4) - gw.originChunkX();
+        int pz = (player.getLocation().getBlockZ() >> 4) - gw.originChunkZ();
+        List<Manor> all = manors.findAll(gw.guild());
+        if (all.isEmpty()) {
+            sender.sendMessage("§e该公会还没有地皮。");
+            return;
+        }
+        // 按距离排序
+        record SlotDist(Manor manor, double dist) {}
+        List<SlotDist> sorted = new ArrayList<>();
+        for (Manor m : all) {
+            ChunkRegion active = layout.activeRegion(m.slot(), m.level());
+            int cx = (active.minChunkX() + active.maxChunkX()) / 2;
+            int cz = (active.minChunkZ() + active.maxChunkZ()) / 2;
+            double dist = Math.sqrt((cx - px) * (cx - px) + (cz - pz) * (cz - pz));
+            sorted.add(new SlotDist(m, dist));
+        }
+        sorted.sort((a, b) -> Double.compare(a.dist(), b.dist()));
+        sender.sendMessage("§6==== 附近地皮 ====");
+        int show = Math.min(sorted.size(), 10);
+        for (int i = 0; i < show; i++) {
+            SlotDist sd = sorted.get(i);
+            String alias = Flag.ALIAS.resolveString(sd.manor().flags());
+            String name = alias.isBlank() ? "#" + sd.manor().slot() : alias + " (#" + sd.manor().slot() + ")";
+            String ownerName = Bukkit.getOfflinePlayer(sd.manor().owner().uuid()).getName();
+            sender.sendMessage("§7- §f" + name + " §7庄主: §f" + (ownerName != null ? ownerName : "?")
+                    + " §7距离: §e" + String.format("%.1f", sd.dist() * 16) + " 格");
+        }
+    }
+
+    /** /gs rate <分数>：给当前所在地皮打分（1-10）。 */
+    private void rate(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage("用法: /gs rate <1-10>");
+            return;
+        }
+        int score;
+        try {
+            score = Integer.parseInt(args[1]);
+        } catch (NumberFormatException e) {
+            sender.sendMessage("§c分数必须是 1-10 的整数。");
+            return;
+        }
+        if (score < 1 || score > 10) {
+            sender.sendMessage("§c分数必须在 1-10 之间。");
+            return;
+        }
+        GuildWorld gw = registry.get(player.getWorld().getName());
+        if (gw == null) {
+            sender.sendMessage("§c你不在公会世界里。");
+            return;
+        }
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        int bx = player.getLocation().getBlockX();
+        int bz = player.getLocation().getBlockZ();
+        int lx = (bx >> 4) - gw.originChunkX();
+        int lz = (bz >> 4) - gw.originChunkZ();
+        Classification c = mergeClassify(layout, gw.guild(), lx, lz);
+        if (!c.isPlot()) {
+            sender.sendMessage("§c你不在任何地皮上。");
+            return;
+        }
+        Manor manor = manors.findBySlot(gw.guild(), c.slot()).orElse(null);
+        if (manor == null) {
+            sender.sendMessage("§c该 slot 没有庄园。");
+            return;
+        }
+        PlayerRef ref = PlayerRef.of(player.getUniqueId());
+        if (manor.owner().equals(ref)) {
+            sender.sendMessage("§e不能给自己的地皮打分。");
+            return;
+        }
+        manors.rate(gw.guild(), c.slot(), ref, score);
+        double avg = manors.getAverageRating(gw.guild(), c.slot());
+        int count = manors.getRatingCount(gw.guild(), c.slot());
+        sender.sendMessage("§a已给地皮 #" + c.slot() + " 打 §e" + score + " §a分"
+                + "（平均 §e" + String.format("%.1f", avg) + " §a，共 " + count + " 人评分）");
+    }
+
+    /** /gs top：按评分排行。 */
+    private void top(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        if (manor == null) {
+            sender.sendMessage("§e你还没有地皮。");
+            return;
+        }
+        List<Integer> topSlots = manors.getTopRatedSlots(manor.guild(), 10);
+        if (topSlots.isEmpty()) {
+            sender.sendMessage("§e还没有任何地皮收到评分。用 /gs rate <1-10> 给别人的地皮打分。");
+            return;
+        }
+        sender.sendMessage("§6==== 地皮评分排行 ====");
+        int rank = 1;
+        for (int slot : topSlots) {
+            Manor m = manors.findBySlot(manor.guild(), slot).orElse(null);
+            if (m == null) continue;
+            double avg = manors.getAverageRating(manor.guild(), slot);
+            int count = manors.getRatingCount(manor.guild(), slot);
+            String alias = Flag.ALIAS.resolveString(m.flags());
+            String name = alias.isBlank() ? "#" + slot : alias + " (#" + slot + ")";
+            String ownerName = Bukkit.getOfflinePlayer(m.owner().uuid()).getName();
+            sender.sendMessage("§e" + rank + ". §f" + name + " §7庄主: §f" + (ownerName != null ? ownerName : "?")
+                    + " §7评分: §e" + String.format("%.1f", avg) + " §7(" + count + "人)");
+            rank++;
+        }
+    }
+
+    /** /gs middle：传送到地皮正中心（无视 sethome）。 */
+    private void middle(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        if (manor == null) {
+            sender.sendMessage("§e你还没有地皮。");
+            return;
+        }
+        GuildWorld gw = ensureLoadedWorld(sender, manor.guild());
+        if (gw == null) return;
+        World world = Bukkit.getWorld(gw.worldName());
+        ChunkRegion active = new LayoutCalculator(gw.layout())
+                .activeRegion(manor.slot(), manor.level())
+                .shift(gw.originChunkX(), gw.originChunkZ());
+        int cx = (active.minBlockX() + active.maxBlockX()) / 2;
+        int cz = (active.minBlockZ() + active.maxBlockZ()) / 2;
+        world.loadChunk(cx >> 4, cz >> 4, true);
+        int cy = world.getHighestBlockYAt(cx, cz) + 1;
+        player.teleport(new Location(world, cx + 0.5, cy, cz + 0.5));
+        sender.sendMessage("§a已传送到地皮 #" + manor.slot() + " 正中心。");
+    }
+
+    // ===== comment / inbox =====
+
+    /** /gs comment <留言>：给当前所在地皮留言。 */
+    private void comment(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage("用法: /gs comment <留言内容>");
+            return;
+        }
+        GuildWorld gw = registry.get(player.getWorld().getName());
+        if (gw == null) {
+            sender.sendMessage("§c你不在公会世界里。");
+            return;
+        }
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        int lx = (player.getLocation().getBlockX() >> 4) - gw.originChunkX();
+        int lz = (player.getLocation().getBlockZ() >> 4) - gw.originChunkZ();
+        Classification c = mergeClassify(layout, gw.guild(), lx, lz);
+        if (!c.isPlot()) {
+            sender.sendMessage("§c你不在任何地皮上。");
+            return;
+        }
+        String msg = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
+        manors.addComment(gw.guild(), c.slot(), PlayerRef.of(player.getUniqueId()), msg);
+        sender.sendMessage("§a已给地皮 #" + c.slot() + " 留言。");
+    }
+
+    /** /gs inbox：查看自己地皮收到的留言。 */
+    private void inbox(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        PlayerRef ref = PlayerRef.of(player.getUniqueId());
+        List<ManorRepository.CommentEntry> entries = manors.getInbox(ref, 20);
+        if (entries.isEmpty()) {
+            sender.sendMessage("§e你的地皮还没有收到任何留言。");
+            return;
+        }
+        sender.sendMessage("§6==== 收件箱（最近 20 条）====");
+        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("MM-dd HH:mm");
+        for (ManorRepository.CommentEntry e : entries) {
+            String authorName = Bukkit.getOfflinePlayer(e.author().uuid()).getName();
+            String time = sdf.format(new java.util.Date(e.timestamp()));
+            sender.sendMessage("§7[" + time + "] §f" + (authorName != null ? authorName : "?")
+                    + " §7→ 地皮#" + e.slot() + ": §f" + e.message());
+        }
+    }
+
+    // ===== swap / grant / merge =====
+
+    /** /gs swap <玩家>：与对方互换地皮 slot。 */
+    private void swap(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage("用法: /gs swap <玩家>");
+            return;
+        }
+        PlayerRef ref = PlayerRef.of(player.getUniqueId());
+        Manor myManor = manors.findByOwnerAnywhere(ref).orElse(null);
+        if (myManor == null) {
+            sender.sendMessage("§e你还没有地皮。");
+            return;
+        }
+        Player target = Bukkit.getPlayer(args[1]);
+        if (target == null || !target.isOnline()) {
+            sender.sendMessage("§c玩家 " + args[1] + " 不在线。");
+            return;
+        }
+        if (target.getUniqueId().equals(player.getUniqueId())) {
+            sender.sendMessage("§e不能和自己换。");
+            return;
+        }
+        PlayerRef targetRef = PlayerRef.of(target.getUniqueId());
+        Manor targetManor = manors.findByOwnerAnywhere(targetRef).orElse(null);
+        if (targetManor == null) {
+            sender.sendMessage("§e" + target.getName() + " 还没有地皮。");
+            return;
+        }
+        if (!myManor.guild().equals(targetManor.guild())) {
+            sender.sendMessage("§c你们不在同一个公会。");
+            return;
+        }
+        // 交换 slot：保存对方 slot 的数据给你，你的给对方
+        int mySlot = myManor.slot();
+        int theirSlot = targetManor.slot();
+        Manor newMine = new Manor(theirSlot, myManor.guild(), ref, myManor.level(),
+                myManor.coBuilders(), myManor.members(), myManor.denied(), myManor.flags());
+        Manor newTheirs = new Manor(mySlot, targetManor.guild(), targetRef, targetManor.level(),
+                targetManor.coBuilders(), targetManor.members(), targetManor.denied(), targetManor.flags());
+        manors.save(newMine);
+        manors.save(newTheirs);
+        sender.sendMessage("§a已与 " + target.getName() + " 互换地皮（你的 #" + mySlot + " ↔ #" + theirSlot + "）。");
+        target.sendMessage("§a" + player.getName() + " 与你互换了地皮（你的 #" + theirSlot + " ↔ #" + mySlot + "）。");
+    }
+
+    /** /gs grant <玩家>：给玩家分配额外地皮（需 admin）。 */
+    private void grant(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        if (!Permissions.hasAdminPerm(player, Permissions.ADMIN_TRUST_OTHER)) {
+            sender.sendMessage("§c你需要 admin.trust.other 权限。");
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage("用法: /gs grant <玩家>");
+            return;
+        }
+        Manor myManor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        if (myManor == null) {
+            sender.sendMessage("§e你不在任何公会世界里（需站在目标公会世界中）。");
+            return;
+        }
+        Player target = Bukkit.getPlayer(args[1]);
+        if (target == null || !target.isOnline()) {
+            sender.sendMessage("§c玩家 " + args[1] + " 不在线。");
+            return;
+        }
+        PlayerRef targetRef = PlayerRef.of(target.getUniqueId());
+        GuildId guild = myManor.guild();
+        // 检查目标是否已有该公会的地皮
+        if (manors.findByOwner(guild, targetRef).isPresent()) {
+            sender.sendMessage("§e" + target.getName() + " 在该公会已有地皮。");
+            return;
+        }
+        try {
+            service.assignManor(guild, targetRef);
+            sender.sendMessage("§a已给 " + target.getName() + " 分配一块新地皮。");
+            target.sendMessage("§a你被分配了一块新的公会地皮。");
+        } catch (GuildFullException e) {
+            sender.sendMessage("§c公会已满（名额 " + e.capacity() + "）。");
+        }
+    }
+
+    /** /gs merge <slot>：把相邻地皮合并到自己的地皮（砍掉中间的路）。 */
+    private void mergeCmd(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§c只有玩家能用此命令。");
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage("用法: /gs merge <slot号>（把该 slot 合并到你的地皮）");
+            return;
+        }
+        PlayerRef ref = PlayerRef.of(player.getUniqueId());
+        Manor myManor = manors.findByOwnerAnywhere(ref).orElse(null);
+        if (myManor == null) {
+            sender.sendMessage("§e你还没有地皮。");
+            return;
+        }
+        int absorbedSlot;
+        try {
+            absorbedSlot = Integer.parseInt(args[1]);
+        } catch (NumberFormatException e) {
+            sender.sendMessage("§cslot 必须是整数。");
+            return;
+        }
+        if (absorbedSlot == myManor.slot()) {
+            sender.sendMessage("§e不能和自己的地皮合并。");
+            return;
+        }
+        Manor absorbed = manors.findBySlot(myManor.guild(), absorbedSlot).orElse(null);
+        if (absorbed == null) {
+            sender.sendMessage("§cslot #" + absorbedSlot + " 没有庄园。");
+            return;
+        }
+        // 检查是否相邻（slot 在螺旋上相邻 = 距离 1）
+        GuildWorld gw = guilds.find(myManor.guild()).orElse(null);
+        if (gw == null) {
+            sender.sendMessage("§c公会世界不存在。");
+            return;
+        }
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        ChunkRegion myRegion = layout.activeRegion(myManor.slot(), myManor.level());
+        ChunkRegion theirRegion = layout.activeRegion(absorbedSlot, absorbed.level());
+        // 相邻判定：两个 region 的曼哈顿距离 ≤ 1 chunk（中间只隔一条路）
+        int dx = Math.min(Math.abs(myRegion.maxChunkX() - theirRegion.minChunkX()),
+                Math.abs(theirRegion.maxChunkX() - myRegion.minChunkX()));
+        int dz = Math.min(Math.abs(myRegion.maxChunkZ() - theirRegion.minChunkZ()),
+                Math.abs(theirRegion.maxChunkZ() - myRegion.minChunkZ()));
+        boolean adjacent = (dx <= 1 && dz == 0) || (dz <= 1 && dx == 0);
+        if (!adjacent) {
+            sender.sendMessage("§c两块地皮不相邻（中间必须只隔一条路）。");
+            return;
+        }
+        manors.merge(myManor.slot(), absorbedSlot, myManor.guild());
+        sender.sendMessage("§a已将地皮 #" + absorbedSlot + " 合并到你的地皮 #" + myManor.slot()
+                + "（路 chunk 已归属你的地皮）。");
+    }
+
+    /** 合并感知的 classify：ROAD chunk 若在合并路带上，返回主地皮的 PLOT。 */
+    private Classification mergeClassify(LayoutCalculator layout, GuildId guild, int chunkX, int chunkZ) {
+        Classification raw = layout.classify(chunkX, chunkZ);
+        if (raw.type() != org.windy.guildshelter.domain.layout.RegionType.ROAD) {
+            return raw;
+        }
+        MergeAwareClassifier merger = new MergeAwareClassifier(layout, manors, guild);
+        return merger.classify(chunkX, chunkZ);
     }
 
     /** 确保该公会世界已加载并登记；失败返回 null 并已提示。 */
@@ -966,7 +1493,9 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         List<String> out = new ArrayList<>();
         if (args.length == 1) {
             for (String s : new String[]{"home", "spawn", "upgrade", "info", "trust", "untrust",
-                    "member", "deny", "undeny", "list", "visit", "clear", "flag", "card", "admin"}) {
+                    "member", "deny", "undeny", "list", "visit", "clear", "flag", "card",
+                    "alias", "sethome", "done", "kick", "near", "rate", "top", "middle",
+                    "comment", "inbox", "swap", "grant", "merge", "admin"}) {
                 out.add(s);
             }
         } else if (args.length == 2 && args[0].equalsIgnoreCase("flag")) {
@@ -975,6 +1504,19 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         } else if (args.length == 2 && args[0].equalsIgnoreCase("card")) {
             for (Player p : Bukkit.getOnlinePlayers()) {
                 out.add(p.getName());
+            }
+        } else if (args.length == 2 && args[0].equalsIgnoreCase("kick")) {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                out.add(p.getName());
+            }
+        } else if (args.length == 2 && (args[0].equalsIgnoreCase("swap")
+                || args[0].equalsIgnoreCase("grant"))) {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                out.add(p.getName());
+            }
+        } else if (args.length == 2 && args[0].equalsIgnoreCase("rate")) {
+            for (int i = 1; i <= 10; i++) {
+                out.add(String.valueOf(i));
             }
         } else if (args.length == 3 && args[0].equalsIgnoreCase("flag")) {
             for (Flag f : Flag.values()) {

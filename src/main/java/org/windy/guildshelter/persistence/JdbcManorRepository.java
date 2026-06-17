@@ -4,6 +4,7 @@ import org.windy.guildshelter.domain.model.GuildId;
 import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
 import org.windy.guildshelter.domain.port.ManorRepository;
+import org.windy.guildshelter.domain.port.ManorRepository.CommentEntry;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -213,6 +214,211 @@ public final class JdbcManorRepository implements ManorRepository {
             }
         }
         return out;
+    }
+
+    // ===== 评分系统 =====
+
+    @Override
+    public void rate(GuildId guild, int slot, PlayerRef rater, int score) {
+        String sql = dialect instanceof SqliteDialect
+                ? "INSERT INTO manor_rating(guild_id,slot,rater_uuid,score) VALUES(?,?,?,?) ON CONFLICT(guild_id,slot,rater_uuid) DO UPDATE SET score=excluded.score"
+                : "INSERT INTO manor_rating(guild_id,slot,rater_uuid,score) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE score=VALUES(score)";
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            ps.setString(3, rater.uuid().toString());
+            ps.setInt(4, score);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new PersistenceException("保存评分失败", e);
+        }
+    }
+
+    @Override
+    public int getRating(GuildId guild, int slot, PlayerRef rater) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT score FROM manor_rating WHERE guild_id=? AND slot=? AND rater_uuid=?")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            ps.setString(3, rater.uuid().toString());
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt("score") : 0;
+            }
+        } catch (SQLException e) {
+            throw new PersistenceException("查询评分失败", e);
+        }
+    }
+
+    @Override
+    public double getAverageRating(GuildId guild, int slot) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT AVG(score) AS avg_score FROM manor_rating WHERE guild_id=? AND slot=?")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getDouble("avg_score") : 0;
+            }
+        } catch (SQLException e) {
+            throw new PersistenceException("查询平均评分失败", e);
+        }
+    }
+
+    @Override
+    public List<Integer> getTopRatedSlots(GuildId guild, int limit) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT slot, AVG(score) AS avg_score FROM manor_rating WHERE guild_id=? GROUP BY slot ORDER BY avg_score DESC LIMIT ?")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, limit);
+            List<Integer> result = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.add(rs.getInt("slot"));
+                }
+            }
+            return result;
+        } catch (SQLException e) {
+            throw new PersistenceException("查询评分排行失败", e);
+        }
+    }
+
+    @Override
+    public int getRatingCount(GuildId guild, int slot) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT COUNT(*) AS cnt FROM manor_rating WHERE guild_id=? AND slot=?")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt("cnt") : 0;
+            }
+        } catch (SQLException e) {
+            throw new PersistenceException("查询评分数失败", e);
+        }
+    }
+
+    // ===== 留言系统 =====
+
+    @Override
+    public void addComment(GuildId guild, int slot, PlayerRef author, String message) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "INSERT INTO manor_comment(guild_id,slot,author_uuid,message,created_at) VALUES(?,?,?,?,?)")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            ps.setString(3, author.uuid().toString());
+            ps.setString(4, message);
+            ps.setLong(5, System.currentTimeMillis());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new PersistenceException("保存留言失败", e);
+        }
+    }
+
+    @Override
+    public List<CommentEntry> getComments(GuildId guild, int slot, int limit) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT author_uuid, message, created_at FROM manor_comment WHERE guild_id=? AND slot=? ORDER BY created_at DESC LIMIT ?")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            ps.setInt(3, limit);
+            List<CommentEntry> result = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.add(new CommentEntry(guild, slot,
+                            PlayerRef.of(UUID.fromString(rs.getString("author_uuid"))),
+                            rs.getString("message"),
+                            rs.getLong("created_at")));
+                }
+            }
+            return result;
+        } catch (SQLException e) {
+            throw new PersistenceException("查询留言失败", e);
+        }
+    }
+
+    @Override
+    public List<CommentEntry> getInbox(PlayerRef owner, int limit) {
+        // 查该玩家拥有的所有地皮收到的留言
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT mc.guild_id, mc.slot, mc.author_uuid, mc.message, mc.created_at "
+                        + "FROM manor_comment mc JOIN manor m ON mc.guild_id=m.guild_id AND mc.slot=m.slot "
+                        + "WHERE m.owner_uuid=? ORDER BY mc.created_at DESC LIMIT ?")) {
+            ps.setString(1, owner.uuid().toString());
+            ps.setInt(2, limit);
+            List<CommentEntry> result = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.add(new CommentEntry(
+                            new GuildId(rs.getString("guild_id")),
+                            rs.getInt("slot"),
+                            PlayerRef.of(UUID.fromString(rs.getString("author_uuid"))),
+                            rs.getString("message"),
+                            rs.getLong("created_at")));
+                }
+            }
+            return result;
+        } catch (SQLException e) {
+            throw new PersistenceException("查询收件箱失败", e);
+        }
+    }
+
+    // ===== 合并系统 =====
+
+    @Override
+    public void merge(int primarySlot, int absorbedSlot, GuildId guild) {
+        String sql = dialect instanceof SqliteDialect
+                ? "INSERT INTO manor_merge(guild_id,primary_slot,absorbed_slot) VALUES(?,?,?) ON CONFLICT DO NOTHING"
+                : "INSERT IGNORE INTO manor_merge(guild_id,primary_slot,absorbed_slot) VALUES(?,?,?)";
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, primarySlot);
+            ps.setInt(3, absorbedSlot);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new PersistenceException("保存合并失败", e);
+        }
+    }
+
+    @Override
+    public int getMergedTarget(GuildId guild, int slot) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT primary_slot FROM manor_merge WHERE guild_id=? AND absorbed_slot=?")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt("primary_slot") : slot;
+            }
+        } catch (SQLException e) {
+            throw new PersistenceException("查询合并目标失败", e);
+        }
+    }
+
+    @Override
+    public List<Integer> getMergedSlots(GuildId guild, int primarySlot) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT absorbed_slot FROM manor_merge WHERE guild_id=? AND primary_slot=?")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, primarySlot);
+            List<Integer> result = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.add(rs.getInt("absorbed_slot"));
+                }
+            }
+            return result;
+        } catch (SQLException e) {
+            throw new PersistenceException("查询合并 slot 失败", e);
+        }
+    }
+
+    @Override
+    public void unmerge(GuildId guild, int primarySlot) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "DELETE FROM manor_merge WHERE guild_id=? AND primary_slot=?")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, primarySlot);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new PersistenceException("取消合并失败", e);
+        }
     }
 
     /** 全量替换某成员表里该 slot 的玩家集（先删后批量插，事务内调用）。 */
