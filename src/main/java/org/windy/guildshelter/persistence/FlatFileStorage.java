@@ -364,5 +364,64 @@ public final class FlatFileStorage implements Storage {
                 m.values().removeIf(v -> v == primarySlot);
             }
         }
+
+        @Override
+        public void unmergeOne(GuildId guild, int primarySlot, int absorbedSlot) {
+            Map<Integer, Integer> m = merges.get(guild.value());
+            if (m != null) {
+                m.remove(absorbedSlot, primarySlot);
+            }
+        }
+
+        // ===== 权限模板（内存存储，重启丢失）=====
+        private final Map<String, Map<String, Map<String, String>>> templates = new LinkedHashMap<>();
+
+        @Override
+        public void saveTemplate(GuildId guild, String name, Map<String, String> flags) {
+            templates.computeIfAbsent(guild.value(), k -> new LinkedHashMap<>())
+                    .put(name, Map.copyOf(flags));
+        }
+
+        @Override
+        public void deleteTemplate(GuildId guild, String name) {
+            Map<String, Map<String, String>> g = templates.get(guild.value());
+            if (g != null) g.remove(name);
+        }
+
+        @Override
+        public Optional<Map<String, String>> getTemplate(GuildId guild, String name) {
+            Map<String, Map<String, String>> g = templates.get(guild.value());
+            return g != null ? Optional.ofNullable(g.get(name)) : Optional.empty();
+        }
+
+        @Override
+        public List<String> listTemplates(GuildId guild) {
+            Map<String, Map<String, String>> g = templates.get(guild.value());
+            return g != null ? new ArrayList<>(g.keySet()) : List.of();
+        }
+
+        // ===== 子领地（内存存储）=====
+        private final Map<String, List<SubEntry>> subs = new LinkedHashMap<>();
+
+        @Override
+        public void saveSub(GuildId guild, int slot, String name, int minX, int minZ, int maxX, int maxZ, Map<String, String> flags) {
+            String key = guild.value() + "#" + slot;
+            List<SubEntry> list = subs.computeIfAbsent(key, k -> new ArrayList<>());
+            list.removeIf(s -> s.name().equals(name));
+            list.add(new SubEntry(guild, slot, name, minX, minZ, maxX, maxZ, Map.copyOf(flags)));
+        }
+
+        @Override
+        public void deleteSub(GuildId guild, int slot, String name) {
+            String key = guild.value() + "#" + slot;
+            List<SubEntry> list = subs.get(key);
+            if (list != null) list.removeIf(s -> s.name().equals(name));
+        }
+
+        @Override
+        public List<SubEntry> getSubs(GuildId guild, int slot) {
+            String key = guild.value() + "#" + slot;
+            return subs.getOrDefault(key, List.of());
+        }
     }
 }

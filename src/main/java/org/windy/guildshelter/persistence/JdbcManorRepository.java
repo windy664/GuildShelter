@@ -167,6 +167,28 @@ public final class JdbcManorRepository implements ManorRepository {
                         ps.executeUpdate();
                     }
                 }
+                // 清理 merge 记录（该 slot 作为主合并方或被吸收方）
+                for (String col : new String[]{"primary_slot", "absorbed_slot"}) {
+                    try (PreparedStatement ps = c.prepareStatement(
+                            "DELETE FROM manor_merge WHERE guild_id=? AND " + col + "=?")) {
+                        ps.setString(1, guild.value());
+                        ps.setInt(2, slot);
+                        ps.executeUpdate();
+                    }
+                }
+                // 清理评分和留言
+                try (PreparedStatement ps = c.prepareStatement(
+                        "DELETE FROM manor_rating WHERE guild_id=? AND slot=?")) {
+                    ps.setString(1, guild.value());
+                    ps.setInt(2, slot);
+                    ps.executeUpdate();
+                }
+                try (PreparedStatement ps = c.prepareStatement(
+                        "DELETE FROM manor_comment WHERE guild_id=? AND slot=?")) {
+                    ps.setString(1, guild.value());
+                    ps.setInt(2, slot);
+                    ps.executeUpdate();
+                }
                 c.commit();
             } catch (SQLException e) {
                 c.rollback();
@@ -418,6 +440,135 @@ public final class JdbcManorRepository implements ManorRepository {
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new PersistenceException("取消合并失败", e);
+        }
+    }
+
+    @Override
+    public void unmergeOne(GuildId guild, int primarySlot, int absorbedSlot) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "DELETE FROM manor_merge WHERE guild_id=? AND primary_slot=? AND absorbed_slot=?")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, primarySlot);
+            ps.setInt(3, absorbedSlot);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new PersistenceException("取消单条合并失败", e);
+        }
+    }
+
+    // ===== 权限模板 =====
+
+    @Override
+    public void saveTemplate(GuildId guild, String name, java.util.Map<String, String> flags) {
+        String sql = dialect instanceof SqliteDialect
+                ? "INSERT INTO manor_template(guild_id,name,flags) VALUES(?,?,?) ON CONFLICT(guild_id,name) DO UPDATE SET flags=excluded.flags"
+                : "INSERT INTO manor_template(guild_id,name,flags) VALUES(?,?,?) ON DUPLICATE KEY UPDATE flags=VALUES(flags)";
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, guild.value());
+            ps.setString(2, name);
+            ps.setString(3, FlagsCsv.toCsv(flags));
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new PersistenceException("保存模板失败", e);
+        }
+    }
+
+    @Override
+    public void deleteTemplate(GuildId guild, String name) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "DELETE FROM manor_template WHERE guild_id=? AND name=?")) {
+            ps.setString(1, guild.value());
+            ps.setString(2, name);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new PersistenceException("删除模板失败", e);
+        }
+    }
+
+    @Override
+    public java.util.Optional<java.util.Map<String, String>> getTemplate(GuildId guild, String name) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT flags FROM manor_template WHERE guild_id=? AND name=?")) {
+            ps.setString(1, guild.value());
+            ps.setString(2, name);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return java.util.Optional.empty();
+                return java.util.Optional.of(FlagsCsv.parse(rs.getString("flags")));
+            }
+        } catch (SQLException e) {
+            throw new PersistenceException("查询模板失败", e);
+        }
+    }
+
+    @Override
+    public java.util.List<String> listTemplates(GuildId guild) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT name FROM manor_template WHERE guild_id=? ORDER BY name")) {
+            ps.setString(1, guild.value());
+            java.util.List<String> result = new java.util.ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) result.add(rs.getString("name"));
+            }
+            return result;
+        } catch (SQLException e) {
+            throw new PersistenceException("列举模板失败", e);
+        }
+    }
+
+    // ===== 子领地 =====
+
+    @Override
+    public void saveSub(GuildId guild, int slot, String name, int minX, int minZ, int maxX, int maxZ, java.util.Map<String, String> flags) {
+        String sql = dialect instanceof SqliteDialect
+                ? "INSERT INTO manor_sub(guild_id,slot,name,min_x,min_z,max_x,max_z,flags) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(guild_id,slot,name) DO UPDATE SET min_x=excluded.min_x,min_z=excluded.min_z,max_x=excluded.max_x,max_z=excluded.max_z,flags=excluded.flags"
+                : "INSERT INTO manor_sub(guild_id,slot,name,min_x,min_z,max_x,max_z,flags) VALUES(?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE min_x=VALUES(min_x),min_z=VALUES(min_z),max_x=VALUES(max_x),max_z=VALUES(max_z),flags=VALUES(flags)";
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            ps.setString(3, name);
+            ps.setInt(4, minX);
+            ps.setInt(5, minZ);
+            ps.setInt(6, maxX);
+            ps.setInt(7, maxZ);
+            ps.setString(8, FlagsCsv.toCsv(flags));
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new PersistenceException("保存子领地失败", e);
+        }
+    }
+
+    @Override
+    public void deleteSub(GuildId guild, int slot, String name) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "DELETE FROM manor_sub WHERE guild_id=? AND slot=? AND name=?")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            ps.setString(3, name);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new PersistenceException("删除子领地失败", e);
+        }
+    }
+
+    @Override
+    public java.util.List<SubEntry> getSubs(GuildId guild, int slot) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT name,min_x,min_z,max_x,max_z,flags FROM manor_sub WHERE guild_id=? AND slot=?")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            java.util.List<SubEntry> result = new java.util.ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.add(new SubEntry(guild, slot,
+                            rs.getString("name"),
+                            rs.getInt("min_x"), rs.getInt("min_z"),
+                            rs.getInt("max_x"), rs.getInt("max_z"),
+                            FlagsCsv.parse(rs.getString("flags"))));
+                }
+            }
+            return result;
+        } catch (SQLException e) {
+            throw new PersistenceException("查询子领地失败", e);
         }
     }
 

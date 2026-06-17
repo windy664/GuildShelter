@@ -64,12 +64,14 @@ public final class ManorFlagListener implements Listener {
                     event.setCancelled(true);
                 }
             } else if (isMob(ev.getDamager())) {
-                if (denied(victim.getLocation(), Flag.PVE)) { // 怪打玩家
+                // 怪打玩家：pve 总开关 + pve-monster 细分
+                if (denied(victim.getLocation(), Flag.PVE) || denied(victim.getLocation(), Flag.PVE_MONSTER)) {
                     event.setCancelled(true);
                 }
             }
         } else if (attacker != null) {
-            if (denied(victim.getLocation(), Flag.PVE)) { // 玩家打怪
+            // 玩家打怪：pve 总开关 + pve-player 细分
+            if (denied(victim.getLocation(), Flag.PVE) || denied(victim.getLocation(), Flag.PVE_PLAYER)) {
                 event.setCancelled(true);
             }
         }

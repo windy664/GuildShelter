@@ -81,6 +81,25 @@ public final class MysqlDialect implements SqlDialect {
                     primary_slot  INT NOT NULL,
                     absorbed_slot INT NOT NULL,
                     PRIMARY KEY (guild_id, primary_slot, absorbed_slot)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_template (
+                    guild_id VARCHAR(255) NOT NULL,
+                    name     VARCHAR(255) NOT NULL,
+                    flags    TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, name)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_sub (
+                    guild_id VARCHAR(255) NOT NULL,
+                    slot     INT NOT NULL,
+                    name     VARCHAR(255) NOT NULL,
+                    min_x    INT NOT NULL,
+                    min_z    INT NOT NULL,
+                    max_x    INT NOT NULL,
+                    max_z    INT NOT NULL,
+                    flags    TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, slot, name)
                 )""");
     }
 

@@ -31,13 +31,15 @@ public final class ClaimGuard {
     private final GuildWorldRegistry registry;
     private final ManorRepository manors;
     private final PermissionRules rules;
+    private final MergeRegistry merges; // 可为 null
 
     private final Map<UUID, Long> lastDenyMsg = new ConcurrentHashMap<>();
 
-    public ClaimGuard(GuildWorldRegistry registry, ManorRepository manors, PermissionRules rules) {
+    public ClaimGuard(GuildWorldRegistry registry, ManorRepository manors, PermissionRules rules, MergeRegistry merges) {
         this.registry = registry;
         this.manors = manors;
         this.rules = rules;
+        this.merges = merges;
     }
 
     /** 该玩家能否改动其所在世界 (blockX,blockZ) 处的方块。非公会世界一律放行。 */
@@ -54,11 +56,11 @@ public final class ClaimGuard {
         IntFunction<Manor> bySlot = slot -> manors.findBySlot(guild, slot).orElse(null);
         LayoutCalculator layout = new LayoutCalculator(gw.layout()); // 用该世界冻结的布局
 
-        // 合并感知：先用原始 classify，如果是 ROAD 再查 merge 表
+        // 合并感知：先用原始 classify，如果是 ROAD 且有合并数据再查缓存
         Classification raw = layout.classify(lx, lz);
         Classification effective = raw;
-        if (raw.type() == RegionType.ROAD) {
-            MergeAwareClassifier merger = new MergeAwareClassifier(layout, manors, guild);
+        if (raw.type() == RegionType.ROAD && merges != null && merges.hasMerges(guild)) {
+            MergeAwareClassifier merger = new MergeAwareClassifier(layout, merges, guild);
             effective = merger.classify(lx, lz);
         }
 
@@ -97,6 +99,6 @@ public final class ClaimGuard {
             return;
         }
         lastDenyMsg.put(player.getUniqueId(), now);
-        player.sendMessage("§c这里不是你能改动的区域。");
+        player.sendMessage(Messages.get("listener.build_denied"));
     }
 }

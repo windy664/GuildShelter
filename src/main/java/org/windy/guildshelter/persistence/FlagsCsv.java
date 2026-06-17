@@ -4,12 +4,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** 地皮 flag Map ↔ 字符串("k=v;k=v")。JDBC 列 / 平铺文件字段共用。v1 值为布尔/整数,无需转义。 */
-final class FlagsCsv {
+public final class FlagsCsv {
 
     private FlagsCsv() {
     }
 
-    static String toCsv(Map<String, String> flags) {
+    public static String toCsv(Map<String, String> flags) {
         if (flags == null || flags.isEmpty()) {
             return "";
         }

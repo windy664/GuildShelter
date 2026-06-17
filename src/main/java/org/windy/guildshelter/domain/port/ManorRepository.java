@@ -68,6 +68,37 @@ public interface ManorRepository {
     /** 获取某主 slot 吸收的所有 slot 列表（不含自身）。 */
     List<Integer> getMergedSlots(GuildId guild, int primarySlot);
 
-    /** 取消合并。 */
+    /** 取消合并（主 slot 的全部 absorbed）。 */
     void unmerge(GuildId guild, int primarySlot);
+
+    /** 取消单条合并（primarySlot 吸收的 absorbedSlot）。 */
+    void unmergeOne(GuildId guild, int primarySlot, int absorbedSlot);
+
+    // ===== 权限模板 =====
+
+    /** 创建/更新模板（模板名 → flag 配置）。 */
+    void saveTemplate(GuildId guild, String name, java.util.Map<String, String> flags);
+
+    /** 删除模板。 */
+    void deleteTemplate(GuildId guild, String name);
+
+    /** 获取模板的 flag 配置。 */
+    java.util.Optional<java.util.Map<String, String>> getTemplate(GuildId guild, String name);
+
+    /** 获取该公会所有模板名。 */
+    java.util.List<String> listTemplates(GuildId guild);
+
+    // ===== 子领地 =====
+
+    /** 保存子领地（name + AABB + flags）。 */
+    void saveSub(GuildId guild, int slot, String name, int minX, int minZ, int maxX, int maxZ, java.util.Map<String, String> flags);
+
+    /** 删除子领地。 */
+    void deleteSub(GuildId guild, int slot, String name);
+
+    /** 获取某地皮的所有子领地。 */
+    java.util.List<SubEntry> getSubs(GuildId guild, int slot);
+
+    /** 子领地记录。 */
+    record SubEntry(GuildId guild, int slot, String name, int minX, int minZ, int maxX, int maxZ, java.util.Map<String, String> flags) {}
 }

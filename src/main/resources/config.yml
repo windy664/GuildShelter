@@ -1,4 +1,7 @@
 # GuildShelter 配置
+# 语言设置: zh_CN(中文) / en_US(英文)，语言文件在 plugins/GuildShelter/messages_*.yml
+language: zh_CN
+
 # 单位说明：chunk = 16 方块；cell(格) = 一块地皮 + 一条路（网格的基本单元）
 
 # ========================= 常用设置（你通常只需要改这里）=========================

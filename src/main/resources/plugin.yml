@@ -17,7 +17,7 @@ libraries:
 commands:
   gs:
     description: GuildShelter 插件命令
-    usage: /gs <home|spawn|upgrade|info|trust|untrust|list|visit|clear|flag|card|alias|sethome|done|kick|near|rate|top|middle|comment|inbox|swap|grant|merge> | /gs admin ...
+    usage: /gs <home|spawn|upgrade|info|trust|untrust|list|visit|clear|flag|card|alias|sethome|done|kick|near|rate|top|middle|comment|inbox|swap|grant|merge|unmerge> | /gs admin ...
 permissions:
   guildshelter.admin:
     description: 全权管理 GuildShelter（自动拥有所有 admin 子节点）
@@ -92,3 +92,10 @@ permissions:
   guildshelter.command.swap: { default: true }
   guildshelter.command.grant: { default: true }
   guildshelter.command.merge: { default: true }
+  guildshelter.command.unmerge: { default: true }
+  guildshelter.command.confirm: { default: true }
+  guildshelter.command.help: { default: true }
+  guildshelter.command.desc: { default: true }
+  guildshelter.command.toggle: { default: true }
+  guildshelter.command.template: { default: true }
+  guildshelter.command.sub: { default: true }

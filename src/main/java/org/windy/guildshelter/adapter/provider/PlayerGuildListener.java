@@ -85,7 +85,7 @@ public final class PlayerGuildListener implements Listener {
         }
         Player p = Bukkit.getPlayer(uuid);
         if (p != null) {
-            p.sendMessage("§a[公会营地] 已为你分配地皮 #" + manor.slot() + "，使用 /gs 前往。");
+            org.windy.guildshelter.GuildShelterPlugin.sendWelcome(p, guildName, manor.slot());
         }
         logger.info("[GuildShelter] " + guildName + " 新成员 " + uuid + " → 地皮 #" + manor.slot());
     }

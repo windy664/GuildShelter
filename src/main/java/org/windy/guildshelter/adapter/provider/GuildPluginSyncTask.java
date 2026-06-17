@@ -145,7 +145,7 @@ public final class GuildPluginSyncTask extends BukkitRunnable {
     private void notifyIfOnline(UUID uuid, Manor manor) {
         Player p = Bukkit.getPlayer(uuid);
         if (p != null) {
-            p.sendMessage("§a[公会营地] 已为你分配地皮 #" + manor.slot() + "，使用 /gs 前往。");
+            org.windy.guildshelter.GuildShelterPlugin.sendWelcome(p, manor.guild().value(), manor.slot());
         }
     }
 

@@ -4,9 +4,6 @@ import org.windy.guildshelter.domain.layout.Classification;
 import org.windy.guildshelter.domain.layout.LayoutCalculator;
 import org.windy.guildshelter.domain.model.ChunkRegion;
 import org.windy.guildshelter.domain.model.GuildId;
-import org.windy.guildshelter.domain.port.ManorRepository;
-
-import java.util.List;
 
 /**
  * 合并感知的 chunk 归类器：包装 {@link LayoutCalculator}，当 classify 返回 ROAD 时
@@ -16,16 +13,17 @@ import java.util.List;
  * 若 gz 相同则为左右合并（中间竖路）。路带宽 = pitch - plot 个 chunk。
  *
  * <p>用法：替代直接调 {@code layout.classify()}，保护监听器/命令等上层统一走本类。
+ * 使用 {@link MergeRegistry} 内存缓存，不查 DB。
  */
 public final class MergeAwareClassifier {
 
     private final LayoutCalculator layout;
-    private final ManorRepository manors;
+    private final MergeRegistry merges;
     private final GuildId guild;
 
-    public MergeAwareClassifier(LayoutCalculator layout, ManorRepository manors, GuildId guild) {
+    public MergeAwareClassifier(LayoutCalculator layout, MergeRegistry merges, GuildId guild) {
         this.layout = layout;
-        this.manors = manors;
+        this.merges = merges;
         this.guild = guild;
     }
 
@@ -82,10 +80,9 @@ public final class MergeAwareClassifier {
         return s >= base ? s - base : -1;
     }
 
-    /** primarySlot 是否吸收了 absorbedSlot。 */
+    /** primarySlot 是否吸收了 absorbedSlot。O(1) 内存查找。 */
     private boolean isMerged(int primarySlot, int absorbedSlot) {
-        List<Integer> merged = manors.getMergedSlots(guild, primarySlot);
-        return merged.contains(absorbedSlot);
+        return merges.getMergedSlots(guild, primarySlot).contains(absorbedSlot);
     }
 
     /** 底层 LayoutCalculator（需要原始计算时用）。 */

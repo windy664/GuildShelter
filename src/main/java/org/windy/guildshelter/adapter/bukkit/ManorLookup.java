@@ -1,9 +1,11 @@
 package org.windy.guildshelter.adapter.bukkit;
 
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.windy.guildshelter.domain.layout.Classification;
 import org.windy.guildshelter.domain.layout.LayoutCalculator;
 import org.windy.guildshelter.domain.layout.RegionType;
+import org.windy.guildshelter.domain.model.ChunkRegion;
 import org.windy.guildshelter.domain.model.GuildWorld;
 import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.port.ManorRepository;
@@ -19,10 +21,12 @@ public final class ManorLookup {
 
     private final GuildWorldRegistry registry;
     private final ManorRepository manors;
+    private final MergeRegistry merges; // 可为 null（无合并功能时）
 
-    public ManorLookup(GuildWorldRegistry registry, ManorRepository manors) {
+    public ManorLookup(GuildWorldRegistry registry, ManorRepository manors, MergeRegistry merges) {
         this.registry = registry;
         this.manors = manors;
+        this.merges = merges;
     }
 
     public boolean isGuildWorld(World world) {
@@ -43,14 +47,30 @@ public final class ManorLookup {
             return manors.findBySlot(gw.guild(), slot.getAsInt());
         }
         // 原始 classify 不是 PLOT → 检查是否为合并路 chunk
-        Classification raw = layout.classify(lx, lz);
-        if (raw.type() == RegionType.ROAD) {
-            MergeAwareClassifier merger = new MergeAwareClassifier(layout, manors, gw.guild());
-            Classification merged = merger.classify(lx, lz);
-            if (merged.isPlot()) {
-                return manors.findBySlot(gw.guild(), merged.slot());
+        if (merges != null && merges.hasMerges(gw.guild())) {
+            Classification raw = layout.classify(lx, lz);
+            if (raw.type() == RegionType.ROAD) {
+                MergeAwareClassifier merger = new MergeAwareClassifier(layout, merges, gw.guild());
+                Classification merged = merger.classify(lx, lz);
+                if (merged.isPlot()) {
+                    return manors.findBySlot(gw.guild(), merged.slot());
+                }
             }
         }
         return Optional.empty();
+    }
+
+    /** 地皮实占范围中心的 Location（供 deny-exit 传送用）。 */
+    public Location manorCenter(World world, Manor manor) {
+        GuildWorld gw = registry.get(world.getName());
+        if (gw == null) return null;
+        ChunkRegion active = new LayoutCalculator(gw.layout())
+                .activeRegion(manor.slot(), manor.level())
+                .shift(gw.originChunkX(), gw.originChunkZ());
+        int cx = (active.minBlockX() + active.maxBlockX()) / 2;
+        int cz = (active.minBlockZ() + active.maxBlockZ()) / 2;
+        world.loadChunk(cx >> 4, cz >> 4, true);
+        int cy = world.getHighestBlockYAt(cx, cz) + 1;
+        return new Location(world, cx + 0.5, cy, cz + 0.5);
     }
 }

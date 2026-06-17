@@ -1,24 +1,33 @@
 package org.windy.guildshelter;
 
 import org.bukkit.command.PluginCommand;
+import org.bukkit.entity.Player;
 import org.bukkit.event.Listener;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.windy.guildshelter.adapter.bukkit.ClaimGuard;
 import org.windy.guildshelter.adapter.bukkit.GuildShelterConfig;
+import org.windy.guildshelter.adapter.bukkit.GuildShelterPapi;
 import org.windy.guildshelter.adapter.bukkit.GuildWorldRegistry;
+import org.windy.guildshelter.adapter.bukkit.Messages;
+import org.windy.guildshelter.adapter.bukkit.gui.GuiRegistry;
+import org.windy.guildshelter.adapter.bukkit.gui.VanillaGuiListener;
+import org.windy.guildshelter.adapter.bukkit.gui.VanillaGuiProvider;
 import org.windy.guildshelter.adapter.bukkit.InteractionPolicy;
 import org.windy.guildshelter.adapter.bukkit.ManorBuffTask;
 import org.windy.guildshelter.adapter.bukkit.ManorEntityCensus;
 import org.windy.guildshelter.adapter.bukkit.ManorLookup;
+import org.windy.guildshelter.adapter.bukkit.MergeRegistry;
 import org.windy.guildshelter.adapter.bukkit.VaultEconomy;
 import org.windy.guildshelter.adapter.bukkit.command.GsCommand;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorAccessListener;
+import org.windy.guildshelter.adapter.bukkit.listener.GuildMotdListener;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorCapListener;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorCommandListener;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorEntityListener;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorEnvListener;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorFireListener;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorFlagListener;
+import org.windy.guildshelter.adapter.bukkit.listener.ManorParticleTask;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorPlayerListener;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorProtectionListener;
 import org.windy.guildshelter.adapter.bukkit.listener.RegionTitleListener;
@@ -88,6 +97,16 @@ public final class GuildShelterPlugin extends JavaPlugin {
         return instance == null ? null : instance.entityCensus;
     }
 
+    /** 给新分配地皮的玩家发欢迎消息。 */
+    public static void sendWelcome(Player player, String guildName, int slot) {
+        if (instance == null) return;
+        player.sendMessage("§6==== 欢迎来到公会营地 ====");
+        player.sendMessage("§7你已被分配到 §f" + guildName + " §7的地皮 §f#" + slot);
+        player.sendMessage("§7输入 §e/gs home §7传送到你的地皮");
+        player.sendMessage("§7输入 §e/gs help §7查看所有命令");
+        player.sendMessage("§7输入 §e/gs flag §7管理地皮设置");
+    }
+
     /** 探测是否混合端(NeoForge 在)。用字符串反射，纯 Bukkit 端不会因此加载到 NeoForge 类。 */
     private static boolean isNeoForgePresent() {
         try {
@@ -105,6 +124,8 @@ public final class GuildShelterPlugin extends JavaPlugin {
 
         getDataFolder().mkdirs();
         saveDefaultConfig();
+        // 加载语言文件
+        Messages.load(getConfig().getString("language", "zh_CN"), getDataFolder());
 
         GuildShelterConfig config = GuildShelterConfig.from(getConfig());
         // 注意：不再用全局 LayoutCalculator。每个世界用自己冻结的 gw.layout()；
@@ -133,8 +154,16 @@ public final class GuildShelterPlugin extends JavaPlugin {
         GuildWorldRegistry registry = new GuildWorldRegistry();
         this.entityCensus = new ManorEntityCensus(registry); // 提前创建，card 命令和 caps 都要用
 
+        // 合并缓存：启动时加载所有公会的 merge 数据到内存，避免每次事件查库。
+        MergeRegistry mergeRegistry = new MergeRegistry(manors);
+        for (GuildWorld gw : guilds.findAll()) {
+            List<Integer> slots = manors.findAll(gw.guild()).stream()
+                    .map(org.windy.guildshelter.domain.model.Manor::slot).toList();
+            mergeRegistry.load(gw.guild(), slots);
+        }
+
         GsCommand command = new GsCommand(worldManager, guilds, manors, service, registry,
-                config.levels(), entityCensus, getLogger());
+                config.levels(), entityCensus, mergeRegistry, getLogger());
         PluginCommand gs = getCommand("gs");
         if (gs != null) {
             gs.setExecutor(command);
@@ -153,9 +182,9 @@ public final class GuildShelterPlugin extends JavaPlugin {
         // 领地保护：判定逻辑抽到平台中立的 ClaimGuard，Bukkit/NeoForge 两侧共用。
         // 只在开启时构造 guard——关闭时 protectionGuard() 为 null，NeoForge 端也随之放行（开关两端通吃）。
         if (getConfig().getBoolean("protection", true)) {
-            this.claimGuard = new ClaimGuard(registry, manors, new PermissionRules());
+            this.claimGuard = new ClaimGuard(registry, manors, new PermissionRules(), mergeRegistry);
             // ManorLookup/InteractionPolicy 先建好：保护监听器(交互放宽)与 NeoForge 侧都要用。
-            ManorLookup lookup = new ManorLookup(registry, manors);
+            ManorLookup lookup = new ManorLookup(registry, manors, mergeRegistry);
             this.manorLookup = lookup; // 供 NeoForge flag 后端(混合端)惰性取用
             this.interactionPolicy = new InteractionPolicy(claimGuard, lookup); // 访客交互按类放宽,两载体共用
             if (isNeoForgePresent()) {
@@ -187,11 +216,18 @@ public final class GuildShelterPlugin extends JavaPlugin {
             getServer().getPluginManager().registerEvents(new ManorCapListener(lookup, entityCensus), this);
             // 访问类(B)与个人增益(C)是玩家行为,Youer 上 Bukkit 全覆盖,始终走 Bukkit。
             EconomyPort economy = VaultEconomy.tryCreate(getLogger());
-            getServer().getPluginManager().registerEvents(new ManorAccessListener(lookup, economy), this);
+            ManorAccessListener accessListener = new ManorAccessListener(lookup, economy);
+            getServer().getPluginManager().registerEvents(accessListener, this);
+            command.setAccessListener(accessListener); // toggle titles 需要
             // 命令拦截(blocked-cmds flag):始终走 Bukkit(PlayerCommandPreprocessEvent 是 Bukkit API)。
             getServer().getPluginManager().registerEvents(new ManorCommandListener(lookup), this);
             new ManorBuffTask(lookup).runTaskTimer(this, 20L, 20L);
             getLogger().info("地皮 Flag 执行已启用（访问/增益走 Bukkit，氛围按载体分流）。");
+            // 地皮边界粒子可视化：每 0.5 秒检查一次
+            new ManorParticleTask(lookup, registry, guilds)
+                    .runTaskTimer(this, 10L, 10L);
+            // 公会 MOTD：进入公会世界时显示公告
+            getServer().getPluginManager().registerEvents(new GuildMotdListener(registry, manors), this);
         } else {
             getLogger().info("领地保护已禁用。");
         }
@@ -249,6 +285,17 @@ public final class GuildShelterPlugin extends JavaPlugin {
 
         if (!hooked) {
             getLogger().info("未检测到任何受支持的公会插件，仅 /gs admin 手动管理可用。");
+        }
+
+        // GUI 系统：原版 Inventory GUI（可扩展为外部 UI 模组）
+        VanillaGuiProvider vanillaGui = new VanillaGuiProvider();
+        GuiRegistry guiRegistry = new GuiRegistry(vanillaGui);
+        getServer().getPluginManager().registerEvents(new VanillaGuiListener(vanillaGui), this);
+
+        // PlaceholderAPI 集成
+        if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
+            new GuildShelterPapi(manors, guilds, config.levels()).register();
+            getLogger().info("PlaceholderAPI 扩展已注册。");
         }
 
         getLogger().info("GuildShelter 已启用。");

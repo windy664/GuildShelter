@@ -14,7 +14,9 @@ public enum Flag {
     EXPLOSION("explosion", FlagType.BOOLEAN, "false", "爆炸是否破坏方块"),
     FIRE_SPREAD("fire-spread", FlagType.BOOLEAN, "false", "火是否蔓延/烧毁方块"),
     MOB_GRIEFING("mob-griefing", FlagType.BOOLEAN, "false", "怪物是否能破坏方块(苦力怕/末影人等)"),
-    PVE("pve", FlagType.BOOLEAN, "true", "玩家与怪物之间是否可互相伤害"),
+    PVE("pve", FlagType.BOOLEAN, "true", "玩家与怪物之间是否可互相伤害(总开关)"),
+    PVE_MONSTER("pve-monster", FlagType.BOOLEAN, "true", "怪物是否可攻击玩家(pve细分)"),
+    PVE_PLAYER("pve-player", FlagType.BOOLEAN, "true", "玩家是否可攻击怪物(pve细分)"),
     INVINCIBLE("invincible", FlagType.BOOLEAN, "false", "玩家在本地皮内是否免疫一切伤害"),
     KEEP_INVENTORY("keep-inventory", FlagType.BOOLEAN, "false", "在本地皮内死亡是否保留物品/经验"),
     ITEM_DROP("item-drop", FlagType.BOOLEAN, "true", "玩家是否可丢出物品"),
@@ -67,7 +69,8 @@ public enum Flag {
     HOME_X("home-x", FlagType.INTEGER, "0", "/gs home 传送点 X 坐标(0=使用地皮中心)"),
     HOME_Y("home-y", FlagType.INTEGER, "0", "/gs home 传送点 Y 坐标"),
     HOME_Z("home-z", FlagType.INTEGER, "0", "/gs home 传送点 Z 坐标"),
-    DONE("done", FlagType.BOOLEAN, "false", "地皮是否已完工标记");
+    DONE("done", FlagType.BOOLEAN, "false", "地皮是否已完工标记"),
+    MAP_COLOR("map-color", FlagType.STRING, "", "地皮在地图上的显示颜色(如 RED/GREEN/BLUE/YELLOW,空=默认)");
 
     private final String id;
     private final FlagType type;

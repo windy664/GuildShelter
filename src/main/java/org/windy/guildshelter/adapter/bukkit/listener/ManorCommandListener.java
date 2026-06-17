@@ -6,6 +6,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.windy.guildshelter.adapter.bukkit.ManorLookup;
+import org.windy.guildshelter.adapter.bukkit.Messages;
 import org.windy.guildshelter.adapter.bukkit.Permissions;
 import org.windy.guildshelter.domain.flag.Flag;
 import org.windy.guildshelter.domain.model.Manor;
@@ -53,7 +54,7 @@ public final class ManorCommandListener implements Listener {
         Set<String> blockedSet = new HashSet<>(Arrays.asList(blocked.toLowerCase().split(",")));
         if (blockedSet.contains(cmd)) {
             event.setCancelled(true);
-            player.sendMessage("§c此地皮禁止使用 /" + cmd + " 命令。");
+            player.sendMessage(Messages.get("listener.cmd_blocked", cmd));
         }
     }
 }

@@ -51,12 +51,14 @@ public final class NeoForgeFlags {
                     event.setCanceled(true);
                 }
             } else if (attacker instanceof LivingEntity && !(attacker instanceof Player)) {
-                if (denied(victim.level(), pos, Flag.PVE)) {
+                // 怪打玩家：pve 总开关 + pve-monster 细分
+                if (denied(victim.level(), pos, Flag.PVE) || denied(victim.level(), pos, Flag.PVE_MONSTER)) {
                     event.setCanceled(true);
                 }
             }
         } else if (attacker instanceof Player) {
-            if (denied(victim.level(), pos, Flag.PVE)) {
+            // 玩家打怪：pve 总开关 + pve-player 细分
+            if (denied(victim.level(), pos, Flag.PVE) || denied(victim.level(), pos, Flag.PVE_PLAYER)) {
                 event.setCanceled(true);
             }
         }

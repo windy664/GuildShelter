@@ -81,6 +81,25 @@ public final class SqliteDialect implements SqlDialect {
                     primary_slot  INTEGER NOT NULL,
                     absorbed_slot INTEGER NOT NULL,
                     PRIMARY KEY (guild_id, primary_slot, absorbed_slot)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_template (
+                    guild_id TEXT NOT NULL,
+                    name     TEXT NOT NULL,
+                    flags    TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, name)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_sub (
+                    guild_id TEXT NOT NULL,
+                    slot     INTEGER NOT NULL,
+                    name     TEXT NOT NULL,
+                    min_x    INTEGER NOT NULL,
+                    min_z    INTEGER NOT NULL,
+                    max_x    INTEGER NOT NULL,
+                    max_z    INTEGER NOT NULL,
+                    flags    TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, slot, name)
                 )""");
     }
 

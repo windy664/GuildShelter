@@ -8,6 +8,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.windy.guildshelter.adapter.bukkit.ManorLookup;
 import org.windy.guildshelter.adapter.bukkit.ManorRoles;
+import org.windy.guildshelter.adapter.bukkit.Messages;
 import org.windy.guildshelter.adapter.bukkit.Permissions;
 import org.windy.guildshelter.domain.flag.Flag;
 import org.windy.guildshelter.domain.model.Manor;
@@ -15,6 +16,7 @@ import org.windy.guildshelter.domain.model.PlayerRef;
 import org.windy.guildshelter.domain.port.EconomyPort;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -36,10 +38,27 @@ public final class ManorAccessListener implements Listener {
     private final Map<UUID, Manor> lastManor = new ConcurrentHashMap<>();
     /** 已付过入场费的玩家 → 已付费的地皮 slot+guild 组合（离开地皮时清除，下次再进要再付）。 */
     private final Map<UUID, String> paidManors = new ConcurrentHashMap<>();
+    /** 个人开关：关闭 titles 的玩家集合。 */
+    private final Set<UUID> titlesDisabled = ConcurrentHashMap.newKeySet();
 
     public ManorAccessListener(ManorLookup lookup, EconomyPort economy) {
         this.lookup = lookup;
         this.economy = economy;
+    }
+
+    /** 切换玩家的 titles 个人开关。返回 true=现在开启。 */
+    public boolean toggleTitles(UUID playerId) {
+        if (titlesDisabled.remove(playerId)) {
+            return true; // 刚开启
+        } else {
+            titlesDisabled.add(playerId);
+            return false; // 刚关闭
+        }
+    }
+
+    /** 玩家是否关闭了 titles。 */
+    public boolean isTitlesDisabled(UUID playerId) {
+        return titlesDisabled.contains(playerId);
     }
 
     @EventHandler
@@ -66,20 +85,20 @@ public final class ManorAccessListener implements Listener {
         // 黑名单：denied 玩家禁止进入（覆盖一切；owner 不会被判 denied），推回不更新 last*
         if (cur != null && !bypass && ManorRoles.isDenied(cur, ref)) {
             event.setTo(event.getFrom());
-            player.sendMessage("§c你被列入这块地皮的黑名单，无法进入。");
+            player.sendMessage(Messages.get("listener.blacklisted"));
             return;
         }
         // deny-entry：访客被谢客时推回（owner/trusted/member/管理可进），不更新 last*（下次再判）
         if (cur != null && !canEnter(player, cur) && Flag.DENY_ENTRY.resolveBool(cur.flags())) {
             event.setTo(event.getFrom());
-            player.sendMessage("§c这块地皮谢绝访客进入。");
+            player.sendMessage(Messages.get("listener.deny_entry"));
             return;
         }
-        // deny-exit：非成员被困在 prev 内，离开时推回（成员/管理可自由出入）
+        // deny-exit：非成员被困在 prev 内，离开时传送回地皮中心（成员/管理可自由出入）
         if (prev != null && !sameManor(prev, cur)
                 && !canEnter(player, prev) && Flag.DENY_EXIT.resolveBool(prev.flags())) {
-            event.setTo(event.getFrom());
-            player.sendMessage("§c你被困在这块地皮里，无法离开。");
+            teleportToManorCenter(player, prev);
+            player.sendMessage(Messages.get("listener.deny_exit"));
             return;
         }
         lastChunk.put(id, new long[]{cx, cz});
@@ -119,10 +138,10 @@ public final class ManorAccessListener implements Listener {
         }
     }
 
-    /** 进出消息：titles flag 开 → 屏幕标题；否则聊天框。统一翻译 & 颜色码。 */
+    /** 进出消息：titles flag 开 → 屏幕标题（尊重个人开关）；否则聊天框。统一翻译 & 颜色码。 */
     private void showMessage(Player player, Manor manor, String raw) {
         String msg = ChatColor.translateAlternateColorCodes('&', raw);
-        if (Flag.TITLES.resolveBool(manor.flags())) {
+        if (Flag.TITLES.resolveBool(manor.flags()) && !titlesDisabled.contains(player.getUniqueId())) {
             player.sendTitle(msg, "", 10, 40, 10);
         } else {
             player.sendMessage(msg);
@@ -173,13 +192,23 @@ public final class ManorAccessListener implements Listener {
             return true; // 已付过
         }
         if (!economy.has(ref, price)) {
-            player.sendMessage("§c进入此地皮需要 " + economy.format(price) + "，你的余额不足。");
+            player.sendMessage(Messages.get("listener.price_no_money", economy.format(price)));
             return false;
         }
         economy.withdraw(ref, price);
         paidManors.put(player.getUniqueId(), manorKey);
-        player.sendMessage("§7已收取入场费 §e" + economy.format(price) + " §7进入地皮 #" + manor.slot());
+        player.sendMessage(Messages.get("listener.price_charged", economy.format(price), manor.slot()));
         return true;
+    }
+
+    /** 传送到地皮实占范围中心（deny-exit 用）。 */
+    private void teleportToManorCenter(Player player, Manor manor) {
+        org.bukkit.Location center = lookup.manorCenter(player.getWorld(), manor);
+        if (center != null) {
+            player.teleport(center);
+        } else {
+            player.teleport(player.getWorld().getSpawnLocation());
+        }
     }
 
     private static boolean sameManor(Manor a, Manor b) {
