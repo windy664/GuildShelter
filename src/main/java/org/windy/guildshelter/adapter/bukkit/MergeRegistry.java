@@ -94,7 +94,31 @@ public final class MergeRegistry {
         return a2p != null && !a2p.isEmpty();
     }
 
-    /** 重新加载某公会的 merge 数据（用于单条删除后刷新缓存）。 */
+    /** 从缓存中移除单条合并记录（比 reload 高效）。 */
+    public void removeOne(GuildId guild, int primarySlot, int absorbedSlot) {
+        Map<Integer, Integer> a2p = absorbedToPrimary.get(guild.value());
+        if (a2p != null) {
+            a2p.remove(absorbedSlot);
+        }
+        Map<Integer, Set<Integer>> p2a = primaryToAbsorbed.get(guild.value());
+        if (p2a != null) {
+            Set<Integer> set = p2a.get(primarySlot);
+            if (set != null) {
+                set.remove(absorbedSlot);
+                if (set.isEmpty()) {
+                    p2a.remove(primarySlot);
+                }
+            }
+        }
+    }
+
+    /** 移除某公会的全部合并缓存（公会解散时调用）。 */
+    public void removeGuild(GuildId guild) {
+        absorbedToPrimary.remove(guild.value());
+        primaryToAbsorbed.remove(guild.value());
+    }
+
+    /** 重新加载某公会的 merge 数据（全量重建，仅在批量操作后使用）。 */
     public void reload(GuildId guild, List<Integer> allSlots) {
         absorbedToPrimary.remove(guild.value());
         primaryToAbsorbed.remove(guild.value());

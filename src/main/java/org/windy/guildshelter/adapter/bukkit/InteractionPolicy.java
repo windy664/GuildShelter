@@ -44,7 +44,7 @@ public final class InteractionPolicy {
         }
         Optional<Manor> at = lookup.at(player.getWorld(), blockX, blockZ);
         if (at.isPresent()) {
-            // 在某成员地皮内：admin.interact.other 放行
+            // 在某成员地皮内：admin.interact.other 放行（覆盖 denied，设计意图）
             if (Permissions.hasAdminPerm(player, Permissions.ADMIN_INTERACT_OTHER)) {
                 return true;
             }

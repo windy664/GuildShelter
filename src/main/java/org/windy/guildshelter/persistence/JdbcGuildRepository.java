@@ -28,7 +28,7 @@ public final class JdbcGuildRepository implements GuildRepository {
 
     @Override
     public Optional<GuildWorld> find(GuildId guild) {
-        String sql = "SELECT world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params "
+        String sql = "SELECT world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin "
                 + "FROM guild_world WHERE guild_id=?";
         try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, guild.value());
@@ -64,6 +64,8 @@ public final class JdbcGuildRepository implements GuildRepository {
             ps.setInt(6, world.guildLevel());
             ps.setInt(7, world.allocatedSlots());
             ps.setString(8, LayoutCsv.toCsv(world.layout()));
+            ps.setDouble(9, world.funds());
+            ps.setString(10, world.bulletin());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new PersistenceException("保存公会世界失败: " + world.guild().value(), e);
@@ -83,7 +85,7 @@ public final class JdbcGuildRepository implements GuildRepository {
 
     @Override
     public List<GuildWorld> findAll() {
-        String sql = "SELECT guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params "
+        String sql = "SELECT guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin "
                 + "FROM guild_world";
         List<GuildWorld> out = new ArrayList<>();
         try (Connection c = db.getConnection();
@@ -107,6 +109,8 @@ public final class JdbcGuildRepository implements GuildRepository {
                 rs.getInt("origin_z"),
                 rs.getInt("guild_level"),
                 rs.getInt("allocated_slots"),
-                LayoutCsv.parse(rs.getString("layout_params"), fallbackLayout));
+                LayoutCsv.parse(rs.getString("layout_params"), fallbackLayout),
+                rs.getDouble("funds"),
+                rs.getString("bulletin"));
     }
 }

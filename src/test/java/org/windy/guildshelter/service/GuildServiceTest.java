@@ -183,6 +183,31 @@ class GuildServiceTest {
             while (bySlot.containsKey(k(g, i))) i++;
             return i;
         }
+        // 评分（内存 stub）
+        public void rate(GuildId g, int s, PlayerRef r, int score) {}
+        public int getRating(GuildId g, int s, PlayerRef r) { return 0; }
+        public double getAverageRating(GuildId g, int s) { return 0; }
+        public List<Integer> getTopRatedSlots(GuildId g, int limit) { return List.of(); }
+        public int getRatingCount(GuildId g, int s) { return 0; }
+        // 留言（内存 stub）
+        public void addComment(GuildId g, int s, PlayerRef a, String msg) {}
+        public List<ManorRepository.CommentEntry> getComments(GuildId g, int s, int limit) { return List.of(); }
+        public List<ManorRepository.CommentEntry> getInbox(PlayerRef o, int limit) { return List.of(); }
+        // 子领地（内存 stub）
+        public void saveSub(GuildId g, int s, String n, int x1, int z1, int x2, int z2, java.util.Map<String,String> f) {}
+        public void deleteSub(GuildId g, int s, String n) {}
+        public List<ManorRepository.SubEntry> getSubs(GuildId g, int s) { return List.of(); }
+        // 模板（内存 stub）
+        public void saveTemplate(GuildId g, String n, java.util.Map<String,String> f) {}
+        public void deleteTemplate(GuildId g, String n) {}
+        public Optional<java.util.Map<String,String>> getTemplate(GuildId g, String n) { return Optional.empty(); }
+        public List<String> listTemplates(GuildId g) { return List.of(); }
+        // 合并（内存 stub）
+        public void merge(int p, int a, GuildId g) {}
+        public int getMergedTarget(GuildId g, int s) { return s; }
+        public List<Integer> getMergedSlots(GuildId g, int p) { return List.of(); }
+        public void unmerge(GuildId g, int p) {}
+        public void unmergeOne(GuildId g, int p, int a) {}
     }
 
     static final class FakeWorldControl implements WorldControl {

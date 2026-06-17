@@ -24,7 +24,7 @@ import java.util.Objects;
 public record GuildWorld(GuildId guild, String worldName, long seed,
                          int originChunkX, int originChunkZ,
                          int guildLevel, int allocatedSlots,
-                         LayoutConfig layout) {
+                         LayoutConfig layout, double funds, String bulletin) {
 
     public GuildWorld {
         Objects.requireNonNull(guild, "guild");
@@ -40,18 +40,26 @@ public record GuildWorld(GuildId guild, String worldName, long seed,
 
     /** 用给定（当前 config 的）布局参数新建一个世界记录。 */
     public static GuildWorld create(GuildId guild, String worldName, long seed, LayoutConfig layout) {
-        return new GuildWorld(guild, worldName, seed, 0, 0, 1, 0, layout);
+        return new GuildWorld(guild, worldName, seed, 0, 0, 1, 0, layout, 0, "");
     }
 
     public GuildWorld withOrigin(int chunkX, int chunkZ) {
-        return new GuildWorld(guild, worldName, seed, chunkX, chunkZ, guildLevel, allocatedSlots, layout);
+        return new GuildWorld(guild, worldName, seed, chunkX, chunkZ, guildLevel, allocatedSlots, layout, funds, bulletin);
     }
 
     public GuildWorld withGuildLevel(int newLevel) {
-        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, newLevel, allocatedSlots, layout);
+        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, newLevel, allocatedSlots, layout, funds, bulletin);
     }
 
     public GuildWorld withAllocatedSlots(int newAllocated) {
-        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, guildLevel, newAllocated, layout);
+        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, guildLevel, newAllocated, layout, funds, bulletin);
+    }
+
+    public GuildWorld withFunds(double newFunds) {
+        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, guildLevel, allocatedSlots, layout, newFunds, bulletin);
+    }
+
+    public GuildWorld withBulletin(String newBulletin) {
+        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, guildLevel, allocatedSlots, layout, funds, newBulletin);
     }
 }

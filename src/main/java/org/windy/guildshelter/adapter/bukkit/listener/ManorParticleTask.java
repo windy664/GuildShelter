@@ -2,6 +2,7 @@ package org.windy.guildshelter.adapter.bukkit.listener;
 
 import org.bukkit.Color;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.Particle;
 import org.bukkit.Particle.DustOptions;
 import org.bukkit.World;
@@ -20,8 +21,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 地皮边界粒子可视化：玩家在地皮上时，每 0.5 秒在地皮实占范围边缘显示一圈粒子。
- * 离开地皮后自动停止。进入新地皮时粒子颜色随机变化。
+ * 地皮边界粒子可视化：玩家手持木棍站在地皮上时，每 0.5 秒在地皮实占范围边缘显示一圈粒子。
+ * 放下木棍或离开地皮后自动停止。进入新地皮时粒子颜色随机变化。
  */
 public final class ManorParticleTask extends BukkitRunnable {
 
@@ -54,6 +55,11 @@ public final class ManorParticleTask extends BukkitRunnable {
     }
 
     private void showFor(Player player) {
+        // 只有手持木棍才显示边界
+        if (player.getInventory().getItemInMainHand().getType() != Material.STICK) {
+            lastSlot.remove(player.getUniqueId());
+            return;
+        }
         World world = player.getWorld();
         GuildWorld gw = registry.get(world.getName());
         if (gw == null) {

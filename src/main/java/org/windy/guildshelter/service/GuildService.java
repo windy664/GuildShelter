@@ -112,7 +112,7 @@ public final class GuildService {
         });
     }
 
-    /** 解散公会：卸载世界、删除其全部庄园与世界记录。 */
+    /** 解散公会：卸载世界、删除其全部庄园与世界记录。keep=true 的庄园也一并清除（公会都没了，保留无意义）。 */
     public void dissolveGuild(GuildId guild) {
         for (Manor m : manors.findAll(guild)) {
             manors.delete(guild, m.slot());

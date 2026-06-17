@@ -68,6 +68,10 @@ public final class Messages {
         put("error.guild_full_with_level", "§c公会已满（名额 %s，当前 %s 级）。");
         put("error.number_must_be_int", "§c数量必须是整数。");
         put("error.offset_must_be_int", "§c偏移必须是整数。");
+        put("error.sub_out_of_bounds", "§c子领地超出你的地皮范围。");
+        put("error.invalid_name", "§c名称只能包含字母、数字、下划线和横杠。");
+        put("error.positive_required", "§c金额必须大于 0。");
+        put("error.too_long", "§c内容过长（最多 %s 个字符）。");
         put("error.score_must_be_int", "§c分数必须是 1-10 的整数。");
         put("error.score_range", "§c分数必须在 1-10 之间。");
         put("error.plot_not_found", "§c找不到该地皮（%s #%s）。");
@@ -86,6 +90,7 @@ public final class Messages {
         put("error.sub_not_exist", "§c子领地 '%s' 不存在。");
         put("error.titles_not_enabled", "§c标题功能未启用。");
         put("error.toggle_unknown", "§c可切换: titles");
+        put("error.only_owner", "§c只有庄主才能执行此操作。");
         put("error.only_owner_template", "§c只有庄主能管理模板。");
         put("error.only_owner_sub", "§c只有庄主能管理子领地。");
         put("error.no_template_yet", "§e该公会还没有模板。用 /gs template create <名称> 创建。");
@@ -117,12 +122,18 @@ public final class Messages {
         put("success.tp_teleported", "§a已传送到 %s 主城。");
         put("success.upgraded", "§a庄园已升至 %s / %s 级，新扩范围整地进行中。");
         put("success.trust_added", "§a已把 %s 加为地皮 #%s 的共建人。");
+        put("success.trust_added_already", "§e%s 已经是共建人了。");
         put("success.trust_removed", "§a已移除共建人 %s。");
+        put("success.trust_removed_not", "§e%s 不是共建人。");
         put("success.trust_batch", "§a已批量把 %s 人加为地皮 #%s 的共建人。");
         put("success.member_added", "§a已把 %s 加为成员（仅你或共建人在线时其可建造/交互）。");
+        put("success.member_added_already", "§e%s 已经是成员了。");
         put("success.member_removed", "§a已移除成员 %s。");
+        put("success.member_removed_not", "§e%s 不是成员。");
         put("success.denied_added", "§a已将 %s 加入地皮 #%s 黑名单。");
+        put("success.denied_already", "§e%s 已在黑名单。");
         put("success.denied_removed", "§a已将 %s 移出黑名单。");
+        put("success.denied_removed_not", "§e%s 不在黑名单。");
         put("success.denied_batch", "§a已批量把 %s 人加入地皮 #%s 黑名单。");
         put("success.flag_set", "§a已设 §f%s = %s §7(地皮 #%s)");
         put("success.flag_unset", "§a已重置 §f%s §a为默认（%s）。");
@@ -145,6 +156,10 @@ public final class Messages {
         put("success.reload", "§aconfig.yml 已重载。部分设置需重启生效。");
         put("success.setowner", "§a已将地皮 #%s 的庄主转移给 %s。");
         put("success.purge", "§a已清除 %s 块超过 %s 天未登录的地皮。");
+        put("success.fund_added", "§a已给 %s 充值 %s（余额 %s）。");
+        put("success.fund_set", "§a已将 %s 资金设为 %s。");
+        put("success.bulletin_set", "§a公告已设为: §f%s");
+        put("success.bulletin_cleared", "§a公告已清除。");
         put("success.create_world", "§a已创建公会世界（自然地形）: %s §7种子=%s 原点偏移=(%s,%s)");
         put("success.claim", "§a已分配地皮 #%s（等级 %s），整地进行中。你已被传送过去。");
         put("success.claim_hint", "§7提示: claim 对同一玩家幂等(一人一块)。要看多块分布用 /gs admin fill %s <数量>。网格图已打到控制台。");
@@ -183,6 +198,9 @@ public final class Messages {
         put("info.sub_header", "§6==== 子领地列表 ====");
         put("info.sub_entry", "§7- §f%s §7(%sx%s) §7flags: %s");
         put("info.world_list", "§e已加载世界 (%s):");
+        put("info.fund_check", "§7公会 §f%s §7资金: §e%s");
+        put("info.bulletin_empty", "§e该公会还没有公告。");
+        put("info.bulletin_show", "§6[§e%s§6] §7%s");
         put("info.world_entry", "§7- §f%s §7env=%s spawn=(%s,%s,%s)");
         put("info.whereami", "§e你在世界 §f%s §7(%s,%s,%s)");
         put("info.help_header", "§6==== GuildShelter 命令 ====");
@@ -191,6 +209,18 @@ public final class Messages {
         put("info.help_cmd", "§6/gs %s §7- %s");
         put("info.help_unknown", "§c未知命令: %s");
         put("info.flag_header", "§6==== 地皮 #%s Flag ====");
+        put("info.guild_info_header", "§6==== 公会营地信息 ====");
+        put("info.guild_line", "§7公会: §f%s §7(Lv%s/%s, 成员 %s/%s)");
+        put("info.plot_line", "§7你的地皮: §f%s §7庄园 Lv%s/%s §7尺寸 %sx%s%s");
+        put("info.trusted_line", "§7共建人(trusted): §f%s §7成员(member): §f%s §7黑名单: §c%s");
+        put("info.blocked_cmds_line", "§7禁用命令: §c/%s");
+        put("info.keep_line", "§7退会保留: §a是");
+        put("info.list_entry", "§7- §f%s §7Lv%s 成员 %s/%s §8(/gs visit %s)");
+        put("info.near_entry", "§7- §f%s §7庄主: §f%s §7距离: §e%s 格");
+        put("info.top_entry", "§e%s. §f%s §7庄主: §f%s §7%s: §e%s");
+        put("info.inbox_entry", "§7[%s] §f%s §7→ 地皮#%s: §f%s");
+        put("info.template_entry", "§7- §f%s §7(%s 个 flag)");
+        put("info.sub_entry", "§7- §f%s §7(%sx%s) §7flags: %s");
         put("info.flag_usage", "§7用法: /gs flag set <flag> <值> | unset <flag>");
         put("info.flag_entry", "§7%s = %s §8- %s");
         put("info.flag_value_set", "§f%s");
@@ -257,6 +287,8 @@ public final class Messages {
         put("usage.admin_delete", "用法: /gs admin delete <公会id>");
         put("usage.admin_setowner", "用法: /gs admin setowner <公会id> <玩家>");
         put("usage.admin_purge", "用法: /gs admin purge <天数> [公会id]");
+        put("usage.admin_fund", "用法: /gs admin fund <公会> <add|check|set> [金额]");
+        put("usage.bulletin", "用法: /gs bulletin <set|show|clear> [内容]");
         put("usage.player_commands", "§e/gs <home|spawn|upgrade|info|trust|untrust|member|deny|undeny|list|visit|clear|flag|card|alias|sethome|done|kick|near|rate|top|middle|comment|inbox|swap|grant|merge|unmerge>  §7玩家命令");
         put("usage.admin_commands", "§7/gs admin ...  §8管理命令");
 
@@ -306,15 +338,17 @@ public final class Messages {
         }
     }
 
-    /** 获取消息，%s 等占位符由调用方替换。key 不存在时返回 key 本身。 */
+    /** 获取消息，%s 等占位符由调用方替换。key 不存在时返回 key 本身。无参数时跳过 String.format。 */
     public static String get(String key, Object... args) {
         String msg = messages.getOrDefault(key, key);
-        if (args.length > 0) {
-            try {
-                msg = String.format(msg, args);
-            } catch (Exception ignored) {}
+        if (args.length == 0) {
+            return msg; // 快速路径：无参数，跳过 format
         }
-        return msg;
+        try {
+            return String.format(msg, args);
+        } catch (Exception ignored) {
+            return msg;
+        }
     }
 
     public static String lang() {

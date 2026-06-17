@@ -12,6 +12,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.windy.guildshelter.adapter.bukkit.GuildWorldRegistry;
+import org.windy.guildshelter.adapter.bukkit.Messages;
 import org.windy.guildshelter.domain.model.GuildId;
 import org.windy.guildshelter.domain.model.GuildWorld;
 import org.windy.guildshelter.domain.model.Manor;
@@ -77,7 +78,7 @@ public final class LegendaryGuildListener implements Listener {
         } catch (GuildFullException e) {
             Player full = Bukkit.getPlayerExact(playerName);
             if (full != null) {
-                full.sendMessage("§e[公会营地] 公会名额已满（" + e.capacity() + " 人），需公会升级后才能分配地皮。");
+                full.sendMessage(Messages.get("error.guild_full", e.capacity()));
             }
             logger.info("[GuildShelter] " + guildName + " 名额已满(" + e.capacity() + ")，" + playerName + " 暂未分配地皮。");
             return;
@@ -118,6 +119,8 @@ public final class LegendaryGuildListener implements Listener {
         GuildId guild = new GuildId(name);
         guilds.find(guild).ifPresent(gw -> registry.unregister(gw.worldName()));
         service.dissolveGuild(guild);
+        var mr = org.windy.guildshelter.GuildShelterPlugin.mergeRegistry();
+        if (mr != null) mr.removeGuild(guild);
         logger.info("[GuildShelter] 公会解散 " + name + " → 已卸载世界并清理数据。");
     }
 

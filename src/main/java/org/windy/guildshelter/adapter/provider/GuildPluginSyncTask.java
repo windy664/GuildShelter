@@ -137,6 +137,8 @@ public final class GuildPluginSyncTask extends BukkitRunnable {
             if (!isUuid(value) && !liveGuilds.contains(value)) {
                 registry.unregister(gw.worldName());
                 service.dissolveGuild(gw.guild());
+                var mr = org.windy.guildshelter.GuildShelterPlugin.mergeRegistry();
+                if (mr != null) mr.removeGuild(gw.guild());
                 logger.info("[GuildShelter] 公会已解散(" + value + ") → 已卸载世界并清理数据。");
             }
         }

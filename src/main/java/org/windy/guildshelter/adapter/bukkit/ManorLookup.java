@@ -21,12 +21,12 @@ public final class ManorLookup {
 
     private final GuildWorldRegistry registry;
     private final ManorRepository manors;
-    private final MergeRegistry merges; // 可为 null（无合并功能时）
+    private final WorldCache cache;
 
-    public ManorLookup(GuildWorldRegistry registry, ManorRepository manors, MergeRegistry merges) {
+    public ManorLookup(GuildWorldRegistry registry, ManorRepository manors, WorldCache cache) {
         this.registry = registry;
         this.manors = manors;
-        this.merges = merges;
+        this.cache = cache;
     }
 
     public boolean isGuildWorld(World world) {
@@ -39,7 +39,7 @@ public final class ManorLookup {
         if (gw == null) {
             return Optional.empty();
         }
-        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        LayoutCalculator layout = cache.layout(gw.layout()); // 缓存命中 O(1)
         int lx = (blockX >> 4) - gw.originChunkX();
         int lz = (blockZ >> 4) - gw.originChunkZ();
         OptionalInt slot = layout.slotAt(lx, lz);
@@ -47,10 +47,10 @@ public final class ManorLookup {
             return manors.findBySlot(gw.guild(), slot.getAsInt());
         }
         // 原始 classify 不是 PLOT → 检查是否为合并路 chunk
-        if (merges != null && merges.hasMerges(gw.guild())) {
+        if (cache.merges().hasMerges(gw.guild())) {
             Classification raw = layout.classify(lx, lz);
             if (raw.type() == RegionType.ROAD) {
-                MergeAwareClassifier merger = new MergeAwareClassifier(layout, merges, gw.guild());
+                MergeAwareClassifier merger = cache.merger(layout, gw.guild()); // 缓存命中 O(1)
                 Classification merged = merger.classify(lx, lz);
                 if (merged.isPlot()) {
                     return manors.findBySlot(gw.guild(), merged.slot());

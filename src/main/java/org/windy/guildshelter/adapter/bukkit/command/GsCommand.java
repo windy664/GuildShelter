@@ -58,7 +58,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     private static final Set<String> PLAYER_SUBS = Set.of("home", "spawn", "upgrade", "info",
             "trust", "untrust", "member", "deny", "undeny", "list", "visit", "clear", "flag", "card",
             "alias", "sethome", "done", "kick", "near", "rate", "top", "middle",
-            "comment", "inbox", "swap", "grant", "merge", "unmerge", "confirm", "help", "desc", "toggle", "template", "sub");
+            "comment", "inbox", "swap", "grant", "merge", "unmerge", "confirm", "help", "desc", "toggle", "template", "sub", "bulletin");
 
     /** 需要确认的危险操作。 */
     private static final Set<String> CONFIRM_REQUIRED = Set.of(
@@ -182,6 +182,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             case "toggle" -> { toggle(sender, args); return true; }
             case "template" -> { template(sender, args); return true; }
             case "sub" -> { sub(sender, args); return true; }
+            case "bulletin" -> { bulletin(sender, args); return true; }
             case "admin" -> { /* 落到下面的管理分支 */ }
             default -> {
                 sender.sendMessage(Messages.get("usage.player_commands"));
@@ -210,6 +211,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             case "purge" -> purge(sender, args);
             case "regen" -> regen(sender, args);
             case "export" -> exportData(sender);
+            case "fund" -> fund(sender, args);
             default -> sender.sendMessage(Messages.get("usage.admin"));
         }
         return true;
@@ -321,28 +323,24 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("info.guild_info_header"));
         String alias = Flag.ALIAS.resolveString(manor.flags());
         String title = alias.isBlank() ? "地皮 #" + manor.slot() : alias + " (#" + manor.slot() + ")";
-        sender.sendMessage("§7公会: §f" + manor.guild().value() + " §7(Lv" + gw.guildLevel()
-                + "/" + levels.maxGuildLevel() + ", 成员 " + members + "/" + capacity + ")");
-        sender.sendMessage("§7你的地皮: §f" + title + " §7庄园 Lv" + manor.level()
-                + "/" + levels.manorMaxLevel() + " §7尺寸 " + side + "×" + side
-                + (Flag.DONE.resolveBool(manor.flags()) ? " §a✔ 已完工" : " §e🔨 建造中"));
-        sender.sendMessage("§7共建人(trusted): §f" + sizeOrNone(manor.coBuilders())
-                + " §7成员(member): §f" + sizeOrNone(manor.members())
-                + " §7黑名单: §c" + sizeOrNone(manor.denied()));
+        sender.sendMessage(Messages.get("info.guild_line", manor.guild().value(), gw.guildLevel(), levels.maxGuildLevel(), members, capacity));
+        sender.sendMessage(Messages.get("info.plot_line", title, manor.level(), levels.manorMaxLevel(), side, side,
+                Flag.DONE.resolveBool(manor.flags()) ? Messages.get("info.done_status") : Messages.get("info.building_status")));
+        sender.sendMessage(Messages.get("info.trusted_line", sizeOrNone(manor.coBuilders()), sizeOrNone(manor.members()), sizeOrNone(manor.denied())));
         String desc = Flag.DESCRIPTION.resolveString(manor.flags());
         if (!desc.isBlank()) {
-            sender.sendMessage("§7描述: §f" + desc);
+            sender.sendMessage(Messages.get("info.card_desc", desc));
         }
         double price = Flag.PRICE.resolveDouble(manor.flags());
         if (price > 0) {
-            sender.sendMessage("§7入场费: §e" + price);
+            sender.sendMessage(Messages.get("info.card_price", price));
         }
         String blocked = Flag.BLOCKED_CMDS.resolveString(manor.flags());
         if (!blocked.isBlank()) {
-            sender.sendMessage("§7禁用命令: §c/" + blocked.replace(",", " /"));
+            sender.sendMessage(Messages.get("info.blocked_cmds_line", blocked.replace(",", " /")));
         }
         if (Flag.KEEP.resolveBool(manor.flags())) {
-            sender.sendMessage("§7退会保留: §a是");
+            sender.sendMessage(Messages.get("info.keep_line"));
         }
     }
 
@@ -597,15 +595,14 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                     .toList();
         }
         if (all.isEmpty()) {
-            sender.sendMessage("§e" + (mineOnly ? "你还没有加入任何有营地的公会。" : "还没有任何公会营地。"));
+            sender.sendMessage(Messages.get(mineOnly ? "error.no_guild_joined" : "info.no_guilds"));
             return;
         }
-        sender.sendMessage("§6==== " + (mineOnly ? "我的" : "") + "公会营地 (" + all.size() + ") ====");
+        sender.sendMessage(Messages.get("info.guild_list_header", mineOnly ? "我的" : "", all.size()));
         for (GuildWorld gw : all) {
             int members = manors.findAll(gw.guild()).size();
             int cap = levels.maxMembers(gw.guildLevel());
-            sender.sendMessage("§7- §f" + gw.guild().value() + " §7Lv" + gw.guildLevel()
-                    + " 成员 " + members + "/" + cap + " §8(/gs visit " + gw.guild().value() + ")");
+            sender.sendMessage(Messages.get("info.list_entry", gw.guild().value(), gw.guildLevel(), members, cap, gw.guild().value()));
         }
     }
 
@@ -734,7 +731,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                 for (Flag f : Flag.values()) {
                     String cur = manor.flags().get(f.id());
                     String shown = cur != null ? "§f" + cur : "§8" + f.defaultValue() + "(默认)";
-                    sender.sendMessage("§7" + f.id() + " = " + shown + " §8- " + f.description());
+                    sender.sendMessage(Messages.get("info.flag_entry", f.id(), shown, f.description()));
                 }
             }
         }
@@ -794,25 +791,21 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         boolean done = Flag.DONE.resolveBool(manor.flags());
 
         sender.sendMessage(Messages.get("info.card_header"));
-        sender.sendMessage("§6│ §7地皮: §f" + title + "  §7公会: §f" + manor.guild().value()
-                + "  §7等级: §f" + gw.guildLevel()
-                + (done ? "  §a✔ 已完工" : "  §e🔨 建造中"));
-        sender.sendMessage("§6│ §7庄主: §f" + targetName + "  §7庄园Lv: §f" + manor.level()
-                + "/" + levels.manorMaxLevel() + "  §7尺寸: §f" + side + "×" + side);
+        sender.sendMessage(Messages.get("info.card_plot", title, manor.guild().value(), gw.guildLevel(),
+                done ? Messages.get("info.done_status") : Messages.get("info.building_status")));
+        sender.sendMessage(Messages.get("info.card_owner", targetName, manor.level(), levels.manorMaxLevel(), side, side));
         if (!alias.isBlank()) {
-            sender.sendMessage("§6│ §7别名: §f" + alias);
+            sender.sendMessage(Messages.get("info.card_alias", alias));
         }
         if (!desc.isBlank()) {
-            sender.sendMessage("§6│ §7描述: §f" + desc);
+            sender.sendMessage(Messages.get("info.card_desc", desc));
         }
-        sender.sendMessage("§6│ §7实体: " + entityLine);
-        sender.sendMessage("§6│ §7成员: §f" + memberCount + "/" + capacity
-                + "  §7trusted: §f" + manor.coBuilders().size()
-                + "  §7denied: §c" + manor.denied().size());
-        sender.sendMessage("§6│ §7活跃flag: §f" + activeFlags + " §7个");
+        sender.sendMessage(Messages.get("info.card_entities", entityLine));
+        sender.sendMessage(Messages.get("info.card_members", memberCount, capacity, manor.coBuilders().size(), manor.denied().size()));
+        sender.sendMessage(Messages.get("info.card_flags", activeFlags));
         double price = Flag.PRICE.resolveDouble(manor.flags());
         if (price > 0) {
-            sender.sendMessage("§6│ §7入场费: §e" + price);
+            sender.sendMessage(Messages.get("info.card_price", price));
         }
         sender.sendMessage(Messages.get("info.card_footer"));
         sender.sendMessage(Messages.get("info.card_score_line", score));
@@ -835,6 +828,10 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         String name = args.length >= 2
                 ? String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length))
                 : "";
+        if (name.length() > 50) {
+            sender.sendMessage(Messages.get("error.too_long", 50));
+            return;
+        }
         Map<String, String> flags = new HashMap<>(manor.flags());
         if (name.isBlank()) {
             flags.remove(Flag.ALIAS.id());
@@ -948,7 +945,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             String cmd = args[1].toLowerCase();
             String desc = COMMAND_HELP.get(cmd);
             if (desc != null) {
-                sender.sendMessage("§6/gs " + cmd + " §7- " + desc);
+                sender.sendMessage(Messages.get("info.help_cmd", cmd, desc));
             } else {
                 sender.sendMessage(Messages.get("info.help_unknown", cmd));
             }
@@ -956,7 +953,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
         sender.sendMessage(Messages.get("info.help_header"));
         for (Map.Entry<String, String> e : COMMAND_HELP.entrySet()) {
-            sender.sendMessage("§e/gs " + e.getKey() + " §7- " + e.getValue());
+            sender.sendMessage(Messages.get("info.help_entry", e.getKey(), e.getValue()));
         }
         sender.sendMessage(Messages.get("info.help_footer"));
     }
@@ -1074,6 +1071,10 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                     return;
                 }
                 String name = args[2].toLowerCase();
+                if (!name.matches("[a-zA-Z0-9_\\-]+")) {
+                    sender.sendMessage(Messages.get("error.invalid_name"));
+                    return;
+                }
                 if (manors.getTemplate(guild, name).isPresent()) {
                     sender.sendMessage(Messages.get("error.template_already_exist", name));
                     return;
@@ -1188,6 +1189,28 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                 int minZ = Math.min(bz + dz1, bz + dz2);
                 int maxX = Math.max(bx + dx1, bx + dx2);
                 int maxZ = Math.max(bz + dz1, bz + dz2);
+                // 边界检查：sub 必须在自己的地皮实占范围内
+                GuildWorld subGw = guilds.find(manor.guild()).orElse(null);
+                if (subGw == null) {
+                    sender.sendMessage(Messages.get("error.world_not_exist"));
+                    return;
+                }
+                LayoutCalculator subLayout = new LayoutCalculator(subGw.layout());
+                ChunkRegion active = subLayout.activeRegion(manor.slot(), manor.level())
+                        .shift(subGw.originChunkX(), subGw.originChunkZ());
+                int aMinX = active.minBlockX();
+                int aMaxX = active.maxBlockX() + 15;
+                int aMinZ = active.minBlockZ();
+                int aMaxZ = active.maxBlockZ() + 15;
+                if (minX < aMinX || maxX > aMaxX || minZ < aMinZ || maxZ > aMaxZ) {
+                    sender.sendMessage(Messages.get("error.sub_out_of_bounds"));
+                    return;
+                }
+                // 名称校验：只允许字母数字下划线横杠
+                if (!name.matches("[a-zA-Z0-9_\\-]+")) {
+                    sender.sendMessage(Messages.get("error.invalid_name"));
+                    return;
+                }
                 manors.saveSub(guild, manor.slot(), name, minX, minZ, maxX, maxZ, Map.of());
                 sender.sendMessage(Messages.get("success.sub_created", name, maxX - minX + 1, maxZ - minZ + 1));
             }
@@ -1234,11 +1257,63 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                 }
                 sender.sendMessage(Messages.get("info.sub_header"));
                 for (ManorRepository.SubEntry s : subs) {
-                    sender.sendMessage("§7- §f" + s.name() + " §7(" + (s.maxX() - s.minX() + 1) + "x" + (s.maxZ() - s.minZ() + 1)
-                            + ") §7flags: " + s.flags().size());
+                    sender.sendMessage(Messages.get("info.sub_entry", s.name(), s.maxX() - s.minX() + 1, s.maxZ() - s.minZ() + 1, s.flags().size()));
                 }
             }
-            default -> sender.sendMessage("§e用法: /gs sub <create|delete|setflag|list> [名称]");
+            default -> sender.sendMessage(Messages.get("usage.sub"));
+        }
+    }
+
+    /** /gs bulletin <set|show|clear> [内容]：公会公告板管理。 */
+    private void bulletin(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Messages.get("error.player_only"));
+            return;
+        }
+        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        if (manor == null) {
+            sender.sendMessage(Messages.get("error.no_manor"));
+            return;
+        }
+        GuildWorld gw = guilds.find(manor.guild()).orElse(null);
+        if (gw == null) {
+            sender.sendMessage(Messages.get("error.world_not_exist"));
+            return;
+        }
+        // 只有庄主或 admin 能管理公告
+        if (!manor.owner().equals(PlayerRef.of(player.getUniqueId()))
+                && !Permissions.hasAdminPerm(player, Permissions.ADMIN_FLAG_OTHER)) {
+            sender.sendMessage(Messages.get("error.only_owner"));
+            return;
+        }
+        String action = args.length >= 2 ? args[1].toLowerCase() : "show";
+        switch (action) {
+            case "set" -> {
+                if (args.length < 3) {
+                    sender.sendMessage(Messages.get("usage.bulletin"));
+                    return;
+                }
+                String text = String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length));
+                if (text.length() > 200) {
+                    sender.sendMessage(Messages.get("error.too_long", 200));
+                    return;
+                }
+                guilds.save(gw.withBulletin(text.replace(';', ',')));
+                sender.sendMessage(Messages.get("success.bulletin_set", text));
+            }
+            case "clear" -> {
+                guilds.save(gw.withBulletin(""));
+                sender.sendMessage(Messages.get("success.bulletin_cleared"));
+            }
+            case "show" -> {
+                String bulletin = gw.bulletin();
+                if (bulletin == null || bulletin.isBlank()) {
+                    sender.sendMessage(Messages.get("info.bulletin_empty"));
+                } else {
+                    sender.sendMessage(Messages.get("info.bulletin_show", manor.guild().value(), bulletin));
+                }
+            }
+            default -> sender.sendMessage(Messages.get("usage.bulletin"));
         }
     }
 
@@ -1250,6 +1325,62 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("success.reload"));
         } else {
             sender.sendMessage(Messages.get("error.plugin_unavailable"));
+        }
+    }
+
+    /** /gs admin fund <公会> <add|check|set> [金额]：管理公会资金。 */
+    private void fund(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            sender.sendMessage(Messages.get("usage.admin_fund"));
+            return;
+        }
+        GuildId guild = new GuildId(args[2]);
+        GuildWorld gw = guilds.find(guild).orElse(null);
+        if (gw == null) {
+            sender.sendMessage(Messages.get("error.guild_not_exist", guild.value()));
+            return;
+        }
+        String action = args.length >= 4 ? args[3].toLowerCase() : "check";
+        switch (action) {
+            case "check" -> {
+                sender.sendMessage(Messages.get("info.fund_check", guild.value(), String.format("%.0f", gw.funds())));
+            }
+            case "add" -> {
+                if (args.length < 5) {
+                    sender.sendMessage(Messages.get("usage.admin_fund"));
+                    return;
+                }
+                double amount;
+                try {
+                    amount = Double.parseDouble(args[4]);
+                } catch (NumberFormatException e) {
+                    sender.sendMessage(Messages.get("error.number_must_be_int"));
+                    return;
+                }
+                if (amount <= 0) {
+                    sender.sendMessage(Messages.get("error.positive_required"));
+                    return;
+                }
+                guilds.save(gw.withFunds(gw.funds() + amount));
+                sender.sendMessage(Messages.get("success.fund_added", guild.value(), String.format("%.0f", amount),
+                        String.format("%.0f", gw.funds() + amount)));
+            }
+            case "set" -> {
+                if (args.length < 5) {
+                    sender.sendMessage(Messages.get("usage.admin_fund"));
+                    return;
+                }
+                double amount;
+                try {
+                    amount = Double.parseDouble(args[4]);
+                } catch (NumberFormatException e) {
+                    sender.sendMessage(Messages.get("error.number_must_be_int"));
+                    return;
+                }
+                guilds.save(gw.withFunds(amount));
+                sender.sendMessage(Messages.get("success.fund_set", guild.value(), String.format("%.0f", amount)));
+            }
+            default -> sender.sendMessage(Messages.get("usage.admin_fund"));
         }
     }
 
@@ -1415,8 +1546,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             String alias = Flag.ALIAS.resolveString(sd.manor().flags());
             String name = alias.isBlank() ? "#" + sd.manor().slot() : alias + " (#" + sd.manor().slot() + ")";
             String ownerName = Bukkit.getOfflinePlayer(sd.manor().owner().uuid()).getName();
-            sender.sendMessage("§7- §f" + name + " §7庄主: §f" + (ownerName != null ? ownerName : "?")
-                    + " §7距离: §e" + String.format("%.1f", sd.dist() * 16) + " 格");
+            sender.sendMessage(Messages.get("info.near_entry", name, ownerName != null ? ownerName : "?", String.format("%.1f", sd.dist() * 16)));
         }
     }
 
@@ -1545,7 +1675,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             case "entities" -> "实体数";
             default -> "评分";
         };
-        sender.sendMessage("§6==== " + finalGuild.value() + " 地皮" + title + "排行 ====");
+        sender.sendMessage(Messages.get("info.top_header", finalGuild.value(), title));
         int show = Math.min(all.size(), 10);
         for (int i = 0; i < show; i++) {
             Manor m = all.get(i);
@@ -1565,8 +1695,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                     yield String.format("%.1f", avg) + "分(" + count + "人)";
                 }
             };
-            sender.sendMessage("§e" + (i + 1) + ". §f" + name + " §7庄主: §f" + (ownerName != null ? ownerName : "?")
-                    + " §7" + title + ": §e" + value);
+            sender.sendMessage(Messages.get("info.top_entry", i + 1, name, ownerName != null ? ownerName : "?", title, value));
         }
     }
 
@@ -1622,7 +1751,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
         String msg = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
         manors.addComment(gw.guild(), c.slot(), PlayerRef.of(player.getUniqueId()), msg);
-        sender.sendMessage("§a已给地皮 #" + c.slot() + " 留言。");
+        sender.sendMessage(Messages.get("success.comment_added", c.slot()));
     }
 
     /** /gs inbox：查看自己地皮收到的留言。 */
@@ -1642,8 +1771,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         for (ManorRepository.CommentEntry e : entries) {
             String authorName = Bukkit.getOfflinePlayer(e.author().uuid()).getName();
             String time = sdf.format(new java.util.Date(e.timestamp()));
-            sender.sendMessage("§7[" + time + "] §f" + (authorName != null ? authorName : "?")
-                    + " §7→ 地皮#" + e.slot() + ": §f" + e.message());
+            sender.sendMessage(Messages.get("info.inbox_entry", time, authorName != null ? authorName : "?", e.slot(), e.message()));
         }
     }
 
@@ -1685,14 +1813,21 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         // 交换 slot：保存对方 slot 的数据给你，你的给对方
+        // 注意：两个 save 不是原子的，极端情况（崩溃）可能部分写入。
+        // 但都是 upsert，不会丢数据，最多 slot 对不上需要手动修。
         int mySlot = myManor.slot();
         int theirSlot = targetManor.slot();
         Manor newMine = new Manor(theirSlot, myManor.guild(), ref, myManor.level(),
                 myManor.coBuilders(), myManor.members(), myManor.denied(), myManor.flags());
         Manor newTheirs = new Manor(mySlot, targetManor.guild(), targetRef, targetManor.level(),
                 targetManor.coBuilders(), targetManor.members(), targetManor.denied(), targetManor.flags());
-        manors.save(newMine);
-        manors.save(newTheirs);
+        try {
+            manors.save(newMine);
+            manors.save(newTheirs);
+        } catch (Exception e) {
+            sender.sendMessage(Messages.get("error.export_failed", e.getMessage()));
+            return;
+        }
         sender.sendMessage(Messages.get("success.swap", target.getName(), mySlot, theirSlot));
         target.sendMessage(Messages.get("success.swap_notify", player.getName(), theirSlot, mySlot));
     }
@@ -1779,6 +1914,11 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.slot_empty", absorbedSlot));
             return;
         }
+        // 安全检查：只能合并自己的地皮（或有 admin 权限）
+        if (!absorbed.owner().equals(ref) && !Permissions.hasAdminPerm(player, Permissions.ADMIN_TRUST_OTHER)) {
+            sender.sendMessage(Messages.get("error.only_owner"));
+            return;
+        }
         // 检查是否相邻（slot 在螺旋上相邻 = 距离 1）
         GuildWorld gw = guilds.find(myManor.guild()).orElse(null);
         if (gw == null) {
@@ -1799,8 +1939,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         merges.merge(myManor.guild(), myManor.slot(), absorbedSlot);
-        sender.sendMessage("§a已将地皮 #" + absorbedSlot + " 合并到你的地皮 #" + myManor.slot()
-                + "（路 chunk 已归属你的地皮）。");
+        sender.sendMessage(Messages.get("success.merged", absorbedSlot, myManor.slot()));
     }
 
     /** /gs unmerge [slot]：取消合并（不填=取消所有，填 slot=取消特定一个）。 */
@@ -1838,17 +1977,14 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage(Messages.get("error.not_merged", targetSlot));
                 return;
             }
-            // 从 MergeRegistry 移除这条记录（DB + 缓存）
-            // 需要单独删一条，当前 unmerge 是删全部。先查 DB 实现单条删除。
+            // 从 DB + 缓存中移除这条合并记录
             manors.unmergeOne(guild, primarySlot, targetSlot);
-            // 从缓存中也移除（手动更新）
-            merges.reload(guild, manors.findAll(guild).stream()
-                    .map(Manor::slot).toList());
-            sender.sendMessage("§a已取消地皮 #" + targetSlot + " 的合并（路 chunk 已恢复）。");
+            merges.removeOne(guild, primarySlot, targetSlot);
+            sender.sendMessage(Messages.get("success.unmerged_one", targetSlot));
         } else {
             // 取消所有
             merges.unmerge(guild, primarySlot);
-            sender.sendMessage("§a已取消地皮 #" + primarySlot + " 的所有合并（共 " + absorbed.size() + " 块，路 chunk 已恢复）。");
+            sender.sendMessage(Messages.get("success.unmerged_all", primarySlot, absorbed.size()));
         }
     }
 
@@ -1908,8 +2044,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         long seed = ThreadLocalRandom.current().nextLong();
         GuildWorld gw = service.createGuild(guild, seed);
         registry.register(gw);
-        sender.sendMessage("§a已创建公会世界（自然地形）: " + gw.worldName()
-                + " §7种子=" + gw.seed() + " 原点偏移=(" + gw.originChunkX() + "," + gw.originChunkZ() + ")");
+        sender.sendMessage(Messages.get("success.create_world", gw.worldName(), gw.seed(), gw.originChunkX(), gw.originChunkZ()));
         logMap(guild);
     }
 
@@ -1962,8 +2097,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         try {
             manor = service.assignManor(guild, PlayerRef.of(player.getUniqueId()));
         } catch (GuildFullException e) {
-            sender.sendMessage("§c公会已满（名额 " + e.capacity() + "，当前 " + e.guildLevel()
-                    + " 级）。先 /gs admin upgrade-guild " + guild.value() + " 放开更多名额。");
+            sender.sendMessage(Messages.get("error.guild_full_with_level", e.capacity(), e.guildLevel()));
             return;
         }
         // 分配后 allocatedSlots 可能变化，重新读
@@ -1983,10 +2117,8 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         world.loadChunk(cx >> 4, cz >> 4, true);
         int cy = world.getHighestBlockYAt(cx, cz) + 1;
         player.teleport(new Location(world, cx + 0.5, cy, cz + 0.5));
-        sender.sendMessage("§a已分配地皮 #" + manor.slot() + "（等级 " + manor.level()
-                + "），整地进行中。你已被传送过去。");
-        sender.sendMessage("§7提示: claim 对同一玩家幂等(一人一块)。要看多块分布用 /gs admin fill "
-                + guild.value() + " <数量>。网格图已打到控制台。");
+        sender.sendMessage(Messages.get("success.claim", manor.slot(), manor.level()));
+        sender.sendMessage(Messages.get("success.claim_hint", guild.value()));
         logMap(guild);
     }
 
@@ -2010,8 +2142,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             boolean ok = service.upgradeManor(guild, PlayerRef.of(player.getUniqueId()));
             if (ok) {
                 Manor m = service.assignManor(guild, PlayerRef.of(player.getUniqueId())); // 幂等读回当前庄园
-                sender.sendMessage("§a庄园已升至 " + m.level() + " / " + cap
-                        + " 级，新扩范围整地进行中。");
+                sender.sendMessage(Messages.get("success.upgraded", m.level(), cap));
             } else {
                 sender.sendMessage(Messages.get("error.already_max_level", cap));
             }
@@ -2049,8 +2180,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                 service.assignManor(guild, PlayerRef.of(UUID.randomUUID()));
                 done++;
             } catch (GuildFullException e) {
-                sender.sendMessage("§e达到当前等级名额上限 " + e.capacity() + "，已填 " + done
-                        + " 块。先 /gs admin upgrade-guild " + guild.value() + " 再继续。");
+                sender.sendMessage(Messages.get("success.fill_full", e.capacity(), done, guild.value()));
                 break;
             }
         }
@@ -2114,10 +2244,9 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         GuildWorld after = guilds.find(guild).orElse(before);
         double newBorder = layout.borderSizeBlocks(
                 Math.max(after.allocatedSlots(), levels.maxMembers(after.guildLevel())));
-        sender.sendMessage("§a公会已升至 " + after.guildLevel() + " / " + levels.maxGuildLevel()
-                + " 级；成员名额 " + levels.maxMembers(before.guildLevel())
-                + " → " + levels.maxMembers(after.guildLevel())
-                + "，世界边界 " + (int) oldBorder + " → " + (int) newBorder + " 方块。");
+        sender.sendMessage(Messages.get("success.upgrade_guild", after.guildLevel(), levels.maxGuildLevel(),
+                levels.maxMembers(before.guildLevel()), levels.maxMembers(after.guildLevel()),
+                (int) oldBorder, (int) newBorder));
         logMap(guild);
     }
 
@@ -2135,7 +2264,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
 
     private void listWorlds(CommandSender sender) {
         List<World> all = Bukkit.getWorlds();
-        sender.sendMessage("§e已加载世界 (" + all.size() + "):");
+        sender.sendMessage(Messages.get("info.world_list", all.size()));
         for (World w : all) {
             Location s = w.getSpawnLocation();
             sender.sendMessage(String.format("§7- §f%s §7env=%s spawn=(%d,%d,%d)",
@@ -2206,6 +2335,8 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             if (m != null) out.addAll(manors.listTemplates(m.guild()));
         } else if (args.length == 2 && args[0].equalsIgnoreCase("sub")) {
             out.addAll(java.util.List.of("create", "delete", "setflag", "list"));
+        } else if (args.length == 2 && args[0].equalsIgnoreCase("bulletin")) {
+            out.addAll(java.util.List.of("set", "show", "clear"));
         } else if (args.length == 3 && args[0].equalsIgnoreCase("flag")) {
             for (Flag f : Flag.values()) {
                 out.add(f.id());

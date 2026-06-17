@@ -2,6 +2,13 @@
 # 语言设置: zh_CN(中文) / en_US(英文)，语言文件在 plugins/GuildShelter/messages_*.yml
 language: zh_CN
 
+# 每日维护费（从公会资金扣除，余额不足广播警告）
+upkeep:
+  enabled: false          # 是否启用每日维护费
+  base-cost: 100          # 基础费用（1 级公会）
+  per-level-cost: 50      # 每级加收
+  check-hour: 0           # 每天几点执行（0-23，服务器时间）
+
 # 单位说明：chunk = 16 方块；cell(格) = 一块地皮 + 一条路（网格的基本单元）
 
 # ========================= 常用设置（你通常只需要改这里）=========================

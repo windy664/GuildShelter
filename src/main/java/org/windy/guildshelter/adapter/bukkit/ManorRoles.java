@@ -24,6 +24,15 @@ public final class ManorRoles {
         };
     }
 
+    /** 带缓存的版本：MEMBER 门控走 SupervisorCache（每 5 秒刷新一次）。 */
+    public static boolean effectiveBuildCached(Manor manor, PlayerRef player, SupervisorCache cache) {
+        return switch (manor.baseRoleOf(player)) {
+            case OWNER, TRUSTED -> true;
+            case MEMBER -> cache.supervisorOnline(manor);
+            case DENIED, VISITOR -> false;
+        };
+    }
+
     /** owner 或任一 trusted 在线——MEMBER 的在线门控依据。 */
     public static boolean supervisorOnline(Manor manor) {
         if (isOnline(manor.owner())) {

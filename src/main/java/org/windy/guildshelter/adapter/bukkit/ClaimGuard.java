@@ -31,15 +31,18 @@ public final class ClaimGuard {
     private final GuildWorldRegistry registry;
     private final ManorRepository manors;
     private final PermissionRules rules;
-    private final MergeRegistry merges; // 可为 null
+    private final WorldCache cache;
+    private final SupervisorCache supervisorCache;
 
     private final Map<UUID, Long> lastDenyMsg = new ConcurrentHashMap<>();
 
-    public ClaimGuard(GuildWorldRegistry registry, ManorRepository manors, PermissionRules rules, MergeRegistry merges) {
+    public ClaimGuard(GuildWorldRegistry registry, ManorRepository manors,
+                      PermissionRules rules, WorldCache cache, SupervisorCache supervisorCache) {
         this.registry = registry;
         this.manors = manors;
         this.rules = rules;
-        this.merges = merges;
+        this.cache = cache;
+        this.supervisorCache = supervisorCache;
     }
 
     /** 该玩家能否改动其所在世界 (blockX,blockZ) 处的方块。非公会世界一律放行。 */
@@ -51,23 +54,22 @@ public final class ClaimGuard {
         int lx = (blockX >> 4) - gw.originChunkX();
         int lz = (blockZ >> 4) - gw.originChunkZ();
         GuildId guild = gw.guild();
-        PlayerRef ref = PlayerRef.of(player.getUniqueId());
+        PlayerRef ref = cache.playerRef(player.getUniqueId());
         boolean inGuild = manors.findByOwner(guild, ref).isPresent();
         IntFunction<Manor> bySlot = slot -> manors.findBySlot(guild, slot).orElse(null);
-        LayoutCalculator layout = new LayoutCalculator(gw.layout()); // 用该世界冻结的布局
+        LayoutCalculator layout = cache.layout(gw.layout()); // 缓存命中 O(1)
 
         // 合并感知：先用原始 classify，如果是 ROAD 且有合并数据再查缓存
         Classification raw = layout.classify(lx, lz);
         Classification effective = raw;
-        if (raw.type() == RegionType.ROAD && merges != null && merges.hasMerges(guild)) {
-            MergeAwareClassifier merger = new MergeAwareClassifier(layout, merges, guild);
-            effective = merger.classify(lx, lz);
+        if (raw.type() == RegionType.ROAD && cache.merges().hasMerges(guild)) {
+            effective = cache.merger(layout, guild).classify(lx, lz); // 缓存命中 O(1)
         }
 
         if (effective.type() == RegionType.PLOT) {
-            // 合并后的路 或 原始地皮：按地皮权限判定
+            // 合并后的路 或 原始地皮：按地皮权限判定（用缓存的 supervisorOnline）
             Manor m = bySlot.apply(effective.slot());
-            if (m != null && ManorRoles.effectiveBuild(m, ref)) {
+            if (m != null && ManorRoles.effectiveBuildCached(m, ref, supervisorCache)) {
                 // 检查是否在实占范围内（合并后的路 chunk 视为在范围内）
                 if (raw.type() == RegionType.ROAD || layout.activeRegion(effective.slot(), m.level()).containsChunk(lx, lz)) {
                     return true;
@@ -75,7 +77,8 @@ public final class ClaimGuard {
             }
         } else {
             // 非合并的原始判定
-            if (rules.canModify(layout, ref, inGuild, bySlot, lx, lz, ManorRoles::effectiveBuild)) {
+            if (rules.canModify(layout, ref, inGuild, bySlot, lx, lz,
+                    (m, p) -> ManorRoles.effectiveBuildCached(m, p, supervisorCache))) {
                 return true;
             }
         }
@@ -89,6 +92,11 @@ public final class ClaimGuard {
             case PLOT -> Permissions.hasAdminPerm(player, Permissions.ADMIN_BUILD_OTHER);
             case MAIN_CITY -> false;
         };
+    }
+
+    /** 清理玩家退出时的缓存。 */
+    public void onPlayerQuit(UUID playerId) {
+        lastDenyMsg.remove(playerId);
     }
 
     /** 被拦截时限频提示玩家（3 秒内不重复）。 */

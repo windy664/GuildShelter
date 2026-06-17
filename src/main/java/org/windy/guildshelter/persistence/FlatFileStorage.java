@@ -98,7 +98,9 @@ public final class FlatFileStorage implements Storage {
                 byId.put(g.value(), new GuildWorld(g, f[1], Long.parseLong(f[2]),
                         Integer.parseInt(f[3]), Integer.parseInt(f[4]),
                         Integer.parseInt(f[5]), Integer.parseInt(f[6]),
-                        LayoutCsv.parse(f.length > 7 ? f[7] : null, fallback)));
+                        LayoutCsv.parse(f.length > 7 ? f[7] : null, fallback),
+                        f.length > 8 ? Double.parseDouble(f[8]) : 0,
+                        f.length > 9 ? f[9] : ""));
             }
         }
 
@@ -137,7 +139,8 @@ public final class FlatFileStorage implements Storage {
                         clean(w.guild().value()), clean(w.worldName()), Long.toString(w.seed()),
                         Integer.toString(w.originChunkX()), Integer.toString(w.originChunkZ()),
                         Integer.toString(w.guildLevel()), Integer.toString(w.allocatedSlots()),
-                        LayoutCsv.toCsv(w.layout())));
+                        LayoutCsv.toCsv(w.layout()), Double.toString(w.funds()),
+                        clean(w.bulletin())));
             }
             writeLines(file, lines);
         }

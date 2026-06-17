@@ -26,6 +26,8 @@ public final class MysqlDialect implements SqlDialect {
                 )""",
                 // 老库迁移：列已存在会抛错，由 JdbcDatabase 吞掉。
                 "ALTER TABLE guild_world ADD COLUMN layout_params TEXT",
+                "ALTER TABLE guild_world ADD COLUMN funds DOUBLE DEFAULT 0",
+                "ALTER TABLE guild_world ADD COLUMN bulletin TEXT DEFAULT ''",
                 """
                 CREATE TABLE IF NOT EXISTS manor (
                     guild_id   VARCHAR(255) NOT NULL,
@@ -106,8 +108,8 @@ public final class MysqlDialect implements SqlDialect {
     @Override
     public String upsertGuildWorld() {
         return """
-                INSERT INTO guild_world(guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params)
-                VALUES(?,?,?,?,?,?,?,?)
+                INSERT INTO guild_world(guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin)
+                VALUES(?,?,?,?,?,?,?,?,?,?)
                 ON DUPLICATE KEY UPDATE
                     world_name=VALUES(world_name),
                     seed=VALUES(seed),
@@ -115,7 +117,9 @@ public final class MysqlDialect implements SqlDialect {
                     origin_z=VALUES(origin_z),
                     guild_level=VALUES(guild_level),
                     allocated_slots=VALUES(allocated_slots),
-                    layout_params=VALUES(layout_params)""";
+                    layout_params=VALUES(layout_params),
+                    funds=VALUES(funds),
+                    bulletin=VALUES(bulletin)""";
     }
 
     @Override

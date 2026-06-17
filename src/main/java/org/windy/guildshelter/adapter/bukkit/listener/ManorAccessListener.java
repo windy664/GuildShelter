@@ -6,10 +6,12 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.windy.guildshelter.adapter.bukkit.ManorLookup;
 import org.windy.guildshelter.adapter.bukkit.ManorRoles;
 import org.windy.guildshelter.adapter.bukkit.Messages;
 import org.windy.guildshelter.adapter.bukkit.Permissions;
+import org.windy.guildshelter.adapter.bukkit.WorldCache;
 import org.windy.guildshelter.domain.flag.Flag;
 import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
@@ -34,16 +36,19 @@ public final class ManorAccessListener implements Listener {
 
     private final ManorLookup lookup;
     private final EconomyPort economy; // null = 无 Vault，price flag 不生效
-    private final Map<UUID, long[]> lastChunk = new ConcurrentHashMap<>();
+    private final WorldCache cache;
+    /** UUID → long 编码的 chunk 坐标 (cx << 32 | cz)，避免每次分配 long[]。 */
+    private final Map<UUID, Long> lastChunk = new ConcurrentHashMap<>();
     private final Map<UUID, Manor> lastManor = new ConcurrentHashMap<>();
     /** 已付过入场费的玩家 → 已付费的地皮 slot+guild 组合（离开地皮时清除，下次再进要再付）。 */
     private final Map<UUID, String> paidManors = new ConcurrentHashMap<>();
     /** 个人开关：关闭 titles 的玩家集合。 */
     private final Set<UUID> titlesDisabled = ConcurrentHashMap.newKeySet();
 
-    public ManorAccessListener(ManorLookup lookup, EconomyPort economy) {
+    public ManorAccessListener(ManorLookup lookup, EconomyPort economy, WorldCache cache) {
         this.lookup = lookup;
         this.economy = economy;
+        this.cache = cache;
     }
 
     /** 切换玩家的 titles 个人开关。返回 true=现在开启。 */
@@ -62,6 +67,15 @@ public final class ManorAccessListener implements Listener {
     }
 
     @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        UUID id = event.getPlayer().getUniqueId();
+        lastChunk.remove(id);
+        lastManor.remove(id);
+        paidManors.remove(id);
+        titlesDisabled.remove(id);
+    }
+
+    @EventHandler
     public void onMove(PlayerMoveEvent event) {
         if (event.getTo() == null) {
             return;
@@ -71,15 +85,17 @@ public final class ManorAccessListener implements Listener {
         Player player = event.getPlayer();
         UUID id = player.getUniqueId();
 
-        long[] prevC = lastChunk.get(id);
-        if (prevC != null && prevC[0] == cx && prevC[1] == cz) {
+        // long 编码 chunk 坐标，避免每次分配 long[]
+        long chunkKey = ((long) cx << 32) | (cz & 0xFFFFFFFFL);
+        Long prevChunk = lastChunk.get(id);
+        if (prevChunk != null && prevChunk == chunkKey) {
             return; // 同 chunk，不查库
         }
 
         Manor cur = lookup.at(event.getTo().getWorld(),
                 event.getTo().getBlockX(), event.getTo().getBlockZ()).orElse(null);
         Manor prev = lastManor.get(id);
-        PlayerRef ref = PlayerRef.of(id);
+        PlayerRef ref = cache.playerRef(id); // 缓存命中 O(1)，无对象分配
         boolean bypass = Permissions.canBypassEntry(player) || player.isOp();
 
         // 黑名单：denied 玩家禁止进入（覆盖一切；owner 不会被判 denied），推回不更新 last*
@@ -101,7 +117,7 @@ public final class ManorAccessListener implements Listener {
             player.sendMessage(Messages.get("listener.deny_exit"));
             return;
         }
-        lastChunk.put(id, new long[]{cx, cz});
+        lastChunk.put(id, chunkKey);
 
         if (sameManor(prev, cur)) {
             return; // 同一块地皮（地皮跨多 chunk）
@@ -201,14 +217,27 @@ public final class ManorAccessListener implements Listener {
         return true;
     }
 
-    /** 传送到地皮实占范围中心（deny-exit 用）。 */
+    /** 传送到地皮实占范围中心（deny-exit 用）。检查安全性：岩浆/虚空则传世界出生点。 */
     private void teleportToManorCenter(Player player, Manor manor) {
         org.bukkit.Location center = lookup.manorCenter(player.getWorld(), manor);
-        if (center != null) {
-            player.teleport(center);
-        } else {
+        if (center == null) {
             player.teleport(player.getWorld().getSpawnLocation());
+            return;
         }
+        // 安全检查：目标位置不能是岩浆/虚空
+        org.bukkit.block.Block feet = center.getBlock();
+        org.bukkit.block.Block below = feet.getRelative(0, -1, 0);
+        if (feet.getType().isAir() && below.getType().isAir()) {
+            // 虚空区域，传世界出生点
+            player.teleport(player.getWorld().getSpawnLocation());
+            return;
+        }
+        if (feet.isLiquid() || below.isLiquid()) {
+            // 岩浆/水，传世界出生点
+            player.teleport(player.getWorld().getSpawnLocation());
+            return;
+        }
+        player.teleport(center);
     }
 
     private static boolean sameManor(Manor a, Manor b) {

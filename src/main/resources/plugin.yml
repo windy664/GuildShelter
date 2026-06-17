@@ -99,3 +99,4 @@ permissions:
   guildshelter.command.toggle: { default: true }
   guildshelter.command.template: { default: true }
   guildshelter.command.sub: { default: true }
+  guildshelter.command.bulletin: { default: true }

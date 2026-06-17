@@ -26,6 +26,8 @@ public final class SqliteDialect implements SqlDialect {
                 )""",
                 // 老库迁移：列已存在会抛错，由 JdbcDatabase 吞掉。
                 "ALTER TABLE guild_world ADD COLUMN layout_params TEXT",
+                "ALTER TABLE guild_world ADD COLUMN funds REAL DEFAULT 0",
+                "ALTER TABLE guild_world ADD COLUMN bulletin TEXT DEFAULT ''",
                 """
                 CREATE TABLE IF NOT EXISTS manor (
                     guild_id   TEXT NOT NULL,
@@ -106,8 +108,8 @@ public final class SqliteDialect implements SqlDialect {
     @Override
     public String upsertGuildWorld() {
         return """
-                INSERT INTO guild_world(guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params)
-                VALUES(?,?,?,?,?,?,?,?)
+                INSERT INTO guild_world(guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin)
+                VALUES(?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(guild_id) DO UPDATE SET
                     world_name=excluded.world_name,
                     seed=excluded.seed,
@@ -115,7 +117,9 @@ public final class SqliteDialect implements SqlDialect {
                     origin_z=excluded.origin_z,
                     guild_level=excluded.guild_level,
                     allocated_slots=excluded.allocated_slots,
-                    layout_params=excluded.layout_params""";
+                    layout_params=excluded.layout_params,
+                    funds=excluded.funds,
+                    bulletin=excluded.bulletin""";
     }
 
     @Override
