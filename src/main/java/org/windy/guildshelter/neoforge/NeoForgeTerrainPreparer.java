@@ -56,9 +56,34 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
     private static final int FLAGS = Block.UPDATE_CLIENTS;
 
     private final Plugin plugin;
+    /** 路面方块（config `road-surface-block` 可自定义，默认 dirt_path）。 */
+    private final BlockState roadSurface;
 
     public NeoForgeTerrainPreparer(Plugin plugin) {
+        this(plugin, "minecraft:dirt_path");
+    }
+
+    public NeoForgeTerrainPreparer(Plugin plugin, String roadBlockId) {
         this.plugin = plugin;
+        this.roadSurface = parseBlock(roadBlockId, DIRT_PATH);
+    }
+
+    /** 解析 config 里的方块 id（如 minecraft:dirt_path / 模组方块）为 BlockState；无效则回退默认并告警。 */
+    private BlockState parseBlock(String id, BlockState fallback) {
+        try {
+            Identifier rid = Identifier.parse(id);
+            net.minecraft.world.level.block.Block block =
+                    net.minecraft.core.registries.BuiltInRegistries.BLOCK.getValue(rid);
+            // 注册表对未知 id 返回 AIR；避免把路面铺成空气。
+            if (block == null || block == Blocks.AIR) {
+                plugin.getLogger().warning("[GuildShelter] road-surface-block 未知方块: " + id + "，回退默认。");
+                return fallback;
+            }
+            return block.defaultBlockState();
+        } catch (Exception e) {
+            plugin.getLogger().warning("[GuildShelter] road-surface-block 解析失败: " + id + " (" + e.getMessage() + ")，回退默认。");
+            return fallback;
+        }
     }
 
     /**
@@ -200,9 +225,16 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
                 int n = 0;
                 while (n < COLUMNS_PER_TICK && !queue.isEmpty()) {
                     int[] c = queue.poll();
-                    boolean edge = narrowIsX ? (c[0] == minX || c[0] == maxX)
-                                             : (c[1] == minZ || c[1] == maxZ);
-                    int r = pathColumn(level, sink, c[0], c[1], edge);
+                    // 路带窄轴的两条长边 → 外侧单位向量(指向路外)；非边缘列为 (0,0)。架桥护栏据此判断外侧是否为水。
+                    int outDx = 0, outDz = 0;
+                    if (narrowIsX) {
+                        if (c[0] == minX) outDx = -1;
+                        else if (c[0] == maxX) outDx = 1;
+                    } else {
+                        if (c[1] == minZ) outDz = -1;
+                        else if (c[1] == maxZ) outDz = 1;
+                    }
+                    int r = pathColumn(level, sink, c[0], c[1], outDx, outDz);
                     if (r == 1) stat[0]++;
                     else if (r == 2) stat[1]++;
                     n++;
@@ -265,7 +297,7 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
      *
      * @return 1=铺了土径 2=架了桥 0=跳过（纯虚空列），供调用方统计。
      */
-    private int pathColumn(ServerLevel level, BlockSink sink, int x, int z, boolean edge) {
+    private int pathColumn(ServerLevel level, BlockSink sink, int x, int z, int outDx, int outDz) {
         level.getChunk(x >> 4, z >> 4); // 道路条带常在地皮远端，确保区块已生成再操作
         int min = level.getMinY();
         int y = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
@@ -273,16 +305,16 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
         while (y > min) {
             pos.set(x, y, z);
             BlockState b = level.getBlockState(pos);
-            if (isNaturalGround(b)) {
-                sink.set(pos, DIRT_PATH); // 自然地面顶层→土径
+            if (isNaturalGround(level, pos, b)) {
+                sink.set(pos, roadSurface); // 自然地面顶层→路面块
                 return 1;
             }
             if (!b.getFluidState().isEmpty()) {
-                bridgeColumn(level, sink, x, y, z, edge); // 水面：架桥而非铺路/填水
+                bridgeColumn(level, sink, x, y, z, outDx, outDz); // 水面：架桥而非铺路/填水
                 return 2;
             }
             if (!b.isAir()) {
-                sink.set(pos, AIR); // 清掉植被/树木/积雪
+                sink.set(pos, AIR); // 清掉植被/树木/积雪/竹子等非整方块
             }
             y--;
         }
@@ -290,17 +322,23 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
     }
 
     /**
-     * 在水面那一列架木板桥面（保留桥下水源）；edge 列在桥面上加栅栏护栏。木材按群系挑。
+     * 在水面那一列架木板桥面（保留桥下水源）；木材按群系挑。
+     *
+     * <p>护栏只在「该列是路带窄轴边缘({@code outDx/outDz} 非 0) 且外侧那格确实是水」时加——
+     * 这样十字路口、与陆地/另一条路相接处（外侧不是水）就不会被栅栏围住（修"十字路口围墙"）。
      *
      * <p>注：经 WE 后端时关了 NEIGHBORS，栅栏不会自动连成一条（呈独立栏杆）；这是为避免批量整地
      * 触发物理连锁的取舍，属水上桥面的次要观感。原生兜底亦统一 UPDATE_CLIENTS。
      */
-    private void bridgeColumn(ServerLevel level, BlockSink sink, int x, int waterTopY, int z, boolean edge) {
+    private void bridgeColumn(ServerLevel level, BlockSink sink, int x, int waterTopY, int z, int outDx, int outDz) {
         BlockState[] wood = woodFor(level, new BlockPos(x, waterTopY, z)); // [0]=木板 [1]=栅栏
         BlockPos deck = new BlockPos(x, waterTopY, z);
         sink.set(deck, wood[0]); // 顶层水→木板，下方的水保留
-        if (edge) {
-            sink.set(deck.above(), wood[1]);
+        if (outDx != 0 || outDz != 0) {
+            BlockPos outside = new BlockPos(x + outDx, waterTopY, z + outDz);
+            if (!level.getBlockState(outside).getFluidState().isEmpty()) {
+                sink.set(deck.above(), wood[1]); // 外侧是水的真·桥边才加护栏
+            }
         }
     }
 
@@ -321,9 +359,14 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
         return level.getHeight(Heightmap.Types.OCEAN_FLOOR, x, z) - 1;
     }
 
-    /** 自然地面 = 阻挡移动的实心方块且非原木/树叶（避免把路铺到树干/树冠上）。 */
-    private static boolean isNaturalGround(BlockState state) {
+    /**
+     * 自然地面 = 完整实心方块且非原木/树叶（避免把路铺到树干/树冠上）。
+     * 要求<b>整方块碰撞形状</b>(isCollisionShapeFullBlock)：竹子/仙人掌/甘蔗/作物等虽能挡移动但非整方块，
+     * 不算地面 → 在 pathColumn 里会被清成空气、继续向下找真地面（修"竹子没除去就在其顶端铺路"）。
+     */
+    private static boolean isNaturalGround(net.minecraft.world.level.BlockGetter level, BlockPos pos, BlockState state) {
         return state.blocksMotion()
+                && state.isCollisionShapeFullBlock(level, pos)
                 && !state.is(BlockTags.LOGS)
                 && !state.is(BlockTags.LEAVES);
     }

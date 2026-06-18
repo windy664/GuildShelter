@@ -39,8 +39,10 @@ main-city:
   max-cells: 2          # 最大"半径"（格）→ 5×5 格 = 1280×1280 方块（公会满级时达到）
                         # (pitch = 地皮15+路1 = 16 chunk = 256 方块/格)
 
-# 道路宽度（路面顶层会自动铺成土径，并清掉路上的植被/树；terrain-prep=NONE 时不铺）
+# 道路宽度（路面顶层会自动铺成路面块，并清掉路上的植被/树/竹子；terrain-prep=NONE 时不铺）
 road-chunks: 1          # = 16 方块
+# 路面方块（命名空间 id，支持模组方块；默认土径）。例: minecraft:stone_bricks / minecraft:dirt_path
+road-surface-block: minecraft:dirt_path
 
 # 公会等级与容量
 guild:

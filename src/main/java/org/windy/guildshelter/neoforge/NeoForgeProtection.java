@@ -2,11 +2,9 @@ package org.windy.guildshelter.neoforge;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
-import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.vehicle.VehicleEntity;
@@ -60,21 +58,21 @@ public final class NeoForgeProtection {
             return;
         }
 
-        boolean isAllowed = guard.allowed(bukkit, pos.getX(), pos.getZ());
-
-        bukkit.sendMessage("§e[Debug] BreakEvent 触发! 坐标: " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + " 允许破坏: " + isAllowed);
-
-        if (!isAllowed) {
+        if (!guard.allowed(bukkit, pos.getX(), pos.getZ())) {
+            // 无权限：拦截破坏，并主动回发原方块状态纠正客户端
             event.setCanceled(true);
             guard.notifyDenied(bukkit);
             resyncBlock(entity, pos);
-            bukkit.sendMessage("§c[Debug] 无权限，已拦截并重发方块更新。");
-        } else if (entity instanceof ServerPlayer sp) {
-            boolean isGuild = isGuildWorld((ServerLevel) sp.level());
-            bukkit.sendMessage("§a[Debug] 有权限破坏。是否为公会世界: " + isGuild + "。插件在此不作任何干预。");
-
-
         }
+        /*
+        else if (entity instanceof ServerPlayer sp && isGuildWorld((ServerLevel) sp.level())) {
+
+            // 【WORKAROUND 补丁】：有权限且在公会世界（guild_xxx 动态维度）。
+            // 针对 Youer/混合端 底层方块更新包丢失的 Bug 进行补发。
+            // 未来如果混合端修复了此问题，请直接删除这个 else if 分支。
+            scheduleSmoothResync(sp, pos);
+        }
+        */
     }
 
     /** 公会世界判定：维度 id path 形如 guild_xxx（WorldManager.worldName 约定）。 */
@@ -82,7 +80,30 @@ public final class NeoForgeProtection {
         return level.dimension().identifier().getPath().startsWith("guild_");
     }
 
+    /**
+     * 【缝补式修复：Youer/混合端动态维度方块同步 Bug】
+     * 现象：在插件动态生成的维度（guild_xxx）中，玩家有权限且成功挖掘方块后，
+     * 服务端底层的原版广播机制失效，客户端未收到方块变为空气的更新包，导致出现“幽灵方块”。
+     * 修复：利用 Bukkit.getScheduler().runTask() 在当前 Tick 结束后（即下一个 Tick，无延迟0 tick）
+     * 主动抓取此时真实的环境状态（此时底层已将方块变为空气），强制下发单方块更新包给客户端，完成无缝接力。
+     *
+     * @implNote 如果未来 Youer 或相关混合端修复了这个底层 Bug（即正常挖掘不再产生幽灵方块），
+     * 直接删除 onBreak 中的 `else if` 分支，并将本方法整个删除。
+     * 完全交给底层处理即可，这样不仅能恢复原版手感，也能避免多余的发包性能开销。
+     */
+    private static void scheduleSmoothResync(ServerPlayer sp, BlockPos pos) {
+        Bukkit.getScheduler().runTask(GuildShelterPlugin.get(), () -> {
+            if (sp.hasDisconnected()) {
+                return;
+            }
+            ServerLevel level = (ServerLevel) sp.level();
 
+            // 补发主方块状态（此时底层已处理完毕，抓取到的绝对是真实的空气，不会造成客户端重影）
+            sp.connection.send(new ClientboundBlockUpdatePacket(level, pos));
+            // 补发上方方块状态（防止清理高草/火把/雪层/门上半等附着物时，上方方块产生连带幽灵）
+            sp.connection.send(new ClientboundBlockUpdatePacket(level, pos.above()));
+        });
+    }
 
     @SubscribeEvent
     public void onPlace(BlockEvent.EntityPlaceEvent event) {
