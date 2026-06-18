@@ -33,7 +33,12 @@ public final class ManorLookup {
         return registry.isGuildWorld(world.getName());
     }
 
-    /** 返回 (blockX,blockZ) 处的成员庄园；不在公会世界/不在地皮/未分配则 empty。合并路 chunk 归主地皮。 */
+    /**
+     * 返回 (blockX,blockZ) 处的成员庄园；不在公会世界/不在地皮/未分配则 empty。合并路 chunk 归主地皮。
+     *
+     * <p>性能：走 {@link WorldCache#manorAt} 的 2 秒 TTL 缓存，正常情况 0 次 DB 查询。
+     * 所有监听器（Flag/Env/Entity/Protection/Access）共用此方法，确保热路径不查库。
+     */
     public Optional<Manor> at(World world, int blockX, int blockZ) {
         GuildWorld gw = registry.get(world.getName());
         if (gw == null) {
@@ -44,7 +49,8 @@ public final class ManorLookup {
         int lz = (blockZ >> 4) - gw.originChunkZ();
         OptionalInt slot = layout.slotAt(lx, lz);
         if (slot.isPresent()) {
-            return manors.findBySlot(gw.guild(), slot.getAsInt());
+            Manor m = cache.manorAt(gw, slot.getAsInt()); // 2 秒 TTL 缓存，非查库
+            return Optional.ofNullable(m);
         }
         // 原始 classify 不是 PLOT → 检查是否为合并路 chunk
         if (cache.merges().hasMerges(gw.guild())) {
@@ -53,7 +59,8 @@ public final class ManorLookup {
                 MergeAwareClassifier merger = cache.merger(layout, gw.guild()); // 缓存命中 O(1)
                 Classification merged = merger.classify(lx, lz);
                 if (merged.isPlot()) {
-                    return manors.findBySlot(gw.guild(), merged.slot());
+                    Manor m = cache.manorAt(gw, merged.slot()); // 2 秒 TTL 缓存
+                    return Optional.ofNullable(m);
                 }
             }
         }

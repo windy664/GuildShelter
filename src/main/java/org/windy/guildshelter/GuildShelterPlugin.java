@@ -214,7 +214,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
 
         // 进入公会世界时按位置弹 title（主城/地皮#N/道路），用于可视化验证网格。
         getServer().getPluginManager().registerEvents(
-                new RegionTitleListener(registry, manors, config.levels()), this);
+                new RegionTitleListener(registry, this.worldCache, config.levels()), this);
 
         // 领地保护：判定逻辑抽到平台中立的 ClaimGuard，Bukkit/NeoForge 两侧共用。
         // 只在开启时构造 guard——关闭时 protectionGuard() 为 null，NeoForge 端也随之放行（开关两端通吃）。

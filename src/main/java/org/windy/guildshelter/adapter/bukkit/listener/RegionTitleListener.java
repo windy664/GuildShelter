@@ -7,11 +7,11 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.windy.guildshelter.adapter.bukkit.GuildWorldRegistry;
+import org.windy.guildshelter.adapter.bukkit.WorldCache;
 import org.windy.guildshelter.domain.layout.Classification;
 import org.windy.guildshelter.domain.layout.LayoutCalculator;
 import org.windy.guildshelter.domain.model.GuildWorld;
 import org.windy.guildshelter.domain.model.Manor;
-import org.windy.guildshelter.domain.port.ManorRepository;
 import org.windy.guildshelter.domain.rule.LevelRules;
 
 import java.util.Map;
@@ -27,16 +27,16 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class RegionTitleListener implements Listener {
 
     private final GuildWorldRegistry registry;
-    private final ManorRepository manors;
+    private final WorldCache cache;
     private final LevelRules levels;
 
     /** 每个玩家上一次所在 chunk 与归类签名，用于去重。 */
     private final Map<UUID, long[]> lastChunk = new ConcurrentHashMap<>();
     private final Map<UUID, String> lastKey = new ConcurrentHashMap<>();
 
-    public RegionTitleListener(GuildWorldRegistry registry, ManorRepository manors, LevelRules levels) {
+    public RegionTitleListener(GuildWorldRegistry registry, WorldCache cache, LevelRules levels) {
         this.registry = registry;
-        this.manors = manors;
+        this.cache = cache;
         this.levels = levels;
     }
 
@@ -84,7 +84,7 @@ public final class RegionTitleListener implements Listener {
 
     private void showPlotTitle(Player player, GuildWorld gw, LayoutCalculator layout,
                                int lx, int lz, int slot) {
-        Manor manor = manors.findBySlot(gw.guild(), slot).orElse(null);
+        Manor manor = cache.manorAt(gw, slot); // 2 秒 TTL 缓存，不查库
         if (manor != null) {
             boolean active = layout.activeRegion(slot, manor.level()).containsChunk(lx, lz);
             String tail = active ? "" : " §8[预留区·升级解锁]";
