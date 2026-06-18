@@ -50,21 +50,38 @@ public final class NeoForgeProtection {
         Entity entity = event.getPlayer();
         BlockPos pos = event.getPos();
         org.bukkit.entity.Player bukkit = bukkitPlayer(entity, pos);
+
         if (bukkit == null) {
             return;
         }
+
         ClaimGuard guard = GuildShelterPlugin.protectionGuard();
         if (guard == null) {
             return;
         }
 
-        // 只有在没权限（被拒绝）的时候才拦截并回发更新
-        if (!guard.allowed(bukkit, pos.getX(), pos.getZ())) {
+        boolean isAllowed = guard.allowed(bukkit, pos.getX(), pos.getZ());
+
+        // --- Debug 输出 1：确认事件触发与权限 ---
+        bukkit.sendMessage("§e[Debug] BreakEvent 触发! 坐标: " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + " 允许破坏: " + isAllowed);
+
+        if (!isAllowed) {
             event.setCanceled(true);
             guard.notifyDenied(bukkit);
-            resyncBlock(entity, pos); // 拦截时的同步逻辑保留
-        }
+            resyncBlock(entity, pos);
+            bukkit.sendMessage("§c[Debug] 无权限，已拦截并重发方块更新。");
+        } else if (entity instanceof ServerPlayer sp) {
+            boolean isGuild = isGuildWorld((ServerLevel) sp.level());
+            // --- Debug 输出 2：确认是否成功判定为公会世界 ---
+            bukkit.sendMessage("§a[Debug] 有权限破坏。是否为公会世界: " + isGuild + "。插件在此不作任何干预。");
 
+            // 我们在这里什么都不做，完全交给混合端底层处理
+        }
+    }
+
+    /** 公会世界判定：维度 id path 形如 guild_xxx（WorldManager.worldName 约定）。 */
+    private static boolean isGuildWorld(ServerLevel level) {
+        return level.dimension().identifier().getPath().startsWith("guild_");
     }
 
 
