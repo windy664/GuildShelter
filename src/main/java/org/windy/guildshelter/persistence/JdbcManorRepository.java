@@ -296,6 +296,74 @@ public final class JdbcManorRepository implements ManorRepository {
         }
     }
 
+    // ===== 送花/人气 =====
+
+    @Override
+    public void sendFlower(GuildId guild, int slot, PlayerRef sender) {
+        String today = java.time.LocalDate.now().toString(); // YYYY-MM-DD
+        String sql = dialect instanceof SqliteDialect
+                ? "INSERT INTO manor_flower(guild_id,slot,sender_uuid,sent_date) VALUES(?,?,?,?) ON CONFLICT DO NOTHING"
+                : "INSERT IGNORE INTO manor_flower(guild_id,slot,sender_uuid,sent_date) VALUES(?,?,?,?)";
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            ps.setString(3, sender.uuid().toString());
+            ps.setString(4, today);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new PersistenceException("送花失败", e);
+        }
+    }
+
+    @Override
+    public int getTodayFlowerCount(GuildId guild, int slot) {
+        String today = java.time.LocalDate.now().toString();
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT COUNT(*) AS cnt FROM manor_flower WHERE guild_id=? AND slot=? AND sent_date=?")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            ps.setString(3, today);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt("cnt") : 0;
+            }
+        } catch (SQLException e) {
+            throw new PersistenceException("查询今日花数失败", e);
+        }
+    }
+
+    @Override
+    public boolean hasSentFlowerToday(GuildId guild, int slot, PlayerRef sender) {
+        String today = java.time.LocalDate.now().toString();
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT 1 FROM manor_flower WHERE guild_id=? AND slot=? AND sender_uuid=? AND sent_date=? LIMIT 1")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            ps.setString(3, sender.uuid().toString());
+            ps.setString(4, today);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            throw new PersistenceException("查询送花记录失败", e);
+        }
+    }
+
+    @Override
+    public double getPopularity(GuildId guild, int slot) {
+        // 人气 = 累计花数 × 0.3 + 累计访问量 × 0.1
+        int flowers = 0;
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT COUNT(DISTINCT sender_uuid || sent_date) AS cnt FROM manor_flower WHERE guild_id=? AND slot=?")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) flowers = rs.getInt("cnt");
+            }
+        } catch (SQLException ignored) {}
+        int visits = getVisitCount(guild, slot);
+        return flowers * 0.3 + visits * 0.1;
+    }
+
     // ===== 评分系统 =====
 
     @Override
@@ -644,6 +712,35 @@ public final class JdbcManorRepository implements ManorRepository {
             return result;
         } catch (SQLException e) {
             throw new PersistenceException("查询子领地失败", e);
+        }
+    }
+
+    // ===== 搬家记录 =====
+
+    @Override
+    public long getLastMoveTime(java.util.UUID playerUuid) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT last_move_at FROM manor_move_record WHERE player_uuid=?")) {
+            ps.setString(1, playerUuid.toString());
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getLong("last_move_at") : 0;
+            }
+        } catch (SQLException e) {
+            throw new PersistenceException("查询搬家记录失败", e);
+        }
+    }
+
+    @Override
+    public void recordMove(java.util.UUID playerUuid, long timestamp) {
+        String sql = dialect instanceof SqliteDialect
+                ? "INSERT INTO manor_move_record(player_uuid,last_move_at) VALUES(?,?) ON CONFLICT(player_uuid) DO UPDATE SET last_move_at=excluded.last_move_at"
+                : "INSERT INTO manor_move_record(player_uuid,last_move_at) VALUES(?,?) ON DUPLICATE KEY UPDATE last_move_at=VALUES(last_move_at)";
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, playerUuid.toString());
+            ps.setLong(2, timestamp);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new PersistenceException("记录搬家失败", e);
         }
     }
 

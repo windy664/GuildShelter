@@ -38,13 +38,16 @@ public final class LegendaryGuildListener implements Listener {
     private final GuildRepository guilds;
     private final GuildWorldRegistry registry;
     private final Logger logger;
+    private final org.bukkit.plugin.Plugin plugin;
 
     public LegendaryGuildListener(GuildService service, GuildRepository guilds,
-                                  GuildWorldRegistry registry, Logger logger) {
+                                  GuildWorldRegistry registry, Logger logger,
+                                  org.bukkit.plugin.Plugin plugin) {
         this.service = service;
         this.guilds = guilds;
         this.registry = registry;
         this.logger = logger;
+        this.plugin = plugin;
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -53,9 +56,14 @@ public final class LegendaryGuildListener implements Listener {
         if (name == null) {
             return;
         }
-        GuildWorld gw = service.createGuild(new GuildId(name), ThreadLocalRandom.current().nextLong());
-        registry.register(gw);
-        logger.info("[GuildShelter] 公会创建 → 已建世界: " + gw.worldName());
+        // 首次建会的 Bukkit.createWorld 内部 setInitialSpawn 会同步 managedBlock 等出生区块；本事件
+        // 多半在宿主建会命令的执行上下文里同步触发，嵌套 managedBlock 会死锁触发看门狗。
+        // 推迟到干净 tick 执行即可正常生成。
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            GuildWorld gw = service.createGuild(new GuildId(name), ThreadLocalRandom.current().nextLong());
+            registry.register(gw);
+            logger.info("[GuildShelter] 公会创建 → 已建世界: " + gw.worldName());
+        });
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -66,11 +74,22 @@ public final class LegendaryGuildListener implements Listener {
             return;
         }
         GuildId guild = new GuildId(guildName);
-        // 公会世界若尚不存在（如插件安装前已建的公会），惰性补建。
-        if (!guilds.exists(guild)) {
+        // 公会世界已存在：直接分配（无 createWorld，安全同步执行）。
+        if (guilds.exists(guild)) {
+            assignAndWelcome(guild, guildName, playerName);
+            return;
+        }
+        // 惰性补建（如插件安装前已建的公会）：createWorld 不能在事件上下文同步跑（嵌套 managedBlock
+        // 死锁），整段「建世界+分地皮+欢迎」推迟到干净 tick。createGuild 幂等，重复调用返回已有。
+        Bukkit.getScheduler().runTask(plugin, () -> {
             GuildWorld gw = service.createGuild(guild, ThreadLocalRandom.current().nextLong());
             registry.register(gw);
-        }
+            assignAndWelcome(guild, guildName, playerName);
+        });
+    }
+
+    /** 分配地皮并发欢迎语（要求公会世界已存在；不触发 createWorld）。 */
+    private void assignAndWelcome(GuildId guild, String guildName, String playerName) {
         UUID uuid = resolveUuid(playerName);
         Manor manor;
         try {

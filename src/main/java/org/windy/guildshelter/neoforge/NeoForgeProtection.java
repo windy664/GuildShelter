@@ -1,7 +1,12 @@
 package org.windy.guildshelter.neoforge;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.vehicle.VehicleEntity;
@@ -41,9 +46,28 @@ public final class NeoForgeProtection {
     // ===== 硬保护：破坏/放置（访客一律挡）=====
 
     @SubscribeEvent
-    public void onBreak(BreakBlockEvent event) { // NeoForge 26: 破坏事件移到 event.level.block 子包
-        guard(event.getPlayer(), event.getPos(), () -> event.setCanceled(true));
+    public void onBreak(BreakBlockEvent event) {
+        Entity entity = event.getPlayer();
+        BlockPos pos = event.getPos();
+        org.bukkit.entity.Player bukkit = bukkitPlayer(entity, pos);
+        if (bukkit == null) {
+            return;
+        }
+        ClaimGuard guard = GuildShelterPlugin.protectionGuard();
+        if (guard == null) {
+            return;
+        }
+
+        // 只有在没权限（被拒绝）的时候才拦截并回发更新
+        if (!guard.allowed(bukkit, pos.getX(), pos.getZ())) {
+            event.setCanceled(true);
+            guard.notifyDenied(bukkit);
+            resyncBlock(entity, pos); // 拦截时的同步逻辑保留
+        }
+
     }
+
+
 
     @SubscribeEvent
     public void onPlace(BlockEvent.EntityPlaceEvent event) {
@@ -105,7 +129,21 @@ public final class NeoForgeProtection {
         if (!guard.allowed(bukkit, pos.getX(), pos.getZ())) {
             cancel.run();
             guard.notifyDenied(bukkit);
+            // Youer 混合端上取消 BreakBlockEvent/EntityPlaceEvent 不会自动把权威方块状态回发给客户端，
+            // 客户端按预测显示"幽灵方块"，需一次交互(右键)才触发区块同步。这里主动回发，立刻纠正。
+            resyncBlock(entity, pos);
         }
+    }
+
+    /** 把目标(及其上方)方块的真实状态回发给该玩家，纠正破坏/放置取消后的客户端预测偏差。 */
+    private static void resyncBlock(Entity entity, BlockPos pos) {
+        if (!(entity instanceof ServerPlayer sp)) {
+            return;
+        }
+        Level level = sp.level();
+        sp.connection.send(new ClientboundBlockUpdatePacket(level, pos));
+        // 破坏常牵连上方方块(高草/雪层/门上半/作物等)，一并回发避免连带幽灵。
+        sp.connection.send(new ClientboundBlockUpdatePacket(level, pos.above()));
     }
 
     /** 按类放宽：解析共享 {@link InteractionPolicy} 与 Bukkit 玩家后按 category 判定。 */

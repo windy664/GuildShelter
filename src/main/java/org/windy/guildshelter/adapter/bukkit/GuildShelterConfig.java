@@ -9,7 +9,11 @@ import org.windy.guildshelter.persistence.StorageSettings;
 /** 把 Bukkit 的 config.yml 解析成 domain 的配置对象。 */
 public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, TerrainPrepMode terrainPrep,
                                  StorageSettings storage, String proxyType, String serverName,
-                                 PerformanceConfig performance) {
+                                 PerformanceConfig performance, MoveConfig move) {
+
+    /** 搬家配置。 */
+    public record MoveConfig(boolean enabled, double cost, int cooldownDays) {}
+
 
     /** 性能优化配置。 */
     public record PerformanceConfig(
@@ -88,6 +92,11 @@ public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, Terrain
                 cfg.getInt("performance.chunk-unload.check-interval-seconds", 120),
                 cfg.getBoolean("performance.chunk-unload.keep-road-loaded", true));
 
-        return new GuildShelterConfig(layout, levels, prep, storage, proxyType, serverName, perf);
+        MoveConfig move = new MoveConfig(
+                cfg.getBoolean("manor-move.enabled", true),
+                cfg.getDouble("manor-move.cost", 10000),
+                cfg.getInt("manor-move.cooldown-days", 7));
+
+        return new GuildShelterConfig(layout, levels, prep, storage, proxyType, serverName, perf, move);
     }
 }

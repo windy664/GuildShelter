@@ -296,6 +296,41 @@ public final class FlatFileStorage implements Storage {
             return visits.getOrDefault(rateKey(guild, slot), 0);
         }
 
+        // ===== 送花/人气（内存存储）=====
+        private final Map<String, java.util.Set<String>> flowerSends = new java.util.concurrent.ConcurrentHashMap<>();
+        private final Map<String, Integer> flowerTotals = new java.util.concurrent.ConcurrentHashMap<>();
+
+        private static String flowerKey(GuildId g, int slot, String date) { return g.value() + ":" + slot + ":" + date; }
+
+        @Override
+        public void sendFlower(GuildId guild, int slot, PlayerRef sender) {
+            String today = java.time.LocalDate.now().toString();
+            flowerSends.computeIfAbsent(flowerKey(guild, slot, today), k -> java.util.concurrent.ConcurrentHashMap.newKeySet())
+                    .add(sender.uuid().toString());
+            flowerTotals.merge(rateKey(guild, slot), 1, Integer::sum);
+        }
+
+        @Override
+        public int getTodayFlowerCount(GuildId guild, int slot) {
+            String today = java.time.LocalDate.now().toString();
+            java.util.Set<String> s = flowerSends.get(flowerKey(guild, slot, today));
+            return s != null ? s.size() : 0;
+        }
+
+        @Override
+        public boolean hasSentFlowerToday(GuildId guild, int slot, PlayerRef sender) {
+            String today = java.time.LocalDate.now().toString();
+            java.util.Set<String> s = flowerSends.get(flowerKey(guild, slot, today));
+            return s != null && s.contains(sender.uuid().toString());
+        }
+
+        @Override
+        public double getPopularity(GuildId guild, int slot) {
+            int flowers = flowerTotals.getOrDefault(rateKey(guild, slot), 0);
+            int v = visits.getOrDefault(rateKey(guild, slot), 0);
+            return flowers * 0.3 + v * 0.1;
+        }
+
         // ===== 评分：文件持久化 =====
         private final Map<String, Map<String, Integer>> ratings = new LinkedHashMap<>();
         private final Path ratingsFile;
@@ -492,6 +527,19 @@ public final class FlatFileStorage implements Storage {
         public List<SubEntry> getSubs(GuildId guild, int slot) {
             String key = guild.value() + "#" + slot;
             return subs.getOrDefault(key, List.of());
+        }
+
+        // ===== 搬家记录 =====
+        private final Map<UUID, Long> moveRecords = new LinkedHashMap<>();
+
+        @Override
+        public long getLastMoveTime(UUID playerUuid) {
+            return moveRecords.getOrDefault(playerUuid, 0L);
+        }
+
+        @Override
+        public void recordMove(UUID playerUuid, long timestamp) {
+            moveRecords.put(playerUuid, timestamp);
         }
     }
 }

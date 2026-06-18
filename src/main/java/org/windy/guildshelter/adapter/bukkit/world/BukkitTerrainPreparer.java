@@ -35,6 +35,11 @@ public final class BukkitTerrainPreparer implements TerrainPreparer {
 
     @Override
     public void prepare(String worldName, ChunkRegion region, TerrainPrepMode mode) {
+        prepare(worldName, region, mode, false);
+    }
+
+    @Override
+    public void prepare(String worldName, ChunkRegion region, TerrainPrepMode mode, boolean sync) {
         if (mode == TerrainPrepMode.NONE) {
             return;
         }
@@ -53,35 +58,50 @@ public final class BukkitTerrainPreparer implements TerrainPreparer {
                 queue.add(new int[]{x, z});
             }
         }
-        // FLATTEN 的目标高度 = 区域中心的实心地面高度
         int targetY = mode == TerrainPrepMode.FLATTEN
                 ? world.getHighestBlockYAt((minX + maxX) / 2, (minZ + maxZ) / 2, HeightMap.OCEAN_FLOOR)
                 : 0;
 
         long totalCols = (long) (maxX - minX + 1) * (maxZ - minZ + 1);
-        plugin.getLogger().info("[GuildShelter] 整地开始(Bukkit/" + mode + ") " + worldName + " ("
-                + minX + "," + minZ + ")~(" + maxX + "," + maxZ + ") 共 " + totalCols + " 列");
+        plugin.getLogger().info("[GuildShelter] 整地开始(Bukkit/" + mode + "/" + (sync ? "同步" : "异步") + ") " + worldName
+                + " 共 " + totalCols + " 列");
         long t0 = System.currentTimeMillis();
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                int n = 0;
-                while (n < COLUMNS_PER_TICK && !queue.isEmpty()) {
-                    int[] c = queue.poll();
-                    if (mode == TerrainPrepMode.CLEAR_VEGETATION) {
-                        clearColumn(world, c[0], c[1]);
-                    } else {
-                        flattenColumn(world, c[0], c[1], targetY);
-                    }
-                    n++;
-                }
-                if (queue.isEmpty()) {
-                    cancel();
-                    plugin.getLogger().info("[GuildShelter] 整地完成(Bukkit/" + mode + ") " + worldName
-                            + " 共 " + totalCols + " 列, 耗时 " + (System.currentTimeMillis() - t0) + "ms");
+
+        if (sync) {
+            // 同步模式：一次处理完（claim 时用，确保玩家到达时世界状态已稳定）
+            while (!queue.isEmpty()) {
+                int[] c = queue.poll();
+                if (mode == TerrainPrepMode.CLEAR_VEGETATION) {
+                    clearColumn(world, c[0], c[1]);
+                } else {
+                    flattenColumn(world, c[0], c[1], targetY);
                 }
             }
-        }.runTaskTimer(plugin, 1L, 1L);
+            plugin.getLogger().info("[GuildShelter] 整地完成(同步) 共 " + totalCols + " 列, 耗时 "
+                    + (System.currentTimeMillis() - t0) + "ms");
+        } else {
+            // 异步模式：分批处理（升级/重置时用，不卡主线程）
+            new BukkitRunnable() {
+                @Override
+                public void run() {
+                    int n = 0;
+                    while (n < COLUMNS_PER_TICK && !queue.isEmpty()) {
+                        int[] c = queue.poll();
+                        if (mode == TerrainPrepMode.CLEAR_VEGETATION) {
+                            clearColumn(world, c[0], c[1]);
+                        } else {
+                            flattenColumn(world, c[0], c[1], targetY);
+                        }
+                        n++;
+                    }
+                    if (queue.isEmpty()) {
+                        cancel();
+                        plugin.getLogger().info("[GuildShelter] 整地完成(异步) 共 " + totalCols + " 列, 耗时 "
+                                + (System.currentTimeMillis() - t0) + "ms");
+                    }
+                }
+            }.runTaskTimer(plugin, 1L, 1L);
+        }
     }
 
     @Override

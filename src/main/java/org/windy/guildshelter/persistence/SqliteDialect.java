@@ -111,6 +111,19 @@ public final class SqliteDialect implements SqlDialect {
                     slot       INTEGER NOT NULL,
                     visit_count INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (guild_id, slot)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_flower (
+                    guild_id    TEXT NOT NULL,
+                    slot        INTEGER NOT NULL,
+                    sender_uuid TEXT NOT NULL,
+                    sent_date   TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, slot, sender_uuid, sent_date)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_move_record (
+                    player_uuid TEXT PRIMARY KEY,
+                    last_move_at INTEGER NOT NULL
                 )""");
     }
 

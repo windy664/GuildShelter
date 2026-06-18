@@ -17,10 +17,8 @@ import org.windy.guildshelter.adapter.bukkit.ManorEntityCensus;
 import org.windy.guildshelter.adapter.bukkit.ManorLookup;
 import org.windy.guildshelter.domain.flag.Flag;
 import org.windy.guildshelter.domain.flag.ManorEntityClass;
-import org.windy.guildshelter.domain.model.Manor;
 
 import java.lang.reflect.Method;
-import java.util.Optional;
 
 /**
  * 地皮 flag 的 <b>NeoForge 后端</b>（A 氛围类，混合端覆盖模组内容）：
@@ -166,25 +164,22 @@ public final class NeoForgeFlags {
         }
     }
 
-    /** 该位置地皮该 flag 是否为 false(禁止)。无地皮/无法解析则不拦。 */
+    /** 该位置该 flag 是否被禁止（子领地优先 → 庄园 → 默认）。无地皮不拦。 */
     private static boolean denied(Level level, BlockPos pos, Flag flag) {
-        return manorAt(level, pos.getX(), pos.getZ())
-                .map(m -> !flag.resolveBool(m.flags())).orElse(false);
-    }
-
-    /** 该位置地皮该 flag 是否为 true(开)。用于 invincible 这种"开=拦"的反向语义。 */
-    private static boolean flagOn(Level level, BlockPos pos, Flag flag) {
-        return manorAt(level, pos.getX(), pos.getZ())
-                .map(m -> flag.resolveBool(m.flags())).orElse(false);
-    }
-
-    private static Optional<Manor> manorAt(Level level, int x, int z) {
-        ManorLookup lookup = GuildShelterPlugin.manorLookup();
-        if (lookup == null) {
-            return Optional.empty(); // 装配未完成 / flag 未启用
-        }
         org.bukkit.World world = bukkitWorld(level);
-        return world == null ? Optional.empty() : lookup.at(world, x, z);
+        if (world == null) return false;
+        ManorLookup lookup = GuildShelterPlugin.manorLookup();
+        if (lookup == null) return false;
+        return !lookup.resolveFlag(world, pos.getX(), pos.getZ(), flag);
+    }
+
+    /** 该位置该 flag 是否为 true（子领地优先 → 庄园 → 默认）。 */
+    private static boolean flagOn(Level level, BlockPos pos, Flag flag) {
+        org.bukkit.World world = bukkitWorld(level);
+        if (world == null) return false;
+        ManorLookup lookup = GuildShelterPlugin.manorLookup();
+        if (lookup == null) return false;
+        return lookup.resolveFlag(world, pos.getX(), pos.getZ(), flag);
     }
 
     /** 反射调 ServerLevel.getWorld()（Youer 运行时注入）。 */

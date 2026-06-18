@@ -61,8 +61,60 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
         this.plugin = plugin;
     }
 
+    /**
+     * 写方块原语：读仍走原生 {@link ServerLevel}，写走此接口。WE 在场→{@link WeTerrainSink}
+     * （在 {@link #flush()} 时整块重发 + 重光照，治幽灵方块）；否则→{@link NativeSink} 原生 setBlock。
+     * 仅含 MC 类型，故纯 Bukkit/无 WE 环境也能正常加载。
+     */
+    interface BlockSink {
+        void set(BlockPos pos, BlockState state);
+        /** 提交本批：WE 后端在此 close EditSession 触发重发+重光照；原生后端为空操作。 */
+        void flush();
+    }
+
+    /** 原生兜底：直接 {@code level.setBlock(pos, state, UPDATE_CLIENTS)}，与历史行为一致。 */
+    private static final class NativeSink implements BlockSink {
+        private final ServerLevel level;
+        NativeSink(ServerLevel level) { this.level = level; }
+        @Override public void set(BlockPos pos, BlockState state) { level.setBlock(pos, state, FLAGS); }
+        @Override public void flush() { /* 原生增量包即时发出，无需收尾 */ }
+    }
+
+    /** WE 模组版是否在场（探测一次缓存，首次记录用了哪个后端便于排查幽灵方块）。 */
+    private static Boolean weAvailable;
+    private boolean weAvailable() {
+        if (weAvailable == null) {
+            try {
+                Class.forName("com.sk89q.worldedit.neoforge.NeoForgeWorldEdit");
+                weAvailable = Boolean.TRUE;
+                plugin.getLogger().info("[GuildShelter] 整地/铺路写方块后端: WorldEdit EditSession（重发+重光照）");
+            } catch (Throwable t) {
+                weAvailable = Boolean.FALSE;
+                plugin.getLogger().info("[GuildShelter] 整地/铺路写方块后端: 原生 setBlock（未检测到 WE 模组版 NeoForgeWorldEdit）");
+            }
+        }
+        return weAvailable;
+    }
+
+    /** 选写方块后端：WE 在场用 WE（修幽灵方块+重光照），否则原生兜底。 */
+    private BlockSink newSink(ServerLevel level) {
+        if (weAvailable()) {
+            try {
+                return new WeTerrainSink(level);
+            } catch (Throwable t) {
+                plugin.getLogger().warning("[GuildShelter] WE 整地后端创建失败，回退原生 setBlock: " + t);
+            }
+        }
+        return new NativeSink(level);
+    }
+
     @Override
     public void prepare(String worldName, ChunkRegion region, TerrainPrepMode mode) {
+        prepare(worldName, region, mode, false);
+    }
+
+    @Override
+    public void prepare(String worldName, ChunkRegion region, TerrainPrepMode mode, boolean sync) {
         if (mode == TerrainPrepMode.NONE) {
             return;
         }
@@ -75,36 +127,52 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
         int minZ = region.minBlockZ();
         int maxZ = region.maxBlockZ();
 
-        // FLATTEN 的目标高度 = 区域中心的实心地面高度（与 Bukkit 实现一致）
         int targetY = mode == TerrainPrepMode.FLATTEN
                 ? topSolidY(level, (minX + maxX) / 2, (minZ + maxZ) / 2)
                 : 0;
 
         long totalCols = (long) (maxX - minX + 1) * (maxZ - minZ + 1);
-        plugin.getLogger().info("[GuildShelter] 整地开始(NeoForge/" + mode + ") " + worldName + " ("
-                + minX + "," + minZ + ")~(" + maxX + "," + maxZ + ") 共 " + totalCols + " 列");
+        plugin.getLogger().info("[GuildShelter] 整地开始(NeoForge/" + mode + "/" + (sync ? "同步" : "异步") + ") "
+                + worldName + " 共 " + totalCols + " 列");
         long t0 = System.currentTimeMillis();
         Deque<int[]> queue = columns(minX, maxX, minZ, maxZ);
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                int n = 0;
-                while (n < COLUMNS_PER_TICK && !queue.isEmpty()) {
-                    int[] c = queue.poll();
-                    if (mode == TerrainPrepMode.CLEAR_VEGETATION) {
-                        clearColumn(level, c[0], c[1]);
-                    } else {
-                        flattenColumn(level, c[0], c[1], targetY);
-                    }
-                    n++;
-                }
-                if (queue.isEmpty()) {
-                    cancel();
-                    plugin.getLogger().info("[GuildShelter] 整地完成(NeoForge/" + mode + ") " + worldName
-                            + " 共 " + totalCols + " 列, 耗时 " + (System.currentTimeMillis() - t0) + "ms");
+        BlockSink sink = newSink(level);
+
+        if (sync) {
+            while (!queue.isEmpty()) {
+                int[] c = queue.poll();
+                if (mode == TerrainPrepMode.CLEAR_VEGETATION) {
+                    clearColumn(level, sink, c[0], c[1]);
+                } else {
+                    flattenColumn(level, sink, c[0], c[1], targetY);
                 }
             }
-        }.runTaskTimer(plugin, 1L, 1L);
+            sink.flush(); // 提交整批 → WE 重发+重光照
+            plugin.getLogger().info("[GuildShelter] 整地完成(NeoForge/同步) 共 " + totalCols + " 列, 耗时 "
+                    + (System.currentTimeMillis() - t0) + "ms");
+        } else {
+            new BukkitRunnable() {
+                @Override
+                public void run() {
+                    int n = 0;
+                    while (n < COLUMNS_PER_TICK && !queue.isEmpty()) {
+                        int[] c = queue.poll();
+                        if (mode == TerrainPrepMode.CLEAR_VEGETATION) {
+                            clearColumn(level, sink, c[0], c[1]);
+                        } else {
+                            flattenColumn(level, sink, c[0], c[1], targetY);
+                        }
+                        n++;
+                    }
+                    sink.flush(); // 每 tick 提交本批：WE 重发+重光照，增量可见
+                    if (queue.isEmpty()) {
+                        cancel();
+                        plugin.getLogger().info("[GuildShelter] 整地完成(NeoForge/异步) 共 " + totalCols + " 列, 耗时 "
+                                + (System.currentTimeMillis() - t0) + "ms");
+                    }
+                }
+            }.runTaskTimer(plugin, 1L, 1L);
+        }
     }
 
     @Override
@@ -125,6 +193,7 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
         long t0 = System.currentTimeMillis();
         int[] stat = new int[2]; // [0]=土径列 [1]=架桥列
         Deque<int[]> queue = columns(minX, maxX, minZ, maxZ);
+        BlockSink sink = newSink(level);
         new BukkitRunnable() {
             @Override
             public void run() {
@@ -133,11 +202,12 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
                     int[] c = queue.poll();
                     boolean edge = narrowIsX ? (c[0] == minX || c[0] == maxX)
                                              : (c[1] == minZ || c[1] == maxZ);
-                    int r = pathColumn(level, c[0], c[1], edge);
+                    int r = pathColumn(level, sink, c[0], c[1], edge);
                     if (r == 1) stat[0]++;
                     else if (r == 2) stat[1]++;
                     n++;
                 }
+                sink.flush(); // 每 tick 提交本批：WE 重发+重光照
                 if (queue.isEmpty()) {
                     cancel();
                     plugin.getLogger().info("[GuildShelter] 铺路完成(NeoForge) " + worldName
@@ -159,7 +229,7 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
     }
 
     /** 清掉实心地面以上的植被/积雪/树木（保留自然起伏的地面；跳过水/岩浆，不破坏水源）。 */
-    private void clearColumn(ServerLevel level, int x, int z) {
+    private void clearColumn(ServerLevel level, BlockSink sink, int x, int z) {
         int groundY = topSolidY(level, x, z);                                   // 实心地面顶（水下为河床/海床）
         int surfaceY = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1; // 含植被/树/水的顶
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
@@ -170,23 +240,23 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
                 continue; // 保留水/岩浆，避免破坏水源
             }
             if (!state.isAir()) {
-                level.setBlock(pos, AIR, FLAGS);
+                sink.set(pos, AIR);
             }
         }
     }
 
     /** 把该列拉平到 targetY：上方削成空气，下方用泥土补齐，顶层铺草。 */
-    private void flattenColumn(ServerLevel level, int x, int z, int targetY) {
+    private void flattenColumn(ServerLevel level, BlockSink sink, int x, int z, int targetY) {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         int surfaceY = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
         for (int y = targetY + 1; y <= surfaceY; y++) {
-            level.setBlock(pos.set(x, y, z), AIR, FLAGS);
+            sink.set(pos.set(x, y, z), AIR);
         }
         int groundY = topSolidY(level, x, z);
         for (int y = groundY + 1; y < targetY; y++) {
-            level.setBlock(pos.set(x, y, z), DIRT, FLAGS);
+            sink.set(pos.set(x, y, z), DIRT);
         }
-        level.setBlock(pos.set(x, targetY, z), GRASS_BLOCK, FLAGS);
+        sink.set(pos.set(x, targetY, z), GRASS_BLOCK);
     }
 
     /**
@@ -195,7 +265,7 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
      *
      * @return 1=铺了土径 2=架了桥 0=跳过（纯虚空列），供调用方统计。
      */
-    private int pathColumn(ServerLevel level, int x, int z, boolean edge) {
+    private int pathColumn(ServerLevel level, BlockSink sink, int x, int z, boolean edge) {
         level.getChunk(x >> 4, z >> 4); // 道路条带常在地皮远端，确保区块已生成再操作
         int min = level.getMinY();
         int y = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
@@ -204,29 +274,33 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
             pos.set(x, y, z);
             BlockState b = level.getBlockState(pos);
             if (isNaturalGround(b)) {
-                level.setBlock(pos, DIRT_PATH, FLAGS); // 自然地面顶层→土径
+                sink.set(pos, DIRT_PATH); // 自然地面顶层→土径
                 return 1;
             }
             if (!b.getFluidState().isEmpty()) {
-                bridgeColumn(level, x, y, z, edge); // 水面：架桥而非铺路/填水
+                bridgeColumn(level, sink, x, y, z, edge); // 水面：架桥而非铺路/填水
                 return 2;
             }
             if (!b.isAir()) {
-                level.setBlock(pos, AIR, FLAGS); // 清掉植被/树木/积雪
+                sink.set(pos, AIR); // 清掉植被/树木/积雪
             }
             y--;
         }
         return 0; // 落到底仍没遇到地面（纯虚空列）：不铺。
     }
 
-    /** 在水面那一列架木板桥面（保留桥下水源）；edge 列在桥面上加栅栏护栏。木材按群系挑。 */
-    private void bridgeColumn(ServerLevel level, int x, int waterTopY, int z, boolean edge) {
+    /**
+     * 在水面那一列架木板桥面（保留桥下水源）；edge 列在桥面上加栅栏护栏。木材按群系挑。
+     *
+     * <p>注：经 WE 后端时关了 NEIGHBORS，栅栏不会自动连成一条（呈独立栏杆）；这是为避免批量整地
+     * 触发物理连锁的取舍，属水上桥面的次要观感。原生兜底亦统一 UPDATE_CLIENTS。
+     */
+    private void bridgeColumn(ServerLevel level, BlockSink sink, int x, int waterTopY, int z, boolean edge) {
         BlockState[] wood = woodFor(level, new BlockPos(x, waterTopY, z)); // [0]=木板 [1]=栅栏
         BlockPos deck = new BlockPos(x, waterTopY, z);
-        level.setBlock(deck, wood[0], FLAGS); // 顶层水→木板，下方的水保留
+        sink.set(deck, wood[0]); // 顶层水→木板，下方的水保留
         if (edge) {
-            // 护栏带邻居更新，让相邻栅栏自动连成一条；非 deck/清理那种怕引发水流连锁的场景。
-            level.setBlock(deck.above(), wood[1], Block.UPDATE_NEIGHBORS | Block.UPDATE_CLIENTS);
+            sink.set(deck.above(), wood[1]);
         }
     }
 

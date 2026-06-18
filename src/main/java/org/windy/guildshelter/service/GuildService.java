@@ -9,8 +9,11 @@ import org.windy.guildshelter.domain.model.GuildWorld;
 import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
 import org.windy.guildshelter.domain.model.TerrainPrepMode;
+import org.windy.guildshelter.domain.port.EconomyPort;
 import org.windy.guildshelter.domain.port.GuildRepository;
+import org.windy.guildshelter.domain.port.ManorMover;
 import org.windy.guildshelter.domain.port.ManorRepository;
+import org.windy.guildshelter.domain.port.ModDataMoverRegistry;
 import org.windy.guildshelter.domain.port.TerrainPreparer;
 import org.windy.guildshelter.domain.port.WorldControl;
 import org.windy.guildshelter.domain.rule.LevelRules;
@@ -30,15 +33,32 @@ public final class GuildService {
     private final ManorRepository manors;
     private final WorldControl worlds;
     private final TerrainPreparer terrain;
+    private final java.util.logging.Logger logger;
     /** 仅用于给<b>新建</b>世界盖章的当前 config 布局；已存在世界一律用各自冻结的 {@code gw.layout()}。 */
     private final LayoutConfig currentLayout;
     private final LevelRules levels;
     private final TerrainPrepMode prepMode;
     private volatile MembershipChangeListener membershipListener; // 可选，延迟注入
 
+    // 搬家相关（可选，null = 搬家未启用）
+    private ManorMover manorMover;
+    private EconomyPort economy;
+    private double moveCost;
+    private int moveCooldownDays;
+    private ModDataMoverRegistry modDataMovers;
+    private java.nio.file.Path worldContainer; // Bukkit worlds 根目录
+    private java.util.List<String> lastMoveModResults = java.util.List.of(); // 最近一次搬家的 mod 数据结果
+
     public GuildService(GuildRepository guilds, ManorRepository manors, WorldControl worlds,
                         TerrainPreparer terrain, LayoutConfig currentLayout, LevelRules levels,
                         TerrainPrepMode prepMode) {
+        this(guilds, manors, worlds, terrain, currentLayout, levels, prepMode,
+                java.util.logging.Logger.getLogger("GuildShelter"));
+    }
+
+    public GuildService(GuildRepository guilds, ManorRepository manors, WorldControl worlds,
+                        TerrainPreparer terrain, LayoutConfig currentLayout, LevelRules levels,
+                        TerrainPrepMode prepMode, java.util.logging.Logger logger) {
         this.guilds = guilds;
         this.manors = manors;
         this.worlds = worlds;
@@ -46,7 +66,29 @@ public final class GuildService {
         this.currentLayout = currentLayout;
         this.levels = levels;
         this.prepMode = prepMode;
+        this.logger = logger;
     }
+
+    /** 注入搬家依赖（config 启用时调用）。 */
+    public void setManorMover(ManorMover mover, EconomyPort economy, double cost, int cooldownDays,
+                              ModDataMoverRegistry modDataMovers, java.nio.file.Path worldContainer) {
+        this.manorMover = mover;
+        this.economy = economy;
+        this.moveCost = cost;
+        this.moveCooldownDays = cooldownDays;
+        this.modDataMovers = modDataMovers;
+        this.worldContainer = worldContainer;
+    }
+
+    /** 搬家是否已启用。 */
+    public boolean isMoveEnabled() {
+        return manorMover != null;
+    }
+
+    public double moveCost() { return moveCost; }
+    public int moveCooldownDays() { return moveCooldownDays; }
+    public ManorMover getManorMover() { return manorMover; }
+    public java.util.List<String> getLastMoveModResults() { return lastMoveModResults; }
 
     /** 注册成员变更回调（Bukkit 适配层注入，供缓存同步用）。 */
     public void setMembershipListener(MembershipChangeListener listener) {
@@ -107,7 +149,7 @@ public final class GuildService {
             worlds.applyBorder(gw); // 边界随分配扩
         }
 
-        prepareManorTerrain(gw, manor);
+        prepareManorTerrain(gw, manor, false); // 异步整地（默认行为，claim 会额外补一次同步整地）
         MembershipChangeListener l = membershipListener;
         if (l != null) l.onMemberAssigned(guild, player.uuid());
         return manor;
@@ -155,7 +197,7 @@ public final class GuildService {
         }
         Manor upgraded = manor.withLevel(manor.level() + 1);
         manors.save(upgraded);
-        prepareManorTerrain(gw, upgraded);
+        prepareManorTerrain(gw, upgraded, false); // 异步：玩家已在世界里，不卡主线程
         return true;
     }
 
@@ -181,15 +223,151 @@ public final class GuildService {
         terrain.prepare(gw.worldName(), active, TerrainPrepMode.CLEAR_VEGETATION);
     }
 
+    /**
+     * 搬家：把庄园建筑从当前公会世界复制到目标公会世界。
+     * 建筑通过 chunk 级复制保留 TileEntity NBT（模组数据安全）。
+     *
+     * @param player 搬家的玩家
+     * @param targetGuild 目标公会
+     * @return 搬家结果
+     */
+    public MoveResult moveManor(PlayerRef player, GuildId targetGuild) {
+        if (manorMover == null) {
+            return MoveResult.NOT_ENABLED;
+        }
+
+        // 1. 查当前庄园
+        Manor oldManor = manors.findByOwnerAnywhere(player).orElse(null);
+        if (oldManor == null) {
+            return MoveResult.NO_MANOR;
+        }
+        if (oldManor.guild().equals(targetGuild)) {
+            return MoveResult.SAME_GUILD;
+        }
+
+        // 2. 冷却检查
+        long lastMove = manors.getLastMoveTime(player.uuid());
+        if (lastMove > 0 && moveCooldownDays > 0) {
+            long cooldownMs = (long) moveCooldownDays * 24 * 60 * 60 * 1000;
+            if (System.currentTimeMillis() - lastMove < cooldownMs) {
+                return MoveResult.ON_COOLDOWN;
+            }
+        }
+
+        // 3. 目标公会世界
+        GuildWorld targetGw = guilds.find(targetGuild).orElse(null);
+        if (targetGw == null) {
+            return MoveResult.TARGET_NOT_EXIST;
+        }
+
+        // 4. 目标名额
+        int capacity = levels.maxMembers(targetGw.guildLevel());
+        int targetSlot = manors.nextFreeSlot(targetGuild);
+        if (targetSlot >= capacity) {
+            return MoveResult.TARGET_FULL;
+        }
+
+        // 5. 扣费
+        if (moveCost > 0 && economy != null) {
+            if (!economy.has(player, moveCost)) {
+                return MoveResult.NOT_ENOUGH_MONEY;
+            }
+            economy.withdraw(player, moveCost);
+        }
+
+        // 6. 确保两个世界已加载
+        GuildWorld oldGw = guilds.find(oldManor.guild()).orElse(null);
+        if (oldGw == null) {
+            return MoveResult.TARGET_NOT_EXIST;
+        }
+        oldGw = worlds.ensureWorld(oldGw);
+        guilds.save(oldGw);
+        targetGw = worlds.ensureWorld(targetGw);
+        guilds.save(targetGw);
+
+        // 7. 计算源/目标 chunk 区域
+        // 用 plotRegion（满级范围）而非 activeRegion（当前等级范围），
+        // 因为源世界和目标世界的 layout 可能不同（冻结参数），取较大者确保复制完整。
+        LayoutCalculator oldLayout = new LayoutCalculator(oldGw.layout());
+        LayoutCalculator newLayout = new LayoutCalculator(targetGw.layout());
+        ChunkRegion srcRegion = oldLayout.plotRegion(oldManor.slot())
+                .shift(oldGw.originChunkX(), oldGw.originChunkZ());
+        ChunkRegion dstRegion = newLayout.plotRegion(targetSlot)
+                .shift(targetGw.originChunkX(), targetGw.originChunkZ());
+
+        // 复制范围 = 两者中较小的边长（避免越界）
+        int sizeChunks = Math.min(srcRegion.widthChunks(), dstRegion.widthChunks());
+
+        // 8. 复制建筑
+        boolean copied = manorMover.copyRegion(
+                oldGw.worldName(), srcRegion.minChunkX(), srcRegion.minChunkZ(), sizeChunks,
+                targetGw.worldName(), dstRegion.minChunkX(), dstRegion.minChunkZ());
+        if (!copied) {
+            return MoveResult.COPY_FAILED;
+        }
+
+        // 8.5 搬运 mod 世界数据（.dat 文件，如 RS2 的存储盘数据）
+        if (modDataMovers != null && worldContainer != null) {
+            java.nio.file.Path srcDir = worldContainer.resolve(oldGw.worldName());
+            java.nio.file.Path dstDir = worldContainer.resolve(targetGw.worldName());
+            java.util.List<String> modResults = modDataMovers.moveAll(srcDir, dstDir,
+                    oldGw.worldName(), targetGw.worldName(),
+                    srcRegion.minChunkX(), srcRegion.minChunkZ(),
+                    srcRegion.maxChunkX(), srcRegion.maxChunkZ());
+            this.lastMoveModResults = modResults;
+            for (String r : modResults) {
+                logger.info("[GuildShelter] mod 数据: " + r.replaceAll("§[0-9a-fk-or]", ""));
+            }
+        } else {
+            this.lastMoveModResults = java.util.List.of();
+        }
+
+        // 9. 清空旧位置
+        manorMover.clearRegion(oldGw.worldName(),
+                srcRegion.minChunkX(), srcRegion.minChunkZ(),
+                srcRegion.maxChunkX(), srcRegion.maxChunkZ());
+
+        // 10. 更新 DB：旧 manor 删 → 新 manor 保留数据
+        manors.delete(oldManor.guild(), oldManor.slot());
+        Manor newManor = new Manor(targetSlot, targetGuild, player, oldManor.level(),
+                oldManor.coBuilders(), oldManor.members(), oldManor.denied(), oldManor.flags());
+        manors.save(newManor);
+
+        // 11. 更新目标世界 allocatedSlots + 边界
+        int newAllocated = Math.max(targetGw.allocatedSlots(), targetSlot + 1);
+        if (newAllocated != targetGw.allocatedSlots()) {
+            targetGw = targetGw.withAllocatedSlots(newAllocated);
+            guilds.save(targetGw);
+            worlds.applyBorder(targetGw);
+        }
+
+        // 12. 记录搬家时间
+        manors.recordMove(player.uuid(), System.currentTimeMillis());
+
+        return MoveResult.SUCCESS;
+    }
+
+    /** 搬家结果枚举。 */
+    public enum MoveResult {
+        SUCCESS,
+        NOT_ENABLED,
+        NO_MANOR,
+        SAME_GUILD,
+        ON_COOLDOWN,
+        TARGET_NOT_EXIST,
+        TARGET_FULL,
+        NOT_ENOUGH_MONEY,
+        COPY_FAILED
+    }
+
     /** 把庄园当前实占范围（layout 坐标）平移到世界坐标后整地，并把本格道路铺成土径。 */
-    private void prepareManorTerrain(GuildWorld gw, Manor manor) {
+    public void prepareManorTerrain(GuildWorld gw, Manor manor, boolean sync) {
         if (prepMode == TerrainPrepMode.NONE) {
             return;
         }
-        LayoutCalculator layout = new LayoutCalculator(gw.layout()); // 用该世界冻结的布局
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
         ChunkRegion active = layout.activeRegion(manor.slot(), manor.level());
-        terrain.prepare(gw.worldName(), active.shift(gw.originChunkX(), gw.originChunkZ()), prepMode);
-        // 顺带把本格的道路顶层铺成土径（清掉路上植被/树）。
+        terrain.prepare(gw.worldName(), active.shift(gw.originChunkX(), gw.originChunkZ()), prepMode, sync);
         for (ChunkRegion road : layout.roadStripsFor(manor.slot())) {
             terrain.surfaceRoad(gw.worldName(), road.shift(gw.originChunkX(), gw.originChunkZ()));
         }

@@ -32,9 +32,9 @@ public final class ManorFlagListener implements Listener {
         this.lookup = lookup;
     }
 
-    /** 某位置的地皮该 flag 是否为 false(即"禁止")。无地皮则不拦(false)。 */
+    /** 某位置该 flag 是否被禁止（子领地优先 → 庄园 → 默认）。无地皮不拦。 */
     private boolean denied(World world, int x, int z, Flag flag) {
-        return lookup.at(world, x, z).map(m -> !flag.resolveBool(m.flags())).orElse(false);
+        return !lookup.resolveFlag(world, x, z, flag);
     }
 
     private boolean denied(Location loc, Flag flag) {
@@ -103,10 +103,9 @@ public final class ManorFlagListener implements Listener {
         return false;
     }
 
-    /** 该位置地皮该 flag 是否为 true(开)。用于 invincible 这种"开=拦"的反向语义。 */
+    /** 该位置该 flag 是否为 true（子领地优先 → 庄园 → 默认）。用于 invincible 等"开=拦"语义。 */
     private boolean flagOn(Location loc, Flag flag) {
-        return lookup.at(loc.getWorld(), loc.getBlockX(), loc.getBlockZ())
-                .map(m -> flag.resolveBool(m.flags())).orElse(false);
+        return lookup.resolveFlag(loc.getWorld(), loc.getBlockX(), loc.getBlockZ(), flag);
     }
 
     // ---- mob-spawn(挡环境刷怪,放行玩家召唤/刷怪笼蛋/繁殖)----

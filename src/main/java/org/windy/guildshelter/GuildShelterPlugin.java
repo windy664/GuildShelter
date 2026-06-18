@@ -17,6 +17,7 @@ import org.windy.guildshelter.adapter.bukkit.gui.GuiRegistry;
 import org.windy.guildshelter.adapter.bukkit.gui.VanillaGuiListener;
 import org.windy.guildshelter.adapter.bukkit.gui.VanillaGuiProvider;
 import org.windy.guildshelter.adapter.bukkit.gui.YamlGuiLoader;
+import org.windy.guildshelter.adapter.bukkit.XaeroIntegration;
 import org.windy.guildshelter.adapter.bukkit.ManorLimitTask;
 import org.windy.guildshelter.adapter.bukkit.WorldOptimizer;
 import org.windy.guildshelter.adapter.bukkit.PerformanceBroadcastTask;
@@ -57,6 +58,9 @@ import org.windy.guildshelter.domain.port.ManorRepository;
 import org.windy.guildshelter.domain.port.TerrainPreparer;
 import org.windy.guildshelter.domain.rule.PermissionRules;
 import org.windy.guildshelter.neoforge.NeoForgeHooks;
+import org.windy.guildshelter.domain.port.SchematicStore;
+import org.windy.guildshelter.domain.port.ManorMover;
+import org.windy.guildshelter.domain.port.ModDataMoverRegistry;
 import org.windy.guildshelter.service.GuildService;
 import org.windy.guildshelter.adapter.bungee.ProxyChannel;
 import org.windy.guildshelter.persistence.Storage;
@@ -140,6 +144,17 @@ public final class GuildShelterPlugin extends JavaPlugin {
         }
     }
 
+    /** 检测 NeoForge mod 是否已加载（通过 ModList）。Bukkit 插件用 getPlugin 检测即可。 */
+    private static boolean isModLoaded(String modId) {
+        try {
+            Class<?> modListClass = Class.forName("net.neoforged.fml.ModList");
+            Object modList = modListClass.getMethod("get").invoke(null);
+            return (boolean) modListClass.getMethod("isLoaded", String.class).invoke(modList, modId);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     @Override
     public void onEnable() {
         instance = this;
@@ -178,7 +193,32 @@ public final class GuildShelterPlugin extends JavaPlugin {
         }
 
         GuildService service = new GuildService(guilds, manors, worldManager, terrain,
-                config.layout(), config.levels(), config.terrainPrep());
+                config.layout(), config.levels(), config.terrainPrep(), getLogger());
+
+        // 搬家系统：按 NeoForge 在否选实现
+        var moveConfig = config.move();
+        if (moveConfig.enabled()) {
+            ManorMover mover;
+            if (isNeoForgePresent()) {
+                mover = new org.windy.guildshelter.neoforge.NeoForgeManorMover(this, getLogger());
+                getLogger().info("搬家系统: NeoForge 原生端（chunk 级复制）。");
+            } else {
+                mover = new org.windy.guildshelter.adapter.bukkit.BukkitManorMover(this, getLogger());
+                getLogger().info("搬家系统: Bukkit/WorldEdit（clipboard 复制）。");
+            }
+            // 注册 mod 数据搬运器（SavedData .dat 文件，如 RS2 的存储盘数据）
+            ModDataMoverRegistry modDataMovers = new ModDataMoverRegistry();
+            if (isModLoaded("refinedstorage")) {
+                modDataMovers.register(new org.windy.guildshelter.adapter.bukkit.moddata.RefinedStorageDataMover(this, getLogger()));
+                getLogger().info("搬家系统: 已注册 Refined Storage 数据搬运。");
+            }
+            // 未来加更多 mod: modDataMovers.register(new XxxDataMover(this, getLogger()));
+
+            EconomyPort moveEconomy = VaultEconomy.tryCreate(getLogger());
+            java.nio.file.Path worldContainer = getServer().getWorldContainer().toPath();
+            service.setManorMover(mover, moveEconomy, moveConfig.cost(), moveConfig.cooldownDays(),
+                    modDataMovers, worldContainer);
+        }
 
         GuildWorldRegistry registry = new GuildWorldRegistry();
         this.entityCensus = new ManorEntityCensus(registry); // 提前创建，card 命令和 caps 都要用
@@ -200,7 +240,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
         service.setMembershipListener(memberCache); // 入会/退会/解散时同步缓存
 
         GsCommand command = new GsCommand(worldManager, guilds, manors, service, registry,
-                config.levels(), entityCensus, this.mergeRegistry, proxyChannel, config.serverName(), getLogger());
+                config.levels(), entityCensus, this.mergeRegistry, proxyChannel, config.serverName(), getLogger(), this);
         PluginCommand gs = getCommand("gs");
         if (gs != null) {
             gs.setExecutor(command);
@@ -261,6 +301,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
             ManorAccessListener accessListener = new ManorAccessListener(lookup, economy, visitCounter, this.worldCache);
             getServer().getPluginManager().registerEvents(accessListener, this);
             command.setAccessListener(accessListener); // toggle titles 需要
+            accessListener.setOpenPlots(command.openPlots()); // 临时开放地皮豁免 deny-entry
             // 命令拦截(blocked-cmds flag):始终走 Bukkit(PlayerCommandPreprocessEvent 是 Bukkit API)。
             getServer().getPluginManager().registerEvents(new ManorCommandListener(lookup), this);
             // 性能缓存清理：玩家退出时清理 ClaimGuard/SupervisorCache 防内存泄漏
@@ -293,9 +334,9 @@ public final class GuildShelterPlugin extends JavaPlugin {
         record GuildHook(String pluginName, Supplier<Listener> factory) {}
         List<GuildHook> hooks = List.of(
                 new GuildHook("PlayerGuild",
-                        () -> new PlayerGuildListener(service, guilds, registry, getLogger())),
+                        () -> new PlayerGuildListener(service, guilds, registry, getLogger(), this)),
                 new GuildHook("LegendaryGuildRemapped",
-                        () -> new LegendaryGuildListener(service, guilds, registry, getLogger())));
+                        () -> new LegendaryGuildListener(service, guilds, registry, getLogger(), this)));
 
         boolean hooked = false;
         for (GuildHook hook : hooks) {
@@ -416,11 +457,24 @@ public final class GuildShelterPlugin extends JavaPlugin {
             getLogger().info("地皮区块卸载: " + perf.chunkUnloadInactiveMinutes() + " 分钟无上级在线卸载");
         }
 
+        // Schematic 模板系统（自动检测 WorldEdit/FAWE/NeoForge）
+        SchematicStore schematicStore = SchematicStore.autoDetect(getDataFolder().toPath(), this);
+        if (schematicStore != null) {
+            command.setSchematicStore(schematicStore);
+            getLogger().info("Schematic 模板已启用（" + schematicStore.getClass().getSimpleName() + "）");
+        } else {
+            getLogger().info("未检测到 WorldEdit/FAWE，Schematic 模板未启用。");
+        }
+
         // PlaceholderAPI 集成
         if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
             new GuildShelterPapi(manors, guilds, config.levels()).register();
             getLogger().info("PlaceholderAPI 扩展已注册。");
         }
+
+        // Xaero's Minimap 集成（小地图显示公会 waypoint）
+        XaeroIntegration xaero = new XaeroIntegration(registry, guilds, manors, this, getLogger());
+        getServer().getPluginManager().registerEvents(xaero, this);
 
         getLogger().info("GuildShelter 已启用。");
     }

@@ -25,14 +25,13 @@ public final class ManorPlayerListener implements Listener {
         this.lookup = lookup;
     }
 
+    /** 子领地优先 → 庄园 → 默认。 */
     private boolean flagOff(Location loc, Flag flag) {
-        return lookup.at(loc.getWorld(), loc.getBlockX(), loc.getBlockZ())
-                .map(m -> !flag.resolveBool(m.flags())).orElse(false);
+        return !lookup.resolveFlag(loc.getWorld(), loc.getBlockX(), loc.getBlockZ(), flag);
     }
 
     private boolean flagOn(Location loc, Flag flag) {
-        return lookup.at(loc.getWorld(), loc.getBlockX(), loc.getBlockZ())
-                .map(m -> flag.resolveBool(m.flags())).orElse(false);
+        return lookup.resolveFlag(loc.getWorld(), loc.getBlockX(), loc.getBlockZ(), flag);
     }
 
     @EventHandler(priority = EventPriority.LOW)

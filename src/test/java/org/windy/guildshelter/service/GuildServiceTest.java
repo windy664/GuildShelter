@@ -212,6 +212,10 @@ class GuildServiceTest {
         public void incrementVisit(GuildId g, int s) {}
         public void incrementVisitBy(GuildId g, int s, int count) {}
         public int getVisitCount(GuildId g, int s) { return 0; }
+        public void sendFlower(GuildId g, int s, PlayerRef sender) {}
+        public int getTodayFlowerCount(GuildId g, int s) { return 0; }
+        public double getPopularity(GuildId g, int s) { return 0; }
+        public boolean hasSentFlowerToday(GuildId g, int s, PlayerRef sender) { return false; }
     }
 
     static final class FakeWorldControl implements WorldControl {

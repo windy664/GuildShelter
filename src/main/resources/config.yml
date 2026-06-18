@@ -116,6 +116,15 @@ performance:
     check-interval-seconds: 120   # 检查频率
     keep-road-loaded: true        # 道路chunk不卸载
 
+# ============================ 搬家系统 ============================
+
+# 搬家：玩家跳槽公会时，把庄园建筑从旧公会世界复制到新公会世界。
+# chunk 级复制，TileEntity NBT 完整保留（AE2 存储盘/ME 网络等模组数据安全）。
+manor-move:
+  enabled: true            # 是否启用搬家功能
+  cost: 10000              # 搬家费用（需 Vault 经济插件，0=免费）
+  cooldown-days: 7         # 搬家冷却天数（防止频繁搬家）
+
 # ============================ 高级（一般不用动）============================
 advanced:
   base-y: 64            # 地面高度

@@ -40,6 +40,7 @@ public final class ManorAccessListener implements Listener {
     private final EconomyPort economy; // null = 无 Vault，price flag 不生效
     private final VisitCounter visitCounter; // 访问计数（内存缓冲 + 定时刷盘）
     private final WorldCache cache;
+    private volatile java.util.Map<String, Long> openPlots = java.util.Map.of(); // 临时开放地皮
     /** UUID → long 编码的 chunk 坐标 (cx << 32 | cz)，避免每次分配 long[]。 */
     private final Map<UUID, Long> lastChunk = new ConcurrentHashMap<>();
     private final Map<UUID, Manor> lastManor = new ConcurrentHashMap<>();
@@ -56,6 +57,9 @@ public final class ManorAccessListener implements Listener {
         this.visitCounter = visitCounter;
         this.cache = cache;
     }
+
+    /** 注册临时开放地皮 Map（GsCommand 持有）。 */
+    public void setOpenPlots(java.util.Map<String, Long> map) { this.openPlots = map; }
 
     /** 切换玩家的 titles 个人开关。返回 true=现在开启。 */
     public boolean toggleTitles(UUID playerId) {
@@ -121,8 +125,11 @@ public final class ManorAccessListener implements Listener {
             player.sendMessage(Messages.get("listener.blacklisted"));
             return;
         }
-        // deny-entry：访客被谢客时推回（owner/trusted/member/管理可进），不更新 last*（下次再判）
-        if (cur != null && !canEnter(player, cur) && Flag.DENY_ENTRY.resolveBool(cur.flags())) {
+        // deny-entry：访客被谢客时推回（owner/trusted/member/管理可进，临时开放时豁免）
+        // 注意：cur 可能为 null（走在野外/路上），isOpen 必须在 cur != null 短路之后再算，否则 NPE。
+        if (cur != null
+                && !openPlots.containsKey(cur.guild().value() + ":" + cur.slot())
+                && !canEnter(player, cur) && Flag.DENY_ENTRY.resolveBool(cur.flags())) {
             event.setTo(event.getFrom());
             player.sendMessage(Messages.get("listener.deny_entry"));
             return;

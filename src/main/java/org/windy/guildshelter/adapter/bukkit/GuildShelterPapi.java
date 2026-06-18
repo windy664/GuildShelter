@@ -31,6 +31,8 @@ import org.windy.guildshelter.domain.rule.LevelRules;
  *   <li>%guildshelter_trusted% — trusted 人数</li>
  *   <li>%guildshelter_denied% — 黑名单人数</li>
  *   <li>%guildshelter_visits% — 访问次数</li>
+ *   <li>%guildshelter_flowers% — 今日收到的花</li>
+ *   <li>%guildshelter_popularity% — 人气值</li>
  *   <li>%guildshelter_rating% — 平均评分</li>
  *   <li>%guildshelter_done% — 是否完工</li>
  * </ul>
@@ -94,6 +96,8 @@ public final class GuildShelterPapi extends PlaceholderExpansion {
             case "trusted" -> String.valueOf(manor.coBuilders().size());
             case "denied" -> String.valueOf(manor.denied().size());
             case "visits" -> String.valueOf(manors.getVisitCount(manor.guild(), manor.slot()));
+            case "flowers" -> String.valueOf(manors.getTodayFlowerCount(manor.guild(), manor.slot()));
+            case "popularity" -> String.format("%.1f", manors.getPopularity(manor.guild(), manor.slot()));
             case "rating" -> {
                 double avg = manors.getAverageRating(manor.guild(), manor.slot());
                 yield avg > 0 ? String.format("%.1f", avg) : "-";

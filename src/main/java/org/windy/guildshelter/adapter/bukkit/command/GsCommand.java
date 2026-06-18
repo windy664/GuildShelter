@@ -19,6 +19,7 @@ import org.windy.guildshelter.adapter.bukkit.Permissions;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorAccessListener;
 import org.windy.guildshelter.adapter.bukkit.world.WorldManager;
 import org.windy.guildshelter.adapter.bungee.ProxyChannel;
+import org.windy.guildshelter.domain.port.SchematicStore;
 import org.windy.guildshelter.domain.flag.Flag;
 import org.windy.guildshelter.domain.flag.FlagType;
 import org.windy.guildshelter.domain.layout.Classification;
@@ -60,11 +61,11 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     private static final Set<String> PLAYER_SUBS = Set.of("home", "spawn", "upgrade", "info",
             "trust", "untrust", "member", "deny", "undeny", "list", "visit", "clear", "flag", "card",
             "alias", "sethome", "done", "kick", "near", "rate", "top", "middle",
-            "comment", "inbox", "swap", "grant", "merge", "unmerge", "confirm", "help", "desc", "toggle", "template", "sub", "bulletin");
+            "comment", "inbox", "swap", "grant", "merge", "unmerge", "confirm", "help", "desc", "toggle", "template", "sub", "bulletin", "open", "close", "flower", "gift", "board", "move");
 
     /** 需要确认的危险操作。 */
     private static final Set<String> CONFIRM_REQUIRED = Set.of(
-            "deny", "clear", "merge", "unmerge", "swap", "grant");
+            "deny", "clear", "merge", "unmerge", "swap", "grant", "move");
 
     /** trusted 共建人可设的 flag（交互类常用 flag，庄主不用每件小事都亲自改）。 */
     private static final Set<String> TRUSTED_FLAG_SET = Set.of(
@@ -79,6 +80,9 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     }
     private final Map<UUID, PendingAction> pendingConfirm = new ConcurrentHashMap<>();
 
+    /** 地皮临时开放状态："guildId:slot" → 过期时间戳。0 = 永久开放（手动关闭）。 */
+    private final Map<String, Long> openPlots = new ConcurrentHashMap<>();
+
     private final WorldManager worlds;
     private final GuildRepository guilds;
     private final ManorRepository manors;
@@ -88,14 +92,17 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     private final ManorEntityCensus census;
     private final MergeRegistry merges;
     private ManorAccessListener accessListener; // 可选，toggle 需要
+    private SchematicStore schematicStore; // 可选，模板系统
     private final ProxyChannel proxyChannel;
     private final String serverName;
     private final Logger logger;
+    private final org.bukkit.plugin.Plugin plugin;
 
     public GsCommand(WorldManager worlds, GuildRepository guilds, ManorRepository manors,
                      GuildService service, GuildWorldRegistry registry,
                      LevelRules levels, ManorEntityCensus census, MergeRegistry merges,
-                     ProxyChannel proxyChannel, String serverName, Logger logger) {
+                     ProxyChannel proxyChannel, String serverName, Logger logger,
+                     org.bukkit.plugin.Plugin plugin) {
         this.worlds = worlds;
         this.guilds = guilds;
         this.manors = manors;
@@ -107,12 +114,19 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         this.proxyChannel = proxyChannel;
         this.serverName = serverName;
         this.logger = logger;
+        this.plugin = plugin;
     }
 
     /** 设置访问监听器引用（toggle titles 需要）。 */
     public void setAccessListener(ManorAccessListener listener) {
         this.accessListener = listener;
     }
+
+    /** 地皮开放状态 Map（供 ManorAccessListener 检查 deny-entry 豁免）。 */
+    public java.util.Map<String, Long> openPlots() { return openPlots; }
+
+    /** 注入 SchematicStore（模板系统）。 */
+    public void setSchematicStore(SchematicStore store) { this.schematicStore = store; }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
@@ -190,6 +204,12 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             case "template" -> { template(sender, args); return true; }
             case "sub" -> { sub(sender, args); return true; }
             case "bulletin" -> { bulletin(sender, args); return true; }
+            case "open" -> { openPlot(sender, args); return true; }
+            case "close" -> { closePlot(sender); return true; }
+            case "flower" -> { flower(sender, args); return true; }
+            case "gift" -> { gift(sender, args); return true; }
+            case "board" -> { board(sender); return true; }
+            case "move" -> { move(sender, args); return true; }
             case "admin" -> { /* 落到下面的管理分支 */ }
             default -> {
                 sender.sendMessage(Messages.get("usage.player_commands"));
@@ -303,6 +323,9 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         if (service.upgradeManor(manor.guild(), ref)) {
             Manor now = manors.findByOwnerAnywhere(ref).orElse(manor);
             sender.sendMessage(Messages.get("success.upgraded", now.level(), cap));
+            // 升级小特效：脚下冒经验值粒子
+            player.getWorld().spawnParticle(org.bukkit.Particle.TOTEM_OF_UNDYING,
+                    player.getLocation().add(0, 1, 0), 20, 0.5, 0.5, 0.5, 0);
         } else {
             sender.sendMessage(Messages.get("error.already_max_level", cap));
         }
@@ -1001,6 +1024,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         COMMAND_HELP.put("inbox", "查看收到的留言");
         COMMAND_HELP.put("swap <玩家>", "互换地皮 slot（需确认）");
         COMMAND_HELP.put("grant <玩家>", "分配额外地皮（admin，需确认）");
+        COMMAND_HELP.put("move <公会>", "搬家到另一个公会（保留建筑，需确认）");
         COMMAND_HELP.put("merge <slot>", "合并相邻地皮（需确认）");
         COMMAND_HELP.put("unmerge [slot]", "取消合并（需确认）");
         COMMAND_HELP.put("confirm", "确认待执行的危险操作");
@@ -1078,6 +1102,44 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
         String action = args[1].toLowerCase();
         switch (action) {
+            case "save" -> {
+                if (schematicStore == null) { sender.sendMessage(Messages.get("error.no_worldedit")); return; }
+                if (args.length < 3) { sender.sendMessage(Messages.get("usage.template_save")); return; }
+                String name = args[2].toLowerCase();
+                if (!name.matches("[a-zA-Z0-9_\\-]+")) { sender.sendMessage(Messages.get("error.invalid_name")); return; }
+                GuildWorld gw = guilds.find(guild).orElse(null);
+                if (gw == null) { sender.sendMessage(Messages.get("error.world_not_exist")); return; }
+                LayoutCalculator layout = new LayoutCalculator(gw.layout());
+                ChunkRegion active = layout.activeRegion(manor.slot(), manor.level())
+                        .shift(gw.originChunkX(), gw.originChunkZ());
+                int minY = player.getWorld().getMinHeight();
+                int maxY = player.getWorld().getMaxHeight();
+                var path = schematicStore.save(gw.worldName(), name, active.minBlockX(), minY, active.minBlockZ(),
+                        active.maxBlockX() + 15, maxY, active.maxBlockZ() + 15);
+                sender.sendMessage(path != null ? Messages.get("success.template_saved", name) : Messages.get("error.template_save_failed"));
+            }
+            case "paste" -> {
+                if (schematicStore == null) { sender.sendMessage(Messages.get("error.no_worldedit")); return; }
+                if (args.length < 3) { sender.sendMessage(Messages.get("usage.template_paste")); return; }
+                String name = args[2].toLowerCase();
+                GuildWorld gw = guilds.find(guild).orElse(null);
+                if (gw == null) { sender.sendMessage(Messages.get("error.world_not_exist")); return; }
+                LayoutCalculator layout = new LayoutCalculator(gw.layout());
+                ChunkRegion active = layout.activeRegion(manor.slot(), manor.level())
+                        .shift(gw.originChunkX(), gw.originChunkZ());
+                int x = active.minBlockX(), z = active.minBlockZ();
+                int y = player.getWorld().getHighestBlockYAt(x, z);
+                boolean async = org.bukkit.Bukkit.getPluginManager().getPlugin("FastAsyncWorldEdit") != null;
+                schematicStore.paste(gw.worldName(), name, x, y, z, async);
+                sender.sendMessage(Messages.get("success.template_pasted", name));
+            }
+            case "list-schematics" -> {
+                if (schematicStore == null) { sender.sendMessage(Messages.get("error.no_worldedit")); return; }
+                var schematics = schematicStore.list();
+                if (schematics.isEmpty()) { sender.sendMessage(Messages.get("info.no_schematics")); return; }
+                sender.sendMessage(Messages.get("info.schematics_header"));
+                for (String n : schematics) sender.sendMessage(Messages.get("info.schematics_entry", n));
+            }
             case "create" -> {
                 if (args.length < 3) {
                     sender.sendMessage(Messages.get("usage.template_create"));
@@ -1328,6 +1390,201 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             }
             default -> sender.sendMessage(Messages.get("usage.bulletin"));
         }
+    }
+
+    /** /gs board：查看脚下地皮的留言墙（格式化展示最近 10 条）。 */
+    private void board(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Messages.get("error.player_only"));
+            return;
+        }
+        GuildWorld gw = registry.get(player.getWorld().getName());
+        if (gw == null) { sender.sendMessage(Messages.get("error.not_in_guild_world")); return; }
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        int lx = (player.getLocation().getBlockX() >> 4) - gw.originChunkX();
+        int lz = (player.getLocation().getBlockZ() >> 4) - gw.originChunkZ();
+        Classification c = mergeClassify(layout, gw.guild(), lx, lz);
+        if (!c.isPlot()) { sender.sendMessage(Messages.get("error.not_on_plot")); return; }
+        var comments = manors.getComments(gw.guild(), c.slot(), 10);
+        if (comments.isEmpty()) {
+            sender.sendMessage(Messages.get("info.board_empty"));
+            return;
+        }
+        String alias = ""; // 获取地皮别名
+        Manor m = manors.findBySlot(gw.guild(), c.slot()).orElse(null);
+        if (m != null) alias = Flag.ALIAS.resolveString(m.flags());
+        String title = alias.isBlank() ? "#" + c.slot() : alias + " (#" + c.slot() + ")";
+        sender.sendMessage(Messages.get("info.board_header", title));
+        for (var entry : comments) {
+            String authorName = Bukkit.getOfflinePlayer(entry.author().uuid()).getName();
+            if (authorName == null) authorName = "???";
+            String time = new java.text.SimpleDateFormat("MM-dd HH:mm").format(new java.util.Date(entry.timestamp()));
+            sender.sendMessage(Messages.get("info.board_entry", time, authorName, entry.message()));
+        }
+        sender.sendMessage(Messages.get("info.board_footer"));
+    }
+
+    /** /gs gift <玩家>：把手持物品送给同公会世界的玩家。 */
+    private void gift(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Messages.get("error.player_only"));
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage(Messages.get("usage.gift"));
+            return;
+        }
+        Player target = Bukkit.getPlayer(args[1]);
+        if (target == null || !target.isOnline()) {
+            sender.sendMessage(Messages.get("error.player_offline", args[1]));
+            return;
+        }
+        if (target.equals(player)) {
+            sender.sendMessage(Messages.get("error.cannot_self"));
+            return;
+        }
+        // 必须在同一公会世界
+        if (!player.getWorld().equals(target.getWorld())) {
+            sender.sendMessage(Messages.get("error.not_same_world"));
+            return;
+        }
+        var item = player.getInventory().getItemInMainHand();
+        if (item == null || item.getType() == org.bukkit.Material.AIR || item.getAmount() == 0) {
+            sender.sendMessage(Messages.get("error.no_item_in_hand"));
+            return;
+        }
+        // 给目标玩家物品（满了掉地上）
+        var leftover = target.getInventory().addItem(item.clone());
+        for (var drop : leftover.values()) {
+            target.getWorld().dropItemNaturally(target.getLocation(), drop);
+        }
+        player.getInventory().setItemInMainHand(null);
+        sender.sendMessage(Messages.get("success.gift_sent", item.getAmount(), item.getType().name(), target.getName()));
+        target.sendMessage(Messages.get("success.gift_received", player.getName(), item.getAmount(), item.getType().name()));
+    }
+
+    /** /gs flower [公会名 slot]：给地皮送花（每天每块地皮限送一次）。 */
+    private void flower(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Messages.get("error.player_only"));
+            return;
+        }
+        PlayerRef ref = PlayerRef.of(player.getUniqueId());
+        GuildId targetGuild = null;
+        int targetSlot = -1;
+
+        // 解析参数：/gs flower 或 /gs flower <公会名> <slot>
+        if (args.length >= 3) {
+            targetGuild = new GuildId(args[1]);
+            try { targetSlot = Integer.parseInt(args[2]); } catch (NumberFormatException e) {
+                sender.sendMessage(Messages.get("usage.flower")); return;
+            }
+        } else {
+            // 默认：给脚下地皮送花
+            GuildWorld gw = registry.get(player.getWorld().getName());
+            if (gw == null) { sender.sendMessage(Messages.get("error.not_in_guild_world")); return; }
+            LayoutCalculator layout = new LayoutCalculator(gw.layout());
+            int lx = (player.getLocation().getBlockX() >> 4) - gw.originChunkX();
+            int lz = (player.getLocation().getBlockZ() >> 4) - gw.originChunkZ();
+            var slotOpt = layout.slotAt(lx, lz);
+            if (slotOpt.isEmpty()) { sender.sendMessage(Messages.get("error.not_on_plot")); return; }
+            targetGuild = gw.guild();
+            targetSlot = slotOpt.getAsInt();
+        }
+
+        // 不能给自己送花
+        Manor target = manors.findBySlot(targetGuild, targetSlot).orElse(null);
+        if (target == null) { sender.sendMessage(Messages.get("error.slot_empty", targetSlot)); return; }
+        if (target.owner().equals(ref)) { sender.sendMessage(Messages.get("error.cannot_flower_self")); return; }
+
+        // 检查今天是否已送过
+        if (manors.hasSentFlowerToday(targetGuild, targetSlot, ref)) {
+            sender.sendMessage(Messages.get("error.already_flowered_today"));
+            return;
+        }
+
+        manors.sendFlower(targetGuild, targetSlot, ref);
+        int todayCount = manors.getTodayFlowerCount(targetGuild, targetSlot);
+        String alias = Flag.ALIAS.resolveString(target.flags());
+        String name = alias.isBlank() ? targetGuild.value() + " #" + targetSlot : alias;
+        sender.sendMessage(Messages.get("success.flower_sent", name, todayCount));
+
+        // 通知地皮主人（如果在线）
+        Player owner = Bukkit.getPlayer(target.owner().uuid());
+        if (owner != null && owner.isOnline()) {
+            owner.sendMessage(Messages.get("success.flower_received", player.getName(), name));
+        }
+    }
+
+    /** /gs open [时长]：临时开放地皮给访客（默认 1 小时，0=永久）。 */
+    private void openPlot(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Messages.get("error.player_only"));
+            return;
+        }
+        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        if (manor == null) { sender.sendMessage(Messages.get("error.no_manor")); return; }
+        long durationMs = 3600_000L; // 默认 1 小时
+        if (args.length >= 2) {
+            String raw = args[1].toLowerCase();
+            if (raw.equals("0") || raw.equals("perm") || raw.equals("permanent")) {
+                durationMs = 0;
+            } else {
+                try {
+                    long minutes = Long.parseLong(raw.replaceAll("[^0-9]", ""));
+                    durationMs = minutes * 60_000L;
+                } catch (NumberFormatException e) {
+                    sender.sendMessage(Messages.get("usage.open"));
+                    return;
+                }
+            }
+        }
+        String key = manor.guild().value() + ":" + manor.slot();
+        long expireAt = durationMs > 0 ? System.currentTimeMillis() + durationMs : 0;
+        openPlots.put(key, expireAt);
+        // 自动关闭定时器
+        if (durationMs > 0) {
+            final String k = key;
+            new org.bukkit.scheduler.BukkitRunnable() {
+                @Override public void run() {
+                    Long exp = openPlots.get(k);
+                    if (exp != null && exp > 0 && System.currentTimeMillis() >= exp) {
+                        openPlots.remove(k);
+                    }
+                }
+            }.runTaskLater(org.bukkit.Bukkit.getPluginManager().getPlugin("GuildShelter"), durationMs / 50);
+        }
+        String timeStr = durationMs > 0 ? (durationMs / 60_000) + "分钟" : "永久";
+        sender.sendMessage(Messages.get("success.plot_opened", timeStr));
+    }
+
+    /** /gs close：手动关闭地皮访客模式。 */
+    private void closePlot(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Messages.get("error.player_only"));
+            return;
+        }
+        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        if (manor == null) { sender.sendMessage(Messages.get("error.no_manor")); return; }
+        String key = manor.guild().value() + ":" + manor.slot();
+        if (openPlots.remove(key) != null) {
+            sender.sendMessage(Messages.get("success.plot_closed"));
+        } else {
+            sender.sendMessage(Messages.get("error.plot_not_open"));
+        }
+    }
+
+    /** 检查某地皮是否处于临时开放状态（供 ManorAccessListener 用）。 */
+    public boolean isPlotOpen(GuildId guild, int slot) {
+        String key = guild.value() + ":" + slot;
+        Long expireAt = openPlots.get(key);
+        if (expireAt == null) return false;
+        if (expireAt == 0) return true; // 永久开放
+        if (System.currentTimeMillis() >= expireAt) {
+            openPlots.remove(key);
+            return false;
+        }
+        return true;
     }
 
     /** /gs admin reload：热重载 config.yml。 */
@@ -1638,7 +1895,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         // 解析参数：第一个非公会名参数是排序方式
         for (int i = 1; i < args.length; i++) {
             String a = args[i].toLowerCase();
-            if (a.equals("rating") || a.equals("level") || a.equals("members") || a.equals("entities")) {
+            if (a.equals("rating") || a.equals("level") || a.equals("members") || a.equals("entities") || a.equals("visits")) {
                 sortBy = a;
             } else if (guild == null) {
                 guild = new GuildId(args[i]);
@@ -1668,6 +1925,9 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             case "level" -> all.sort((a, b) -> Integer.compare(b.level(), a.level()));
             case "members" -> all.sort((a, b) -> Integer.compare(b.coBuilders().size() + b.members().size(),
                     a.coBuilders().size() + a.members().size()));
+            case "visits" -> all.sort((a, b) -> Integer.compare(
+                    manors.getVisitCount(finalGuild, b.slot()),
+                    manors.getVisitCount(finalGuild, a.slot())));
             case "entities" -> {
                 World world = Bukkit.getWorld(guilds.find(finalGuild).map(GuildWorld::worldName).orElse(""));
                 if (world != null && census != null) {
@@ -1686,6 +1946,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             case "level" -> "等级";
             case "members" -> "成员数";
             case "entities" -> "实体数";
+            case "visits" -> "访问量";
             default -> "评分";
         };
         sender.sendMessage(Messages.get("info.top_header", finalGuild.value(), title));
@@ -1698,6 +1959,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             String value = switch (sortBy) {
                 case "level" -> "Lv" + m.level();
                 case "members" -> (m.coBuilders().size() + m.members().size()) + "人";
+                case "visits" -> manors.getVisitCount(finalGuild, m.slot()) + "次";
                 case "entities" -> {
                     World w = Bukkit.getWorld(guilds.find(finalGuild).map(GuildWorld::worldName).orElse(""));
                     yield w != null && census != null ? census.countAt(w, m).livingTotal() + "只" : "?";
@@ -2001,6 +2263,90 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    /** /gs move <公会名>：搬家到另一个公会（保留建筑+数据）。 */
+    private void move(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Messages.get("error.player_only"));
+            return;
+        }
+        if (!service.isMoveEnabled()) {
+            sender.sendMessage(Messages.get("error.move_not_enabled"));
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage(Messages.get("usage.move"));
+            return;
+        }
+        PlayerRef ref = PlayerRef.of(player.getUniqueId());
+        Manor currentManor = manors.findByOwnerAnywhere(ref).orElse(null);
+        if (currentManor == null) {
+            sender.sendMessage(Messages.get("error.move_no_manor"));
+            return;
+        }
+        GuildId targetGuild = new GuildId(args[1]);
+
+        // 预检：先检查大部分错误条件（不扣费不复制）
+        if (currentManor.guild().equals(targetGuild)) {
+            sender.sendMessage(Messages.get("error.move_same_guild"));
+            return;
+        }
+        long lastMove = manors.getLastMoveTime(ref.uuid());
+        if (lastMove > 0 && service.moveCooldownDays() > 0) {
+            long cooldownMs = (long) service.moveCooldownDays() * 24 * 60 * 60 * 1000;
+            long remaining = cooldownMs - (System.currentTimeMillis() - lastMove);
+            if (remaining > 0) {
+                long days = remaining / (24 * 60 * 60 * 1000) + 1;
+                sender.sendMessage(Messages.get("error.move_cooldown", days));
+                return;
+            }
+        }
+        GuildWorld targetGw = guilds.find(targetGuild).orElse(null);
+        if (targetGw == null) {
+            sender.sendMessage(Messages.get("error.move_target_not_exist"));
+            return;
+        }
+        int capacity = levels.maxMembers(targetGw.guildLevel());
+        int targetSlot = manors.nextFreeSlot(targetGuild);
+        if (targetSlot >= capacity) {
+            sender.sendMessage(Messages.get("error.move_target_full"));
+            return;
+        }
+        if (service.moveCost() > 0) {
+            org.windy.guildshelter.domain.port.EconomyPort eco = null;
+            // 通过 VaultEconomy 静态获取（如果有）
+            // 这里直接检查 service 的经济能力
+            // 实际扣费在 service.moveManor 里
+        }
+
+        // 显示预览信息
+        double cost = service.moveCost();
+        String costStr = cost > 0 ? String.format("%.0f", cost) : "免费";
+        sender.sendMessage("§6==== 搬家确认 ====");
+        sender.sendMessage("§7当前公会: §f" + currentManor.guild().value() + " §7地皮 #" + currentManor.slot());
+        sender.sendMessage("§7目标公会: §f" + targetGuild.value());
+        sender.sendMessage("§7费用: §e" + costStr);
+        sender.sendMessage("§7冷却: §f" + service.moveCooldownDays() + " §7天");
+
+        // mod 数据风险检测
+        GuildWorld srcGw = guilds.find(currentManor.guild()).orElse(null);
+        if (srcGw != null) {
+            org.windy.guildshelter.domain.port.ManorMover mover = service.getManorMover();
+            if (mover != null) {
+                LayoutCalculator layout = new LayoutCalculator(srcGw.layout());
+                ChunkRegion src = layout.plotRegion(currentManor.slot())
+                        .shift(srcGw.originChunkX(), srcGw.originChunkZ());
+                java.util.List<String> risks = mover.detectRisks(srcGw.worldName(),
+                        src.minChunkX(), src.minChunkZ(), src.maxChunkX(), src.maxChunkZ());
+                for (String risk : risks) {
+                    sender.sendMessage(risk);
+                }
+            }
+        }
+
+        sender.sendMessage("§e⚠ 建筑将被复制到新公会世界，旧位置将被清空。");
+        sender.sendMessage("§e30秒内输入 §6/gs confirm §e确认搬家。");
+    }
+
     /** 执行子命令（跳过确认检查，供 confirm 调用）。 */
     private void executeSub(CommandSender sender, String sub, String[] args) {
         switch (sub) {
@@ -2010,7 +2356,68 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             case "unmerge" -> unmerge(sender, args);
             case "swap" -> swap(sender, args);
             case "grant" -> grant(sender, args);
+            case "move" -> executeMove(sender, args);
             default -> sender.sendMessage(Messages.get("error.unknown_command"));
+        }
+    }
+
+    /** 实际执行搬家（confirm 后调用）。 */
+    private void executeMove(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Messages.get("error.player_only"));
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage(Messages.get("usage.move"));
+            return;
+        }
+        PlayerRef ref = PlayerRef.of(player.getUniqueId());
+        GuildId targetGuild = new GuildId(args[1]);
+
+        sender.sendMessage("§e正在搬家，请稍候...");
+        GuildService.MoveResult result = service.moveManor(ref, targetGuild);
+
+        switch (result) {
+            case SUCCESS -> {
+                Manor newManor = manors.findByOwnerAnywhere(ref).orElse(null);
+                int newSlot = newManor != null ? newManor.slot() : -1;
+                double cost = service.moveCost();
+                if (cost > 0) {
+                    sender.sendMessage(Messages.get("success.move_cost_deducted",
+                            String.format("%.0f", cost)));
+                }
+                sender.sendMessage(Messages.get("success.manor_moved",
+                        ref.uuid().toString().substring(0, 8), targetGuild.value(), newSlot));
+                // 展示 mod 数据搬运结果
+                for (String modResult : service.getLastMoveModResults()) {
+                    sender.sendMessage(modResult);
+                }
+                // 传送到新地皮
+                GuildWorld gw = ensureLoadedWorld(sender, targetGuild);
+                if (gw != null && newManor != null) {
+                    World world = Bukkit.getWorld(gw.worldName());
+                    if (world != null) {
+                        ChunkRegion active = new LayoutCalculator(gw.layout())
+                                .activeRegion(newManor.slot(), newManor.level())
+                                .shift(gw.originChunkX(), gw.originChunkZ());
+                        int cx = (active.minBlockX() + active.maxBlockX()) / 2;
+                        int cz = (active.minBlockZ() + active.maxBlockZ()) / 2;
+                        world.loadChunk(cx >> 4, cz >> 4, true);
+                        int cy = world.getHighestBlockYAt(cx, cz) + 1;
+                        player.teleport(new Location(world, cx + 0.5, cy, cz + 0.5));
+                    }
+                }
+            }
+            case NOT_ENABLED -> sender.sendMessage(Messages.get("error.move_not_enabled"));
+            case NO_MANOR -> sender.sendMessage(Messages.get("error.move_no_manor"));
+            case SAME_GUILD -> sender.sendMessage(Messages.get("error.move_same_guild"));
+            case ON_COOLDOWN -> sender.sendMessage(Messages.get("error.move_cooldown",
+                    service.moveCooldownDays()));
+            case TARGET_NOT_EXIST -> sender.sendMessage(Messages.get("error.move_target_not_exist"));
+            case TARGET_FULL -> sender.sendMessage(Messages.get("error.move_target_full"));
+            case NOT_ENOUGH_MONEY -> sender.sendMessage(Messages.get("error.move_not_enough_money",
+                    String.format("%.0f", service.moveCost())));
+            case COPY_FAILED -> sender.sendMessage(Messages.get("error.move_copy_failed"));
         }
     }
 
@@ -2066,10 +2473,22 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
         long seed = ThreadLocalRandom.current().nextLong();
         TerrainPrepMode mode = terrainMode != null ? terrainMode : org.windy.guildshelter.domain.model.TerrainPrepMode.CLEAR_VEGETATION;
-        GuildWorld gw = service.createGuild(guild, seed, mode, serverName);
-        registry.register(gw);
-        sender.sendMessage(Messages.get("success.create_world", gw.worldName(), gw.seed(), gw.originChunkX(), gw.originChunkZ()));
-        logMap(guild);
+
+        // 注意：首次建会需 Bukkit.createWorld 新建世界，其内部 setInitialSpawn 会同步生成出生区块
+        // (managedBlock 等待 chunk future)。若直接在此处执行，命令本身正运行在 1.26 命令执行上下文
+        // (ExecutionContext) 的嵌套事件循环里，嵌套的 managedBlock 等不到 chunk 完成 → 主线程死锁 →
+        // Spigot 看门狗超时杀服。改为调度到下一 tick 的干净主线程任务执行，脱离命令上下文即可正常生成。
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            try {
+                GuildWorld gw = service.createGuild(guild, seed, mode, serverName);
+                registry.register(gw);
+                sender.sendMessage(Messages.get("success.create_world", gw.worldName(), gw.seed(), gw.originChunkX(), gw.originChunkZ()));
+                logMap(guild);
+            } catch (RuntimeException e) {
+                sender.sendMessage(Messages.get("error.world_load_failed", worlds.worldName(guild)));
+                logger.warning("[GuildShelter] 建会失败 " + guild.value() + ": " + e);
+            }
+        });
     }
 
     private void tp(CommandSender sender, String[] args) {
@@ -2141,6 +2560,23 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         world.loadChunk(cx >> 4, cz >> 4, true);
         int cy = world.getHighestBlockYAt(cx, cz) + 1;
         player.teleport(new Location(world, cx + 0.5, cy, cz + 0.5));
+        // 异步整地（assignManor 已触发），玩家到达时可能还在进行中。
+        // 延迟后给玩家重发区块数据包，修复幽灵方块。
+        new org.bukkit.scheduler.BukkitRunnable() {
+            @Override public void run() {
+                if (!player.isOnline()) return;
+                // 卸载再加载周围区块 → 强制客户端重新拉取数据
+                for (int dx = -2; dx <= 2; dx++) {
+                    for (int dz = -2; dz <= 2; dz++) {
+                        int cxx = (cx >> 4) + dx;
+                        int czz = (cz >> 4) + dz;
+                        if (world.isChunkLoaded(cxx, czz)) {
+                            world.refreshChunk(cxx, czz);
+                        }
+                    }
+                }
+            }
+        }.runTaskLater(org.bukkit.Bukkit.getPluginManager().getPlugin("GuildShelter"), 60L); // 3秒后
         sender.sendMessage(Messages.get("success.claim", manor.slot(), manor.level()));
         sender.sendMessage(Messages.get("success.claim_hint", guild.value()));
         logMap(guild);
@@ -2271,6 +2707,29 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("success.upgrade_guild", after.guildLevel(), levels.maxGuildLevel(),
                 levels.maxMembers(before.guildLevel()), levels.maxMembers(after.guildLevel()),
                 (int) oldBorder, (int) newBorder));
+        // 升级特效：公会世界里放烟花 + 全服广播
+        World world = Bukkit.getWorld(after.worldName());
+        if (world != null) {
+            LayoutCalculator al = new LayoutCalculator(after.layout());
+            int sx = al.spawnBlockX() + (after.originChunkX() << 4);
+            int sz = al.spawnBlockZ() + (after.originChunkZ() << 4);
+            int sy = world.getHighestBlockYAt(sx, sz) + 2;
+            var loc = new org.bukkit.Location(world, sx + 0.5, sy, sz + 0.5);
+            world.spawn(loc, org.bukkit.entity.Firework.class, fw -> {
+                var meta = fw.getFireworkMeta();
+                meta.addEffect(org.bukkit.FireworkEffect.builder()
+                        .with(org.bukkit.FireworkEffect.Type.BALL_LARGE)
+                        .withColor(org.bukkit.Color.YELLOW, org.bukkit.Color.ORANGE)
+                        .withFade(org.bukkit.Color.RED)
+                        .trail(true).flicker(true).build());
+                meta.setPower(1);
+                fw.setFireworkMeta(meta);
+            });
+            // 广播给世界内所有玩家
+            for (Player p : world.getPlayers()) {
+                p.sendTitle("§6§l⬆ 公会升级！", "§e" + guild.value() + " §7→ Lv" + after.guildLevel(), 10, 60, 20);
+            }
+        }
         logMap(guild);
     }
 
@@ -2340,9 +2799,9 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             for (GuildWorld gw : guilds.findAll()) {
                 out.add(gw.guild().value());
             }
-            out.addAll(java.util.List.of("rating", "level", "members", "entities"));
+            out.addAll(java.util.List.of("rating", "level", "members", "entities", "visits"));
         } else if (args.length == 3 && args[0].equalsIgnoreCase("top")) {
-            out.addAll(java.util.List.of("rating", "level", "members", "entities"));
+            out.addAll(java.util.List.of("rating", "level", "members", "entities", "visits"));
         } else if (args.length == 2 && args[0].equalsIgnoreCase("help")) {
             out.addAll(COMMAND_HELP.keySet());
         } else if (args.length == 2 && args[0].equalsIgnoreCase("list")) {
@@ -2397,6 +2856,10 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                 out.add(p.getName());
             }
         } else if (args.length == 2 && args[0].equalsIgnoreCase("visit")) {
+            for (GuildWorld gw : guilds.findAll()) {
+                out.add(gw.guild().value());
+            }
+        } else if (args.length == 2 && args[0].equalsIgnoreCase("move")) {
             for (GuildWorld gw : guilds.findAll()) {
                 out.add(gw.guild().value());
             }

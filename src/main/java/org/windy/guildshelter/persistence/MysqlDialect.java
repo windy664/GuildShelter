@@ -111,6 +111,19 @@ public final class MysqlDialect implements SqlDialect {
                     slot       INT NOT NULL,
                     visit_count INT NOT NULL DEFAULT 0,
                     PRIMARY KEY (guild_id, slot)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_flower (
+                    guild_id    VARCHAR(255) NOT NULL,
+                    slot        INT NOT NULL,
+                    sender_uuid VARCHAR(36) NOT NULL,
+                    sent_date   VARCHAR(10) NOT NULL,
+                    PRIMARY KEY (guild_id, slot, sender_uuid, sent_date)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_move_record (
+                    player_uuid VARCHAR(36) PRIMARY KEY,
+                    last_move_at BIGINT NOT NULL
                 )""");
     }
 

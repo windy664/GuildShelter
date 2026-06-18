@@ -37,6 +37,20 @@ public interface ManorRepository {
     /** 获取某地皮的累计访问次数。 */
     int getVisitCount(GuildId guild, int slot);
 
+    // ===== 送花/人气 =====
+
+    /** 给地皮送花（同一玩家每天只能送一次，跨日重置）。 */
+    void sendFlower(GuildId guild, int slot, PlayerRef sender);
+
+    /** 获取某地皮今日已收到的花数。 */
+    int getTodayFlowerCount(GuildId guild, int slot);
+
+    /** 获取某地皮累计人气值（= 访问量×权重 + 花数×权重）。 */
+    double getPopularity(GuildId guild, int slot);
+
+    /** 某玩家今天是否已给该地皮送过花。 */
+    boolean hasSentFlowerToday(GuildId guild, int slot, PlayerRef sender);
+
     // ===== 评分系统 =====
 
     /** 给地皮打分（1-10，同一玩家重复评分会覆盖）。 */
@@ -118,4 +132,12 @@ public interface ManorRepository {
 
     /** 子领地记录。 */
     record SubEntry(GuildId guild, int slot, String name, int minX, int minZ, int maxX, int maxZ, java.util.Map<String, String> flags) {}
+
+    // ===== 搬家记录 =====
+
+    /** 获取该玩家最后一次搬家的时间戳（未搬过返回 0）。 */
+    long getLastMoveTime(java.util.UUID playerUuid);
+
+    /** 记录一次搬家（覆盖上次记录，每人只保留最新一条）。 */
+    void recordMove(java.util.UUID playerUuid, long timestamp);
 }

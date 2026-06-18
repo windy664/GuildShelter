@@ -52,7 +52,13 @@ public final class WorldManager implements WorldControl {
             applyBorderTo(existing, gw);
             return gw;
         }
+
+        // 修复点 1：获取主世界（通常是列表第一个，下标为0）作为模板，继承其群系和注册表数据。
+        // 这是为了防止混合端（NeoForge）在新世界生成自然地形时因为找不到注册表映射而导致 IndexOutOfBoundsException (-1)
+        World mainWorld = Bukkit.getWorlds().get(0);
+
         WorldCreator creator = new WorldCreator(gw.worldName())
+                .copy(mainWorld) // <--- 关键修复：继承主世界的注册表
                 .environment(World.Environment.NORMAL)
                 .seed(gw.seed());
 
@@ -172,6 +178,22 @@ public final class WorldManager implements WorldControl {
         public boolean shouldGenerateMobs() { return false; }
         @Override
         public boolean shouldGenerateStructures() { return false; }
+
+        // 修复点 2：高版本 API 需要为自定义生成器提供合法的群系，避免读取空注册表抛出越界异常
+        @Override
+        public org.bukkit.generator.BiomeProvider getDefaultBiomeProvider(WorldInfo worldInfo) {
+            return new org.bukkit.generator.BiomeProvider() {
+                @Override
+                public org.bukkit.block.Biome getBiome(WorldInfo worldInfo, int x, int y, int z) {
+                    return org.bukkit.block.Biome.THE_VOID;
+                }
+
+                @Override
+                public java.util.List<org.bukkit.block.Biome> getBiomes(WorldInfo worldInfo) {
+                    return java.util.List.of(org.bukkit.block.Biome.THE_VOID);
+                }
+            };
+        }
     }
 
     @Override

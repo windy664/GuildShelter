@@ -100,3 +100,4 @@ permissions:
   guildshelter.command.template: { default: true }
   guildshelter.command.sub: { default: true }
   guildshelter.command.bulletin: { default: true }
+  guildshelter.command.move: { default: true }
