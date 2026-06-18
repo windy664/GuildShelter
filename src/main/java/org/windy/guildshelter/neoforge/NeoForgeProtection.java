@@ -62,7 +62,6 @@ public final class NeoForgeProtection {
 
         boolean isAllowed = guard.allowed(bukkit, pos.getX(), pos.getZ());
 
-        // --- Debug 输出 1：确认事件触发与权限 ---
         bukkit.sendMessage("§e[Debug] BreakEvent 触发! 坐标: " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + " 允许破坏: " + isAllowed);
 
         if (!isAllowed) {
@@ -72,10 +71,9 @@ public final class NeoForgeProtection {
             bukkit.sendMessage("§c[Debug] 无权限，已拦截并重发方块更新。");
         } else if (entity instanceof ServerPlayer sp) {
             boolean isGuild = isGuildWorld((ServerLevel) sp.level());
-            // --- Debug 输出 2：确认是否成功判定为公会世界 ---
             bukkit.sendMessage("§a[Debug] 有权限破坏。是否为公会世界: " + isGuild + "。插件在此不作任何干预。");
 
-            // 我们在这里什么都不做，完全交给混合端底层处理
+
         }
     }
 
