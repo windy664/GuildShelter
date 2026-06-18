@@ -208,6 +208,10 @@ class GuildServiceTest {
         public List<Integer> getMergedSlots(GuildId g, int p) { return List.of(); }
         public void unmerge(GuildId g, int p) {}
         public void unmergeOne(GuildId g, int p, int a) {}
+        public List<ManorRepository.MergeEntry> getAllMerges(GuildId g) { return List.of(); }
+        public void incrementVisit(GuildId g, int s) {}
+        public void incrementVisitBy(GuildId g, int s, int count) {}
+        public int getVisitCount(GuildId g, int s) { return 0; }
     }
 
     static final class FakeWorldControl implements WorldControl {

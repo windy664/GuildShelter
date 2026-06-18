@@ -17,6 +17,10 @@ import org.windy.guildshelter.adapter.bukkit.gui.GuiRegistry;
 import org.windy.guildshelter.adapter.bukkit.gui.VanillaGuiListener;
 import org.windy.guildshelter.adapter.bukkit.gui.VanillaGuiProvider;
 import org.windy.guildshelter.adapter.bukkit.gui.YamlGuiLoader;
+import org.windy.guildshelter.adapter.bukkit.ManorLimitTask;
+import org.windy.guildshelter.adapter.bukkit.WorldOptimizer;
+import org.windy.guildshelter.adapter.bukkit.PerformanceBroadcastTask;
+import org.windy.guildshelter.adapter.bukkit.ManorChunkManager;
 import org.windy.guildshelter.adapter.bukkit.InteractionPolicy;
 import org.windy.guildshelter.adapter.bukkit.GuildMemberCache;
 import org.windy.guildshelter.adapter.bukkit.ManorBuffTask;
@@ -354,6 +358,62 @@ public final class GuildShelterPlugin extends JavaPlugin {
             new GuildUpkeepTask(guilds, registry, baseCost, perLevelCost, getLogger())
                     .runTaskTimer(this, periodTicks, periodTicks);
             getLogger().info("每日维护费已启用（基础 " + baseCost + "，每级 +" + perLevelCost + "）");
+        }
+
+        // ===== 性能优化任务 =====
+        var perf = config.performance();
+
+        // 掉落物限制
+        if (perf.maxDroppedItems() > 0) {
+            long limitTicks = Math.max(1L, perf.limitCheckSeconds()) * 20L;
+            new ManorLimitTask(registry, guilds, manors, perf.maxDroppedItems(), perf.dropCleanMode(), getLogger())
+                    .runTaskTimer(this, limitTicks, limitTicks);
+            getLogger().info("掉落物限制: " + perf.maxDroppedItems() + "（" + (perf.dropCleanMode() ? "清理最旧" : "只拦截") + "）");
+        }
+
+        // 世界级懒加载/卸载
+        WorldOptimizer worldOptimizer = null;
+        if (perf.optimizeEnabled()) {
+            worldOptimizer = new WorldOptimizer(registry, guilds, perf.optimizeMode(),
+                    perf.optimizeInactiveMinutes(), perf.keepSpawnLoaded(), getLogger());
+            long optTicks = Math.max(1L, perf.optimizeCheckSeconds()) * 20L;
+            worldOptimizer.runTaskTimer(this, optTicks, optTicks);
+            getLogger().info("世界级优化: " + perf.optimizeMode() + "（" + perf.optimizeInactiveMinutes() + "分钟无玩家卸载）");
+        }
+
+        // 性能统计排行广播
+        if (perf.statsEnabled()) {
+            long statsTicks = Math.max(1L, perf.statsBroadcastSeconds()) * 20L;
+            new PerformanceBroadcastTask(registry, guilds, manors, entityCensus,
+                    perf.statsTopCount(), perf.weightTileTick(), perf.weightEntityTick(),
+                    perf.weightDropTick(), perf.weightChunkTick(), getLogger())
+                    .runTaskTimer(this, statsTicks, statsTicks);
+            getLogger().info("性能排行广播: 每 " + perf.statsBroadcastSeconds() + " 秒, Top " + perf.statsTopCount());
+        }
+
+        // 地皮级区块卸载
+        ManorChunkManager chunkManager = null;
+        if (perf.chunkUnloadEnabled()) {
+            chunkManager = new ManorChunkManager(registry, guilds, manors,
+                    perf.chunkUnloadInactiveMinutes(), perf.chunkUnloadKeepRoad(), getLogger());
+            long chunkTicks = Math.max(1L, perf.chunkUnloadCheckSeconds()) * 20L;
+            chunkManager.runTaskTimer(this, chunkTicks, chunkTicks);
+            // 玩家登录时重载地皮 chunk
+            WorldOptimizer finalWorldOptimizer = worldOptimizer;
+            ManorChunkManager finalChunkManager = chunkManager;
+            getServer().getPluginManager().registerEvents(new Listener() {
+                @EventHandler
+                public void onJoin(org.bukkit.event.player.PlayerJoinEvent event) {
+                    finalChunkManager.onPlayerJoin(event.getPlayer().getUniqueId());
+                    if (finalWorldOptimizer != null) {
+                        // 玩家登录时标记世界活跃
+                        for (GuildWorld gw : guilds.findAll()) {
+                            finalWorldOptimizer.onPlayerEnter(gw.worldName());
+                        }
+                    }
+                }
+            }, this);
+            getLogger().info("地皮区块卸载: " + perf.chunkUnloadInactiveMinutes() + " 分钟无上级在线卸载");
         }
 
         // PlaceholderAPI 集成

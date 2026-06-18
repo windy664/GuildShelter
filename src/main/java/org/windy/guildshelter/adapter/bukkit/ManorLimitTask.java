@@ -1,0 +1,90 @@
+package org.windy.guildshelter.adapter.bukkit;
+
+import org.bukkit.World;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.Item;
+import org.bukkit.scheduler.BukkitRunnable;
+import org.windy.guildshelter.domain.model.GuildWorld;
+import org.windy.guildshelter.domain.model.Manor;
+import org.windy.guildshelter.domain.port.GuildRepository;
+import org.windy.guildshelter.domain.port.ManorRepository;
+
+import java.util.Comparator;
+import java.util.List;
+import java.util.logging.Logger;
+
+/**
+ * 地皮掉落物限制定时任务：扫描所有公会世界，清理超限地皮的多余掉落物。
+ * clean 模式：超限时先清理最旧的掉落物降到阈值以下。
+ * block 模式：只拦截新掉落物（在 ManorEntityListener 里做），不主动清理。
+ */
+public final class ManorLimitTask extends BukkitRunnable {
+
+    private final GuildWorldRegistry registry;
+    private final GuildRepository guilds;
+    private final ManorRepository manors;
+    private final int maxDroppedItems;
+    private final boolean cleanMode;
+    private final Logger logger;
+
+    public ManorLimitTask(GuildWorldRegistry registry, GuildRepository guilds, ManorRepository manors,
+                          int maxDroppedItems, boolean cleanMode, Logger logger) {
+        this.registry = registry;
+        this.guilds = guilds;
+        this.manors = manors;
+        this.maxDroppedItems = maxDroppedItems;
+        this.cleanMode = cleanMode;
+        this.logger = logger;
+    }
+
+    @Override
+    public void run() {
+        if (maxDroppedItems <= 0) return;
+        int totalCleaned = 0;
+        for (GuildWorld gw : guilds.findAll()) {
+            World world = org.bukkit.Bukkit.getWorld(gw.worldName());
+            if (world == null) continue;
+            List<Manor> allManors = manors.findAll(gw.guild());
+            for (Manor manor : allManors) {
+                totalCleaned += cleanManorDrops(world, gw, manor);
+            }
+        }
+        if (totalCleaned > 0) {
+            logger.info("[GuildShelter] 清理超限掉落物: " + totalCleaned + " 个");
+        }
+    }
+
+    /** 清理单块地皮的超限掉落物。返回清理数量。 */
+    private int cleanManorDrops(World world, GuildWorld gw, Manor manor) {
+        org.windy.guildshelter.domain.layout.LayoutCalculator layout =
+                new org.windy.guildshelter.domain.layout.LayoutCalculator(gw.layout());
+        org.windy.guildshelter.domain.model.ChunkRegion region = layout
+                .activeRegion(manor.slot(), manor.level())
+                .shift(gw.originChunkX(), gw.originChunkZ());
+
+        // 统计掉落物
+        List<Item> items = new java.util.ArrayList<>();
+        for (int cx = region.minChunkX(); cx <= region.maxChunkX(); cx++) {
+            for (int cz = region.minChunkZ(); cz <= region.maxChunkZ(); cz++) {
+                if (!world.isChunkLoaded(cx, cz)) continue;
+                for (Entity e : world.getChunkAt(cx, cz).getEntities()) {
+                    if (e instanceof Item item) items.add(item);
+                }
+            }
+        }
+
+        if (items.size() <= maxDroppedItems) return 0;
+        if (!cleanMode) return 0; // block 模式不主动清理
+
+        // 清理最旧的
+        int toRemove = items.size() - maxDroppedItems;
+        items.sort(Comparator.comparingInt(Entity::getTicksLived).reversed());
+        int removed = 0;
+        for (Item item : items) {
+            if (removed >= toRemove) break;
+            item.remove();
+            removed++;
+        }
+        return removed;
+    }
+}

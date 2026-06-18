@@ -8,7 +8,17 @@ import org.windy.guildshelter.persistence.StorageSettings;
 
 /** 把 Bukkit 的 config.yml 解析成 domain 的配置对象。 */
 public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, TerrainPrepMode terrainPrep,
-                                 StorageSettings storage, String proxyType, String serverName) {
+                                 StorageSettings storage, String proxyType, String serverName,
+                                 PerformanceConfig performance) {
+
+    /** 性能优化配置。 */
+    public record PerformanceConfig(
+            int maxDroppedItems, int maxTileEntities, int limitCheckSeconds, boolean dropCleanMode,
+            boolean optimizeEnabled, String optimizeMode, int optimizeInactiveMinutes, int optimizeCheckSeconds, boolean keepSpawnLoaded,
+            boolean statsEnabled, int statsBroadcastSeconds, int statsTopCount,
+            double weightTileTick, double weightEntityTick, double weightDropTick, double weightChunkTick,
+            boolean chunkUnloadEnabled, int chunkUnloadInactiveMinutes, int chunkUnloadCheckSeconds, boolean chunkUnloadKeepRoad
+    ) {}
 
     public static GuildShelterConfig from(FileConfiguration cfg) {
         int plotInitial = cfg.getInt("member-plot.initial-chunks", 6);
@@ -56,6 +66,28 @@ public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, Terrain
                 cfg.getString("storage.mysql.user", "root"),
                 cfg.getString("storage.mysql.password", ""));
 
-        return new GuildShelterConfig(layout, levels, prep, storage, proxyType, serverName);
+        PerformanceConfig perf = new PerformanceConfig(
+                cfg.getInt("performance.limits.max-dropped-items", 500),
+                cfg.getInt("performance.limits.max-tile-entities", 2000),
+                cfg.getInt("performance.limits.check-interval-seconds", 60),
+                "clean".equalsIgnoreCase(cfg.getString("performance.limits.drop-cleanup-mode", "clean")),
+                cfg.getBoolean("performance.optimize.enabled", false),
+                cfg.getString("performance.optimize.mode", "world"),
+                cfg.getInt("performance.optimize.inactive-minutes", 30),
+                cfg.getInt("performance.optimize.check-interval-seconds", 300),
+                cfg.getBoolean("performance.optimize.keep-spawn-loaded", true),
+                cfg.getBoolean("performance.stats.enabled", false),
+                cfg.getInt("performance.stats.broadcast-interval-seconds", 1800),
+                cfg.getInt("performance.stats.top-count", 5),
+                cfg.getDouble("performance.stats.weights.tile-tick", 0.005),
+                cfg.getDouble("performance.stats.weights.entity-tick", 0.005),
+                cfg.getDouble("performance.stats.weights.drop-tick", 0.0001),
+                cfg.getDouble("performance.stats.weights.chunk-tick", 0),
+                cfg.getBoolean("performance.chunk-unload.enabled", false),
+                cfg.getInt("performance.chunk-unload.inactive-minutes", 15),
+                cfg.getInt("performance.chunk-unload.check-interval-seconds", 120),
+                cfg.getBoolean("performance.chunk-unload.keep-road-loaded", true));
+
+        return new GuildShelterConfig(layout, levels, prep, storage, proxyType, serverName, perf);
     }
 }

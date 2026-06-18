@@ -80,6 +80,42 @@ guild-plugin:
   instant-trigger-delay-ticks: 2  # 即时触发延迟多少 tick 再读名单（20 tick = 1 秒）
   disband-sweep: true             # 自动清扫已解散公会的世界（单公会插件保持 true）
 
+# ============================ 性能优化 ============================
+
+performance:
+  # 实体/掉落物上限
+  limits:
+    max-dropped-items: 500       # 地皮内掉落物上限（-1=不限）
+    max-tile-entities: 2000      # 地皮内方块实体上限（-1=不限，超限拦截新放置）
+    check-interval-seconds: 60   # 定时检查频率
+    drop-cleanup-mode: clean     # clean=清理最旧+拦截新的 | block=只拦截新的
+
+  # 世界级懒加载/卸载
+  optimize:
+    enabled: false
+    mode: world                   # world=卸载整个世界 | chunk=只卸载非主城chunk
+    inactive-minutes: 30          # 无玩家超过N分钟才卸载
+    check-interval-seconds: 300   # 检查频率（5分钟）
+    keep-spawn-loaded: true       # 主城出生点chunk永不卸载
+
+  # 性能统计 + 排行广播
+  stats:
+    enabled: false
+    broadcast-interval-seconds: 1800  # 30分钟广播一次
+    top-count: 5                      # 显示前N名
+    weights:
+      tile-tick: 0.005              # 每个方块实体的tick权重
+      entity-tick: 0.005            # 每个生物的tick权重
+      drop-tick: 0.0001             # 每个掉落物的tick权重
+      chunk-tick: 0                 # 每个chunk的tick权重
+
+  # 地皮级区块卸载
+  chunk-unload:
+    enabled: false
+    inactive-minutes: 15          # 地皮主人不在线超过N分钟卸载
+    check-interval-seconds: 120   # 检查频率
+    keep-road-loaded: true        # 道路chunk不卸载
+
 # ============================ 高级（一般不用动）============================
 advanced:
   base-y: 64            # 地面高度

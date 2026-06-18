@@ -1,9 +1,12 @@
 package org.windy.guildshelter.adapter.bukkit;
 
 import org.bukkit.World;
+import org.bukkit.block.BlockState;
+import org.bukkit.block.Container;
 import org.bukkit.entity.Animals;
 import org.bukkit.entity.Enemy;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.Item;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Vehicle;
@@ -37,13 +40,19 @@ public final class ManorEntityCensus {
         this.registry = registry;
     }
 
-    /** 某地皮当前各类实体计数。 */
-    public record Census(int animals, int hostiles, int otherMobs, int vehicles) {
-        public static final Census EMPTY = new Census(0, 0, 0, 0);
+    /** 某地皮当前各类实体/方块实体计数。 */
+    public record Census(int animals, int hostiles, int otherMobs, int vehicles,
+                         int tileEntities, int droppedItems) {
+        public static final Census EMPTY = new Census(0, 0, 0, 0, 0, 0);
 
         /** 生物总数（动物+敌对+其它，不含载具）——mob-cap 的口径。 */
         public int livingTotal() {
             return animals + hostiles + otherMobs;
+        }
+
+        /** 所有实体总数（生物+载具+掉落物）。 */
+        public int entityTotal() {
+            return livingTotal() + vehicles + droppedItems;
         }
 
         public int count(ManorEntityClass c) {
@@ -69,7 +78,7 @@ public final class ManorEntityCensus {
         return c;
     }
 
-    /** 实时统计该地皮当前实占范围内、已加载 chunk 中的各类实体（无缓存）。 */
+    /** 实时统计该地皮当前实占范围内、已加载 chunk 中的各类实体/方块实体（无缓存）。 */
     public Census countAt(World world, Manor manor) {
         GuildWorld gw = registry.get(world.getName());
         if (gw == null) {
@@ -78,17 +87,20 @@ public final class ManorEntityCensus {
         ChunkRegion region = new LayoutCalculator(gw.layout())
                 .activeRegion(manor.slot(), manor.level())
                 .shift(gw.originChunkX(), gw.originChunkZ());
-        int animals = 0, hostiles = 0, other = 0, vehicles = 0;
+        int animals = 0, hostiles = 0, other = 0, vehicles = 0, tileEntities = 0, droppedItems = 0;
         for (int cx = region.minChunkX(); cx <= region.maxChunkX(); cx++) {
             for (int cz = region.minChunkZ(); cz <= region.maxChunkZ(); cz++) {
                 if (!world.isChunkLoaded(cx, cz)) {
-                    continue; // 未加载 = 无活动实体，跳过（也避免 getChunkAt 触发加载）
+                    continue;
                 }
+                // 实体计数（生物+载具+掉落物）
                 for (Entity e : world.getChunkAt(cx, cz).getEntities()) {
-                    ManorEntityClass c = classify(e);
-                    if (c == null) {
+                    if (e instanceof Item) {
+                        droppedItems++;
                         continue;
                     }
+                    ManorEntityClass c = classify(e);
+                    if (c == null) continue;
                     switch (c) {
                         case ANIMAL -> animals++;
                         case HOSTILE -> hostiles++;
@@ -96,9 +108,17 @@ public final class ManorEntityCensus {
                         case VEHICLE -> vehicles++;
                     }
                 }
+                // 方块实体计数（箱子/熔炉/漏斗/告示牌等）
+                for (BlockState state : world.getChunkAt(cx, cz).getTileEntities()) {
+                    if (state instanceof Container) {
+                        tileEntities++; // 带库存的方块实体
+                    } else {
+                        tileEntities++; // 其它方块实体（告示牌/刷怪笼等）
+                    }
+                }
             }
         }
-        return new Census(animals, hostiles, other, vehicles);
+        return new Census(animals, hostiles, other, vehicles, tileEntities, droppedItems);
     }
 
     /**
