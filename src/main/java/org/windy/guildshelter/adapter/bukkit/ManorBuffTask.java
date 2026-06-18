@@ -29,6 +29,7 @@ public final class ManorBuffTask extends BukkitRunnable {
     @Override
     public void run() {
         for (Player p : Bukkit.getOnlinePlayers()) {
+            if (!FakePlayerFilter.isRealPlayer(p)) continue; // 跳过模组假人
             Manor m = lookup.at(p.getWorld(),
                     p.getLocation().getBlockX(), p.getLocation().getBlockZ()).orElse(null);
 

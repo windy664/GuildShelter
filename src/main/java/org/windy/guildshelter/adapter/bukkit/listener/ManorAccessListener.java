@@ -7,6 +7,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.windy.guildshelter.adapter.bukkit.FakePlayerFilter;
 import org.windy.guildshelter.adapter.bukkit.ManorLookup;
 import org.windy.guildshelter.adapter.bukkit.ManorRoles;
 import org.windy.guildshelter.adapter.bukkit.Messages;
@@ -83,9 +84,8 @@ public final class ManorAccessListener implements Listener {
 
     @EventHandler
     public void onMove(PlayerMoveEvent event) {
-        if (event.getTo() == null) {
-            return;
-        }
+        if (event.getTo() == null) return;
+        if (!FakePlayerFilter.isRealPlayer(event.getPlayer())) return; // 跳过模组假人
         int cx = event.getTo().getBlockX() >> 4;
         int cz = event.getTo().getBlockZ() >> 4;
         Player player = event.getPlayer();

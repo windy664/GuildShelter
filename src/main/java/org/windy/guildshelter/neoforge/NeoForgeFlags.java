@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MobCategory;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -44,7 +45,7 @@ public final class NeoForgeFlags {
     public void onDamage(LivingIncomingDamageEvent event) {
         LivingEntity victim = event.getEntity();
         BlockPos pos = victim.blockPosition();
-        boolean victimIsPlayer = victim instanceof Player;
+        boolean victimIsPlayer = victim instanceof ServerPlayer; // 只认真实玩家，排除模组假人
 
         if (victimIsPlayer && flagOn(victim.level(), pos, Flag.INVINCIBLE)) {
             event.setCanceled(true);
@@ -54,17 +55,17 @@ public final class NeoForgeFlags {
         Entity rawAttacker = event.getSource().getEntity();
         Entity attacker = resolveShooter(rawAttacker);
         if (victimIsPlayer) {
-            if (attacker instanceof Player && attacker != victim) {
+            if (attacker instanceof ServerPlayer && attacker != victim) {
                 if (denied(victim.level(), pos, Flag.PVP)) {
                     event.setCanceled(true);
                 }
-            } else if (attacker instanceof LivingEntity && !(attacker instanceof Player)) {
+            } else if (attacker instanceof LivingEntity && !(attacker instanceof ServerPlayer)) {
                 // 怪打玩家：pve 总开关 + pve-monster 细分
                 if (denied(victim.level(), pos, Flag.PVE) || denied(victim.level(), pos, Flag.PVE_MONSTER)) {
                     event.setCanceled(true);
                 }
             }
-        } else if (attacker instanceof Player) {
+        } else if (attacker instanceof ServerPlayer) {
             // 玩家打怪：pve 总开关 + pve-player 细分
             if (denied(victim.level(), pos, Flag.PVE) || denied(victim.level(), pos, Flag.PVE_PLAYER)) {
                 event.setCanceled(true);

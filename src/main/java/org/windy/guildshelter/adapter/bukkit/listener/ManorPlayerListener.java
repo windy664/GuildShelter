@@ -47,6 +47,7 @@ public final class ManorPlayerListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onDrop(PlayerDropItemEvent event) {
+        if (!org.windy.guildshelter.adapter.bukkit.FakePlayerFilter.isRealPlayer(event.getPlayer())) return;
         if (flagOff(event.getPlayer().getLocation(), Flag.ITEM_DROP)) {
             event.setCancelled(true);
         }
@@ -65,8 +66,7 @@ public final class ManorPlayerListener implements Listener {
      */
     @EventHandler(priority = EventPriority.LOW)
     public void onRespawn(PlayerRespawnEvent event) {
-        // 用死亡位置查地皮（重生时 getLocation 可能已变，但 getRespawnLocation 可能还没设）
-        // 优先用玩家的 bed spawn 位置判断是否在公会世界
+        if (!org.windy.guildshelter.adapter.bukkit.FakePlayerFilter.isRealPlayer(event.getPlayer())) return;
         org.bukkit.World world = event.getPlayer().getWorld();
         // 如果有自定义重生点（床），不覆盖
         if (event.isBedSpawn() || event.isAnchorSpawn()) {

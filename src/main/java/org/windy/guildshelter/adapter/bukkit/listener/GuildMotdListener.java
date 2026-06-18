@@ -34,6 +34,7 @@ public final class GuildMotdListener implements Listener {
     @EventHandler
     public void onWorldChange(PlayerChangedWorldEvent event) {
         Player player = event.getPlayer();
+        if (!org.windy.guildshelter.adapter.bukkit.FakePlayerFilter.isRealPlayer(player)) return;
         GuildWorld gw = registry.get(player.getWorld().getName());
         if (gw == null) return; // 不是公会世界
 

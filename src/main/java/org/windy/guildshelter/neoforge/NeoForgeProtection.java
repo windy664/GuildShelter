@@ -126,7 +126,7 @@ public final class NeoForgeProtection {
 
     /** 非玩家/无坐标 → null；真实在线玩家 → 对应 Bukkit Player（不碰 CraftBukkit 内部类）。 */
     private static org.bukkit.entity.Player bukkitPlayer(Entity entity, BlockPos pos) {
-        if (!(entity instanceof net.minecraft.world.entity.player.Player) || pos == null) {
+        if (!(entity instanceof net.minecraft.server.level.ServerPlayer) || pos == null) {
             return null;
         }
         UUID uuid = entity.getUUID();

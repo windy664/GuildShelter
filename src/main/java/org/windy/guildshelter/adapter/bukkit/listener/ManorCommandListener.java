@@ -33,6 +33,7 @@ public final class ManorCommandListener implements Listener {
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onCommand(PlayerCommandPreprocessEvent event) {
         Player player = event.getPlayer();
+        if (!org.windy.guildshelter.adapter.bukkit.FakePlayerFilter.isRealPlayer(player)) return;
         if (player.isOp() || Permissions.hasAdminPerm(player, Permissions.ADMIN)) {
             return; // admin 不受限制
         }

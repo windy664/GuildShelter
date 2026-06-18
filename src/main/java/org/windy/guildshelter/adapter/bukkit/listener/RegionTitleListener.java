@@ -42,9 +42,8 @@ public final class RegionTitleListener implements Listener {
 
     @EventHandler
     public void onMove(PlayerMoveEvent event) {
-        if (event.getTo() == null) {
-            return;
-        }
+        if (event.getTo() == null) return;
+        if (!org.windy.guildshelter.adapter.bukkit.FakePlayerFilter.isRealPlayer(event.getPlayer())) return;
         int cx = event.getTo().getBlockX() >> 4;
         int cz = event.getTo().getBlockZ() >> 4;
         Player player = event.getPlayer();
