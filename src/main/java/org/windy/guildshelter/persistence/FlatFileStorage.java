@@ -157,10 +157,14 @@ public final class FlatFileStorage implements Storage {
     // ---- manor (+ 共建人内联为最后一列, 逗号分隔) ----
     static final class FileManorRepo implements ManorRepository {
         private final Path file;
+        private final Path dir; // 数据目录（评分/模板等附属文件放这里）
         private final Map<String, Manor> bySlot = new LinkedHashMap<>();
 
         FileManorRepo(Path file) {
             this.file = file;
+            this.dir = file.getParent();
+            this.ratingsFile = dir.resolve("ratings.tsv");
+            loadRatings(); // 启动时加载评分
             for (String line : readLines(file)) {
                 if (line.isBlank()) {
                     continue;
@@ -282,21 +286,53 @@ public final class FlatFileStorage implements Storage {
         }
 
         @Override
+        public void incrementVisitBy(GuildId guild, int slot, int count) {
+            if (count <= 0) return;
+            visits.merge(rateKey(guild, slot), count, Integer::sum);
+        }
+
+        @Override
         public int getVisitCount(GuildId guild, int slot) {
             return visits.getOrDefault(rateKey(guild, slot), 0);
         }
 
-        // ===== 评分/留言/合并：平铺文件版用内存存储（重启丢失，原型够用）=====
+        // ===== 评分：文件持久化 =====
         private final Map<String, Map<String, Integer>> ratings = new LinkedHashMap<>();
+        private final Path ratingsFile;
         private final List<CommentEntry> comments = new ArrayList<>();
         private final Map<String, Map<Integer, Integer>> merges = new LinkedHashMap<>(); // guild → absorbed→primary
 
         private static String rateKey(GuildId g, int slot) { return g.value() + "#" + slot; }
 
+        /** 从文件加载评分数据。 */
+        private void loadRatings() {
+            if (!Files.exists(ratingsFile)) return;
+            for (String line : readLines(ratingsFile)) {
+                if (line.isBlank()) continue;
+                String[] f = line.split("\t", -1);
+                if (f.length >= 3) {
+                    ratings.computeIfAbsent(f[0], k -> new LinkedHashMap<>())
+                           .put(f[1], Integer.parseInt(f[2]));
+                }
+            }
+        }
+
+        /** 持久化评分到文件。 */
+        private void persistRatings() {
+            List<String> lines = new ArrayList<>();
+            for (var entry : ratings.entrySet()) {
+                for (var score : entry.getValue().entrySet()) {
+                    lines.add(entry.getKey() + "\t" + score.getKey() + "\t" + score.getValue());
+                }
+            }
+            writeLines(ratingsFile, lines);
+        }
+
         @Override
         public void rate(GuildId guild, int slot, PlayerRef rater, int score) {
             ratings.computeIfAbsent(rateKey(guild, slot), k -> new LinkedHashMap<>())
                     .put(rater.uuid().toString(), score);
+            persistRatings(); // 每次评分后落盘
         }
 
         @Override
@@ -379,6 +415,16 @@ public final class FlatFileStorage implements Storage {
                     .filter(e -> e.getValue() == primarySlot)
                     .map(Map.Entry::getKey)
                     .toList();
+        }
+
+        @Override
+        public java.util.List<MergeEntry> getAllMerges(GuildId guild) {
+            java.util.List<MergeEntry> result = new java.util.ArrayList<>();
+            Map<Integer, Integer> m = merges.get(guild.value());
+            if (m != null) {
+                m.forEach((absorbed, primary) -> result.add(new MergeEntry(primary, absorbed)));
+            }
+            return result;
         }
 
         @Override

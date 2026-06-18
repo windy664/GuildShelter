@@ -29,21 +29,16 @@ public final class MergeRegistry {
     }
 
     /**
-     * 启动时调用：从 DB 全量加载某公会的 merge 数据到内存。
-     * 对每个已知 primary slot 读取其 absorbed 列表。
+     * 启动时调用：从 DB 一次性全量加载某公会的 merge 数据到内存（单条 SQL，非 N+1）。
      */
     public void load(GuildId guild, List<Integer> allSlots) {
         Map<Integer, Integer> a2p = new ConcurrentHashMap<>();
         Map<Integer, Set<Integer>> p2a = new ConcurrentHashMap<>();
-        for (int slot : allSlots) {
-            List<Integer> absorbed = manors.getMergedSlots(guild, slot);
-            if (!absorbed.isEmpty()) {
-                p2a.put(slot, ConcurrentHashMap.newKeySet());
-                for (int a : absorbed) {
-                    a2p.put(a, slot);
-                    p2a.get(slot).add(a);
-                }
-            }
+        // 单条 SQL 取全量合并记录，避免每个 slot 一次查询
+        for (var entry : manors.getAllMerges(guild)) {
+            a2p.put(entry.absorbedSlot(), entry.primarySlot());
+            p2a.computeIfAbsent(entry.primarySlot(), k -> ConcurrentHashMap.newKeySet())
+               .add(entry.absorbedSlot());
         }
         absorbedToPrimary.put(guild.value(), a2p);
         primaryToAbsorbed.put(guild.value(), p2a);

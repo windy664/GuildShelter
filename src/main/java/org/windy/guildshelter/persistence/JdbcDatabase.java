@@ -32,7 +32,9 @@ public final class JdbcDatabase implements AutoCloseable {
         if (connectionInitSql != null && !connectionInitSql.isBlank()) {
             cfg.setConnectionInitSql(connectionInitSql);
         }
-        cfg.setMaximumPoolSize(8);
+        // SQLite 是单写者数据库，连接多反而增加锁竞争；MySQL 可以多连接。
+        boolean isSqlite = jdbcUrl != null && jdbcUrl.startsWith("jdbc:sqlite:");
+        cfg.setMaximumPoolSize(isSqlite ? 2 : 8);
         cfg.setPoolName("GuildShelter-DB");
         this.dataSource = new HikariDataSource(cfg);
         init(dialect);

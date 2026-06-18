@@ -25,7 +25,13 @@ import java.util.Map;
  */
 public final class ManorEntityCensus {
 
+    private static final long CENSUS_TTL_MS = 3000; // 3 秒缓存
+
     private final GuildWorldRegistry registry;
+    /** "guildId:slot" → (Census, timestamp) 缓存。 */
+    private final java.util.Map<String, CensusEntry> censusCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private record CensusEntry(Census census, long timestamp) {}
 
     public ManorEntityCensus(GuildWorldRegistry registry) {
         this.registry = registry;
@@ -50,7 +56,20 @@ public final class ManorEntityCensus {
         }
     }
 
-    /** 实时统计该地皮当前实占范围内、已加载 chunk 中的各类实体。 */
+    /** 带 3 秒 TTL 缓存的实体计数。高频刷怪时避免每次全量扫描。 */
+    public Census countAtCached(World world, Manor manor) {
+        String key = manor.guild().value() + ":" + manor.slot();
+        long now = System.currentTimeMillis();
+        CensusEntry entry = censusCache.get(key);
+        if (entry != null && now - entry.timestamp < CENSUS_TTL_MS) {
+            return entry.census;
+        }
+        Census c = countAt(world, manor);
+        censusCache.put(key, new CensusEntry(c, now));
+        return c;
+    }
+
+    /** 实时统计该地皮当前实占范围内、已加载 chunk 中的各类实体（无缓存）。 */
     public Census countAt(World world, Manor manor) {
         GuildWorld gw = registry.get(world.getName());
         if (gw == null) {
@@ -93,7 +112,7 @@ public final class ManorEntityCensus {
         if (own < 0 && mob < 0) {
             return false; // 没设相关 cap，免扫描
         }
-        Census c = countAt(world, manor);
+        Census c = countAtCached(world, manor);
         if (own >= 0 && c.count(cls) >= own) {
             return true;
         }

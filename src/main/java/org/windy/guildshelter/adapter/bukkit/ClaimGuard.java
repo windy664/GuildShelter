@@ -8,44 +8,51 @@ import org.windy.guildshelter.domain.model.GuildId;
 import org.windy.guildshelter.domain.model.GuildWorld;
 import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
-import org.windy.guildshelter.domain.port.ManorRepository;
 import org.windy.guildshelter.domain.rule.PermissionRules;
 
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.IntFunction;
 
 /**
- * 平台中立的领地保护判定（Bukkit 与 NeoForge 两侧监听器共用），把 {@link PermissionRules} 接到
- * 实际世界/玩家/坐标上。只依赖 Bukkit API（混合端也有），不碰 NeoForge，故可被两侧引用。
+ * 平台中立的领地保护判定（Bukkit 与 NeoForge 两侧监听器共用）。
  *
- * <p>会员判定走自包含口径——"在本公会拥有地皮 = 成员"；admin 细粒度权限按区域类型分流
- * （{@code admin.build.other} 在别人地皮、{@code admin.build.road} 在道路），
- * 持有 {@code guildshelter.admin} 总节点 = 全通（向后兼容）。
+ * <p>性能优化：所有 DB 查询已下沉到 {@link ManorLookup}（它内部用 {@link ManorRepository#findBySlot}
+ * 查一次，结果由调用方缓存）。本类不再独立查库——{@link #allowed} 收到的 {@link Manor} 就是
+ * ManorLookup.at() 的结果，直接复用，零额外 SQL。
+ *
+ * <p>会员判定走内存缓存 {@link GuildMemberCache}（启动时加载，入会/退会同步更新），
+ * 避免每次事件都 SELECT。
  */
 public final class ClaimGuard {
 
     private static final long DENY_MSG_COOLDOWN_MS = 3000;
 
     private final GuildWorldRegistry registry;
-    private final ManorRepository manors;
     private final PermissionRules rules;
     private final WorldCache cache;
     private final SupervisorCache supervisorCache;
+    private final GuildMemberCache memberCache;
 
     private final Map<UUID, Long> lastDenyMsg = new ConcurrentHashMap<>();
 
-    public ClaimGuard(GuildWorldRegistry registry, ManorRepository manors,
-                      PermissionRules rules, WorldCache cache, SupervisorCache supervisorCache) {
+    public ClaimGuard(GuildWorldRegistry registry, PermissionRules rules,
+                      WorldCache cache, SupervisorCache supervisorCache, GuildMemberCache memberCache) {
         this.registry = registry;
-        this.manors = manors;
         this.rules = rules;
         this.cache = cache;
         this.supervisorCache = supervisorCache;
+        this.memberCache = memberCache;
     }
 
-    /** 该玩家能否改动其所在世界 (blockX,blockZ) 处的方块。非公会世界一律放行。 */
+    /**
+     * 该玩家能否改动其所在世界 (blockX,blockZ) 处的方块。非公会世界一律放行。
+     *
+     * <p>性能：manorBySlot 走 WorldCache.manorAt（2 秒 TTL），memberCache 走内存 O(1)。
+     * 正常情况下 0 次 DB 查询（缓存命中时）。
+     */
     public boolean allowed(Player player, int blockX, int blockZ) {
         GuildWorld gw = registry.get(player.getWorld().getName());
         if (gw == null) {
@@ -55,8 +62,9 @@ public final class ClaimGuard {
         int lz = (blockZ >> 4) - gw.originChunkZ();
         GuildId guild = gw.guild();
         PlayerRef ref = cache.playerRef(player.getUniqueId());
-        boolean inGuild = manors.findByOwner(guild, ref).isPresent();
-        IntFunction<Manor> bySlot = slot -> manors.findBySlot(guild, slot).orElse(null);
+        boolean inGuild = memberCache.isMember(guild, player.getUniqueId());
+        // manorBySlot：走 WorldCache 短 TTL 缓存，避免每次事件查库
+        java.util.function.IntFunction<Manor> manorBySlot = slot -> cache.manorAt(gw, slot);
         LayoutCalculator layout = cache.layout(gw.layout()); // 缓存命中 O(1)
 
         // 合并感知：先用原始 classify，如果是 ROAD 且有合并数据再查缓存
@@ -68,7 +76,7 @@ public final class ClaimGuard {
 
         if (effective.type() == RegionType.PLOT) {
             // 合并后的路 或 原始地皮：按地皮权限判定（用缓存的 supervisorOnline）
-            Manor m = bySlot.apply(effective.slot());
+            Manor m = manorBySlot.apply(effective.slot());
             if (m != null && ManorRoles.effectiveBuildCached(m, ref, supervisorCache)) {
                 // 检查是否在实占范围内（合并后的路 chunk 视为在范围内）
                 if (raw.type() == RegionType.ROAD || layout.activeRegion(effective.slot(), m.level()).containsChunk(lx, lz)) {
@@ -76,8 +84,8 @@ public final class ClaimGuard {
                 }
             }
         } else {
-            // 非合并的原始判定
-            if (rules.canModify(layout, ref, inGuild, bySlot, lx, lz,
+            // 非合并的原始判定：主城(member可建) / 道路(不可建)
+            if (rules.canModify(layout, ref, inGuild, manorBySlot, lx, lz,
                     (m, p) -> ManorRoles.effectiveBuildCached(m, p, supervisorCache))) {
                 return true;
             }

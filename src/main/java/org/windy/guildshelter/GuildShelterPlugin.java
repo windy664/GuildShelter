@@ -18,9 +18,11 @@ import org.windy.guildshelter.adapter.bukkit.gui.VanillaGuiListener;
 import org.windy.guildshelter.adapter.bukkit.gui.VanillaGuiProvider;
 import org.windy.guildshelter.adapter.bukkit.gui.YamlGuiLoader;
 import org.windy.guildshelter.adapter.bukkit.InteractionPolicy;
+import org.windy.guildshelter.adapter.bukkit.GuildMemberCache;
 import org.windy.guildshelter.adapter.bukkit.ManorBuffTask;
 import org.windy.guildshelter.adapter.bukkit.ManorEntityCensus;
 import org.windy.guildshelter.adapter.bukkit.ManorLookup;
+import org.windy.guildshelter.adapter.bukkit.VisitCounter;
 import org.windy.guildshelter.adapter.bukkit.MergeRegistry;
 import org.windy.guildshelter.adapter.bukkit.VaultEconomy;
 import org.windy.guildshelter.adapter.bukkit.command.GsCommand;
@@ -185,9 +187,13 @@ public final class GuildShelterPlugin extends JavaPlugin {
             mergeRegistry.load(gw.guild(), slots);
         }
 
-        // 性能缓存：LayoutCalculator/PlayerRef/MergeAwareClassifier/supervisorOnline
+        // 性能缓存：LayoutCalculator/PlayerRef/MergeAwareClassifier/supervisorOnline/Manor
         this.worldCache = new WorldCache(this.mergeRegistry);
+        this.worldCache.setManorRepository(manors); // Manor 短 TTL 缓存
         this.supervisorCache = new SupervisorCache();
+        // 公会成员内存缓存（避免 ClaimGuard 每次事件查库）
+        GuildMemberCache memberCache = new GuildMemberCache(manors, guilds.findAll());
+        service.setMembershipListener(memberCache); // 入会/退会/解散时同步缓存
 
         GsCommand command = new GsCommand(worldManager, guilds, manors, service, registry,
                 config.levels(), entityCensus, this.mergeRegistry, proxyChannel, config.serverName(), getLogger());
@@ -209,7 +215,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
         // 领地保护：判定逻辑抽到平台中立的 ClaimGuard，Bukkit/NeoForge 两侧共用。
         // 只在开启时构造 guard——关闭时 protectionGuard() 为 null，NeoForge 端也随之放行（开关两端通吃）。
         if (getConfig().getBoolean("protection", true)) {
-            this.claimGuard = new ClaimGuard(registry, manors, new PermissionRules(), this.worldCache, this.supervisorCache);
+            this.claimGuard = new ClaimGuard(registry, new PermissionRules(), this.worldCache, this.supervisorCache, memberCache);
             // ManorLookup/InteractionPolicy 先建好：保护监听器(交互放宽)与 NeoForge 侧都要用。
             ManorLookup lookup = new ManorLookup(registry, manors, this.worldCache);
             this.manorLookup = lookup; // 供 NeoForge flag 后端(混合端)惰性取用
@@ -243,7 +249,12 @@ public final class GuildShelterPlugin extends JavaPlugin {
             getServer().getPluginManager().registerEvents(new ManorCapListener(lookup, entityCensus), this);
             // 访问类(B)与个人增益(C)是玩家行为,Youer 上 Bukkit 全覆盖,始终走 Bukkit。
             EconomyPort economy = VaultEconomy.tryCreate(getLogger());
-            ManorAccessListener accessListener = new ManorAccessListener(lookup, economy, manors, this.worldCache);
+            // 访问计数：内存缓冲，每 60 秒批量刷盘
+            VisitCounter visitCounter = new VisitCounter(manors, getLogger());
+            new org.bukkit.scheduler.BukkitRunnable() {
+                @Override public void run() { visitCounter.flush(); }
+            }.runTaskTimer(this, 60L * 20, 60L * 20); // 60 秒
+            ManorAccessListener accessListener = new ManorAccessListener(lookup, economy, visitCounter, this.worldCache);
             getServer().getPluginManager().registerEvents(accessListener, this);
             command.setAccessListener(accessListener); // toggle titles 需要
             // 命令拦截(blocked-cmds flag):始终走 Bukkit(PlayerCommandPreprocessEvent 是 Bukkit API)。
@@ -254,7 +265,10 @@ public final class GuildShelterPlugin extends JavaPlugin {
                 public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
                     UUID id = event.getPlayer().getUniqueId();
                     claimGuard.onPlayerQuit(id);
-                    // SupervisorCache 不需要按玩家清理（按庄园缓存），但 ClaimGuard 需要
+                    // 玩家下线可能影响 MEMBER 的"上级在线"门控——清除相关缓存。
+                    supervisorCache.clearAll();
+                    // PlayerRef 缓存清理（不可变 record，重建成本极低，防长期泄漏）
+                    worldCache.removePlayerRef(id);
                 }
             }, this);
             new ManorBuffTask(lookup).runTaskTimer(this, 20L, 20L);

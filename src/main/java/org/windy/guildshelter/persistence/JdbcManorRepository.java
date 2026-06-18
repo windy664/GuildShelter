@@ -255,6 +255,34 @@ public final class JdbcManorRepository implements ManorRepository {
     }
 
     @Override
+    public void incrementVisitBy(GuildId guild, int slot, int count) {
+        if (count <= 0) return;
+        // 先尝试 UPDATE，如果不存在则 INSERT
+        String updateSql = "UPDATE manor_visit SET visit_count = visit_count + ? WHERE guild_id=? AND slot=?";
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(updateSql)) {
+            ps.setInt(1, count);
+            ps.setString(2, guild.value());
+            ps.setInt(3, slot);
+            int rows = ps.executeUpdate();
+            if (rows == 0) {
+                // 不存在，插入初始值
+                String insertSql = dialect instanceof SqliteDialect
+                        ? "INSERT INTO manor_visit(guild_id,slot,visit_count) VALUES(?,?,?) ON CONFLICT(guild_id,slot) DO UPDATE SET visit_count=visit_count+?"
+                        : "INSERT INTO manor_visit(guild_id,slot,visit_count) VALUES(?,?,?) ON DUPLICATE KEY UPDATE visit_count=visit_count+?";
+                try (PreparedStatement ins = c.prepareStatement(insertSql)) {
+                    ins.setString(1, guild.value());
+                    ins.setInt(2, slot);
+                    ins.setInt(3, count);
+                    ins.setInt(4, count);
+                    ins.executeUpdate();
+                }
+            }
+        } catch (SQLException e) {
+            throw new PersistenceException("批量记录访问失败", e);
+        }
+    }
+
+    @Override
     public int getVisitCount(GuildId guild, int slot) {
         try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
                 "SELECT visit_count FROM manor_visit WHERE guild_id=? AND slot=?")) {
@@ -458,6 +486,23 @@ public final class JdbcManorRepository implements ManorRepository {
             return result;
         } catch (SQLException e) {
             throw new PersistenceException("查询合并 slot 失败", e);
+        }
+    }
+
+    @Override
+    public java.util.List<MergeEntry> getAllMerges(GuildId guild) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT primary_slot, absorbed_slot FROM manor_merge WHERE guild_id=?")) {
+            ps.setString(1, guild.value());
+            java.util.List<MergeEntry> result = new java.util.ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.add(new MergeEntry(rs.getInt("primary_slot"), rs.getInt("absorbed_slot")));
+                }
+            }
+            return result;
+        } catch (SQLException e) {
+            throw new PersistenceException("查询全部合并记录失败", e);
         }
     }
 

@@ -14,6 +14,7 @@ import org.windy.guildshelter.domain.port.ManorRepository;
 import org.windy.guildshelter.domain.port.TerrainPreparer;
 import org.windy.guildshelter.domain.port.WorldControl;
 import org.windy.guildshelter.domain.rule.LevelRules;
+import org.windy.guildshelter.domain.port.MembershipChangeListener;
 
 import java.util.Optional;
 
@@ -33,6 +34,7 @@ public final class GuildService {
     private final LayoutConfig currentLayout;
     private final LevelRules levels;
     private final TerrainPrepMode prepMode;
+    private volatile MembershipChangeListener membershipListener; // 可选，延迟注入
 
     public GuildService(GuildRepository guilds, ManorRepository manors, WorldControl worlds,
                         TerrainPreparer terrain, LayoutConfig currentLayout, LevelRules levels,
@@ -44,6 +46,11 @@ public final class GuildService {
         this.currentLayout = currentLayout;
         this.levels = levels;
         this.prepMode = prepMode;
+    }
+
+    /** 注册成员变更回调（Bukkit 适配层注入，供缓存同步用）。 */
+    public void setMembershipListener(MembershipChangeListener listener) {
+        this.membershipListener = listener;
     }
 
     /** 建会：创建（或返回已有的）公会世界，按<b>当前 config</b> 冻结其布局参数。 */
@@ -101,6 +108,8 @@ public final class GuildService {
         }
 
         prepareManorTerrain(gw, manor);
+        MembershipChangeListener l = membershipListener;
+        if (l != null) l.onMemberAssigned(guild, player.uuid());
         return manor;
     }
 
@@ -109,6 +118,8 @@ public final class GuildService {
         manors.findByOwner(guild, player).ifPresent(m -> {
             if (!Flag.KEEP.resolveBool(m.flags())) {
                 manors.delete(guild, m.slot());
+                MembershipChangeListener l = membershipListener;
+                if (l != null) l.onMemberReleased(guild, player.uuid());
             }
         });
     }
@@ -118,6 +129,8 @@ public final class GuildService {
         manors.findByOwnerAnywhere(player).ifPresent(m -> {
             if (!Flag.KEEP.resolveBool(m.flags())) {
                 manors.delete(m.guild(), m.slot());
+                MembershipChangeListener l = membershipListener;
+                if (l != null) l.onMemberReleased(m.guild(), player.uuid());
             }
         });
     }
@@ -129,6 +142,8 @@ public final class GuildService {
         }
         worlds.unloadGuild(guild);
         guilds.delete(guild);
+        MembershipChangeListener l = membershipListener;
+        if (l != null) l.onGuildDissolved(guild);
     }
 
     /** 庄园升级：受公会等级封顶；升级后对新扩出的实占范围整地。 */

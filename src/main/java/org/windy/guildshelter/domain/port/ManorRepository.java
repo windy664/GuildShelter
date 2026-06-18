@@ -31,6 +31,9 @@ public interface ManorRepository {
     /** 地皮被访问时调用，原子 +1（不读整个 Manor，直接 UPDATE）。 */
     void incrementVisit(GuildId guild, int slot);
 
+    /** 批量增加访问次数（缓冲刷盘用，原子 +count）。 */
+    void incrementVisitBy(GuildId guild, int slot, int count);
+
     /** 获取某地皮的累计访问次数。 */
     int getVisitCount(GuildId guild, int slot);
 
@@ -75,6 +78,12 @@ public interface ManorRepository {
 
     /** 获取某主 slot 吸收的所有 slot 列表（不含自身）。 */
     List<Integer> getMergedSlots(GuildId guild, int primarySlot);
+
+    /** 获取某公会所有合并记录（一次性全量，避免 N+1 查询）。返回 primary→absorbed 列表。 */
+    java.util.List<MergeEntry> getAllMerges(GuildId guild);
+
+    /** 合并记录。 */
+    record MergeEntry(int primarySlot, int absorbedSlot) {}
 
     /** 取消合并（主 slot 的全部 absorbed）。 */
     void unmerge(GuildId guild, int primarySlot);

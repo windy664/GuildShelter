@@ -50,7 +50,9 @@ public final class NeoForgeFlags {
             event.setCanceled(true);
             return;
         }
-        Entity attacker = event.getSource().getEntity(); // causingEntity:已把弹射物解析到射手
+        // 解析攻击者：直接实体 或 弹射物→射手
+        Entity rawAttacker = event.getSource().getEntity();
+        Entity attacker = resolveShooter(rawAttacker);
         if (victimIsPlayer) {
             if (attacker instanceof Player && attacker != victim) {
                 if (denied(victim.level(), pos, Flag.PVP)) {
@@ -68,6 +70,15 @@ public final class NeoForgeFlags {
                 event.setCanceled(true);
             }
         }
+    }
+
+    /** 解析弹射物到射手：箭/三叉戟/雪球等 → getOwner()。非弹射物返回原实体。 */
+    private static Entity resolveShooter(Entity entity) {
+        if (entity instanceof net.minecraft.world.entity.projectile.Projectile proj) {
+            Entity owner = proj.getOwner();
+            return owner != null ? owner : entity;
+        }
+        return entity;
     }
 
     // ---- mob-spawn + 实体上限 caps ----

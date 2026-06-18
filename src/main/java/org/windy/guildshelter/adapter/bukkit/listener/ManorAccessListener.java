@@ -15,8 +15,8 @@ import org.windy.guildshelter.adapter.bukkit.WorldCache;
 import org.windy.guildshelter.domain.flag.Flag;
 import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
+import org.windy.guildshelter.adapter.bukkit.VisitCounter;
 import org.windy.guildshelter.domain.port.EconomyPort;
-import org.windy.guildshelter.domain.port.ManorRepository;
 
 import java.util.Map;
 import java.util.Set;
@@ -37,20 +37,22 @@ public final class ManorAccessListener implements Listener {
 
     private final ManorLookup lookup;
     private final EconomyPort economy; // null = 无 Vault，price flag 不生效
-    private final ManorRepository manors; // 访问计数用
+    private final VisitCounter visitCounter; // 访问计数（内存缓冲 + 定时刷盘）
     private final WorldCache cache;
     /** UUID → long 编码的 chunk 坐标 (cx << 32 | cz)，避免每次分配 long[]。 */
     private final Map<UUID, Long> lastChunk = new ConcurrentHashMap<>();
     private final Map<UUID, Manor> lastManor = new ConcurrentHashMap<>();
+    /** UUID → 上次所在世界名（跨世界时清理 lastManor，避免 slot 号相同误判）。 */
+    private final Map<UUID, String> lastWorld = new ConcurrentHashMap<>();
     /** 已付过入场费的玩家 → 已付费的地皮 slot+guild 组合（离开地皮时清除，下次再进要再付）。 */
     private final Map<UUID, String> paidManors = new ConcurrentHashMap<>();
     /** 个人开关：关闭 titles 的玩家集合。 */
     private final Set<UUID> titlesDisabled = ConcurrentHashMap.newKeySet();
 
-    public ManorAccessListener(ManorLookup lookup, EconomyPort economy, ManorRepository manors, WorldCache cache) {
+    public ManorAccessListener(ManorLookup lookup, EconomyPort economy, VisitCounter visitCounter, WorldCache cache) {
         this.lookup = lookup;
         this.economy = economy;
-        this.manors = manors;
+        this.visitCounter = visitCounter;
         this.cache = cache;
     }
 
@@ -74,6 +76,7 @@ public final class ManorAccessListener implements Listener {
         UUID id = event.getPlayer().getUniqueId();
         lastChunk.remove(id);
         lastManor.remove(id);
+        lastWorld.remove(id);
         paidManors.remove(id);
         titlesDisabled.remove(id);
     }
@@ -87,6 +90,17 @@ public final class ManorAccessListener implements Listener {
         int cz = event.getTo().getBlockZ() >> 4;
         Player player = event.getPlayer();
         UUID id = player.getUniqueId();
+
+        // 跨世界清理：换了世界就清空上一个地皮记录（避免 slot 号相同误判）
+        org.bukkit.World curWorld = event.getTo().getWorld();
+        Manor prevManor = lastManor.get(id);
+        if (prevManor != null && lastWorld.containsKey(id) && !lastWorld.get(id).equals(curWorld.getName())) {
+            lastChunk.remove(id);
+            lastManor.remove(id);
+            paidManors.remove(id);
+            prevManor = null;
+        }
+        lastWorld.put(id, curWorld.getName());
 
         // long 编码 chunk 坐标，避免每次分配 long[]
         long chunkKey = ((long) cx << 32) | (cz & 0xFFFFFFFFL);
@@ -138,12 +152,8 @@ public final class ManorAccessListener implements Listener {
         }
         // 进入 cur
         if (cur != null) {
-            // 访问计数：每次进入地皮 +1（异步写库，不阻塞移动事件）
-            try {
-                manors.incrementVisit(cur.guild(), cur.slot());
-            } catch (Exception ignored) {
-                // 计数失败不影响玩家体验
-            }
+            // 访问计数：内存 +1，定时批量刷盘（不阻塞移动事件）
+            visitCounter.increment(cur.guild(), cur.slot());
             // 入场费：成员/管理免付；访客每次进入收费地皮都要付
             if (!chargeEntry(player, cur, ref)) {
                 // 余额不足 → 推回
