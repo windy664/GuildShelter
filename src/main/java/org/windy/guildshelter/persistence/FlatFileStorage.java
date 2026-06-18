@@ -5,6 +5,7 @@ import org.windy.guildshelter.domain.model.GuildId;
 import org.windy.guildshelter.domain.model.GuildWorld;
 import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
+import org.windy.guildshelter.domain.model.TerrainPrepMode;
 import org.windy.guildshelter.domain.port.GuildRepository;
 import org.windy.guildshelter.domain.port.ManorRepository;
 import org.windy.guildshelter.domain.port.ManorRepository.CommentEntry;
@@ -95,12 +96,18 @@ public final class FlatFileStorage implements Storage {
                 }
                 String[] f = line.split("\t", -1);
                 GuildId g = new GuildId(f[0]);
+                TerrainPrepMode mode = TerrainPrepMode.CLEAR_VEGETATION;
+                if (f.length > 10 && !f[10].isBlank()) {
+                    try { mode = TerrainPrepMode.valueOf(f[10]); } catch (IllegalArgumentException ignored) {}
+                }
+                String serverName = f.length > 11 ? f[11] : "";
                 byId.put(g.value(), new GuildWorld(g, f[1], Long.parseLong(f[2]),
                         Integer.parseInt(f[3]), Integer.parseInt(f[4]),
                         Integer.parseInt(f[5]), Integer.parseInt(f[6]),
                         LayoutCsv.parse(f.length > 7 ? f[7] : null, fallback),
                         f.length > 8 ? Double.parseDouble(f[8]) : 0,
-                        f.length > 9 ? f[9] : ""));
+                        f.length > 9 ? f[9] : "",
+                        mode, serverName));
             }
         }
 
@@ -140,7 +147,8 @@ public final class FlatFileStorage implements Storage {
                         Integer.toString(w.originChunkX()), Integer.toString(w.originChunkZ()),
                         Integer.toString(w.guildLevel()), Integer.toString(w.allocatedSlots()),
                         LayoutCsv.toCsv(w.layout()), Double.toString(w.funds()),
-                        clean(w.bulletin())));
+                        clean(w.bulletin()), w.terrainMode().name(),
+                        clean(w.serverName())));
             }
             writeLines(file, lines);
         }
@@ -263,6 +271,19 @@ public final class FlatFileStorage implements Storage {
                 sb.append(p.uuid());
             }
             return sb.toString();
+        }
+
+        // ===== 访问统计（内存存储，重启丢失）=====
+        private final Map<String, Integer> visits = new LinkedHashMap<>();
+
+        @Override
+        public void incrementVisit(GuildId guild, int slot) {
+            visits.merge(rateKey(guild, slot), 1, Integer::sum);
+        }
+
+        @Override
+        public int getVisitCount(GuildId guild, int slot) {
+            return visits.getOrDefault(rateKey(guild, slot), 0);
         }
 
         // ===== 评分/留言/合并：平铺文件版用内存存储（重启丢失，原型够用）=====

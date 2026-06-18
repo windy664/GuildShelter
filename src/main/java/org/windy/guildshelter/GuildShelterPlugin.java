@@ -16,6 +16,7 @@ import org.windy.guildshelter.adapter.bukkit.WorldCache;
 import org.windy.guildshelter.adapter.bukkit.gui.GuiRegistry;
 import org.windy.guildshelter.adapter.bukkit.gui.VanillaGuiListener;
 import org.windy.guildshelter.adapter.bukkit.gui.VanillaGuiProvider;
+import org.windy.guildshelter.adapter.bukkit.gui.YamlGuiLoader;
 import org.windy.guildshelter.adapter.bukkit.InteractionPolicy;
 import org.windy.guildshelter.adapter.bukkit.ManorBuffTask;
 import org.windy.guildshelter.adapter.bukkit.ManorEntityCensus;
@@ -51,6 +52,7 @@ import org.windy.guildshelter.domain.port.TerrainPreparer;
 import org.windy.guildshelter.domain.rule.PermissionRules;
 import org.windy.guildshelter.neoforge.NeoForgeHooks;
 import org.windy.guildshelter.service.GuildService;
+import org.windy.guildshelter.adapter.bungee.ProxyChannel;
 import org.windy.guildshelter.persistence.Storage;
 import org.windy.guildshelter.persistence.StorageFactory;
 
@@ -77,6 +79,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
     private MergeRegistry mergeRegistry;
     private WorldCache worldCache;
     private SupervisorCache supervisorCache;
+    private YamlGuiLoader guiLoader;
 
     public static GuildShelterPlugin get() {
         return instance;
@@ -108,6 +111,11 @@ public final class GuildShelterPlugin extends JavaPlugin {
     /** 合并缓存注册表（provider 解散公会时需清理缓存）。 */
     public static MergeRegistry mergeRegistry() {
         return instance == null ? null : instance.mergeRegistry;
+    }
+
+    /** YAML GUI 加载器（从 gui.yml 读菜单定义）。 */
+    public static YamlGuiLoader guiLoader() {
+        return instance == null ? null : instance.guiLoader;
     }
 
     /** 给新分配地皮的玩家发欢迎消息。 */
@@ -146,6 +154,12 @@ public final class GuildShelterPlugin extends JavaPlugin {
         ManorRepository manors = storage.manors();
         getLogger().info("存储后端: " + config.storage().type());
 
+        // 代理跨服通道（BungeeCord / Velocity）
+        ProxyChannel proxyChannel = ProxyChannel.create(config.proxyType(), this);
+        if (proxyChannel.isAvailable()) {
+            getLogger().info("跨服代理: " + config.proxyType() + "（服务器名: " + config.serverName() + "）");
+        }
+
         this.worldManager = new WorldManager(config.levels(), getLogger());
         // 整地按载体分流：混合端用 NeoForge 原生端（高度图准、覆盖模组方块、不被 Bukkit 兼容层坑），
         // 纯 Bukkit 端用 Bukkit 实现。三元只执行一支，NeoForge 类仅在混合端被惰性加载（纯 Bukkit 永不触及）。
@@ -176,7 +190,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
         this.supervisorCache = new SupervisorCache();
 
         GsCommand command = new GsCommand(worldManager, guilds, manors, service, registry,
-                config.levels(), entityCensus, this.mergeRegistry, getLogger());
+                config.levels(), entityCensus, this.mergeRegistry, proxyChannel, config.serverName(), getLogger());
         PluginCommand gs = getCommand("gs");
         if (gs != null) {
             gs.setExecutor(command);
@@ -229,7 +243,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
             getServer().getPluginManager().registerEvents(new ManorCapListener(lookup, entityCensus), this);
             // 访问类(B)与个人增益(C)是玩家行为,Youer 上 Bukkit 全覆盖,始终走 Bukkit。
             EconomyPort economy = VaultEconomy.tryCreate(getLogger());
-            ManorAccessListener accessListener = new ManorAccessListener(lookup, economy, this.worldCache);
+            ManorAccessListener accessListener = new ManorAccessListener(lookup, economy, manors, this.worldCache);
             getServer().getPluginManager().registerEvents(accessListener, this);
             command.setAccessListener(accessListener); // toggle titles 需要
             // 命令拦截(blocked-cmds flag):始终走 Bukkit(PlayerCommandPreprocessEvent 是 Bukkit API)。
@@ -313,6 +327,8 @@ public final class GuildShelterPlugin extends JavaPlugin {
         VanillaGuiProvider vanillaGui = new VanillaGuiProvider();
         GuiRegistry guiRegistry = new GuiRegistry(vanillaGui);
         getServer().getPluginManager().registerEvents(new VanillaGuiListener(vanillaGui), this);
+        // YAML 驱动 GUI：从 gui.yml 加载菜单定义（服主可自定义）
+        this.guiLoader = new YamlGuiLoader(getDataFolder(), getLogger());
 
         // 每日维护费任务
         if (getConfig().getBoolean("upkeep.enabled", false)) {

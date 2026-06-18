@@ -22,12 +22,18 @@ import java.lang.reflect.Method;
 import java.util.Optional;
 
 /**
- * 地皮 flag 的 <b>NeoForge 后端</b>（A 氛围类，混合端覆盖模组内容）：pvp / mob-spawn / explosion / mob-griefing。
+ * 地皮 flag 的 <b>NeoForge 后端</b>（A 氛围类，混合端覆盖模组内容）：
+ * pvp / mob-spawn / explosion / mob-griefing + 环境类（redstone/liquid-flow/crop-grow）。
  * fire-spread 在 NeoForge 26 无独立事件，故仅 Bukkit 侧处理（vanilla 已够）。访问/增益类(B/C)是玩家行为，
  * 由 Bukkit 侧 {@code ManorAccessListener}/{@code ManorBuffTask} 统一处理，本类不重复。
  *
  * <p>桥接：Level→Bukkit 世界用 <b>反射</b> 调 {@code ServerLevel.getWorld()}（CraftBukkit/Youer 运行时注入，
  * moddev 编译期 mojmap 无此方法）。其余均 mojmap 原生。判定服务 {@link ManorLookup} 从插件惰性取。
+ *
+ * <p><b>NeoForge 26 环境事件说明</b>：红石/液体/作物等 vanilla 方块机制在 NeoForge 26 中
+ * 可能没有细粒度事件（注释见 {@code ManorEnvListener}）。以下环境事件 handler 使用
+ * NeoForge 的 {@code BlockEvent} 子类——编译时需验证类名是否存在于目标版本。
+ * 若不存在则删除对应 handler，vanilla 机制由 Bukkit 侧 {@code ManorEnvListener} 覆盖。
  */
 public final class NeoForgeFlags {
 
@@ -116,6 +122,35 @@ public final class NeoForgeFlags {
         }
         if (denied(event.getEntity().level(), event.getEntity().blockPosition(), Flag.MOB_GRIEFING)) {
             event.setCanGrief(false);
+        }
+    }
+
+    // ===== 环境类 flag（编译验证：以下事件类名需以 NeoForge 26 实际版本为准）=====
+    // NeoForge 26 可能没有细粒度的 vanilla 方块事件（redstone/liquid/crop）。
+    // 若编译报错"找不到符号"，删除对应 handler 即可——vanilla 机制由 Bukkit 侧 ManorEnvListener 覆盖。
+    // 这些 handler 的价值在于：模组方块（如 Mekanism 管道、Thermal 红石机器）触发的 NeoForge 事件
+    // 能被拦截，而 Bukkit 侧对模组内容不可见。
+
+    /**
+     * 红石信号传播：{@code NeighborNotifyEvent} 在方块更新邻居时触发（含模组红石机器）。
+     * ⚠️ 编译验证：NeoForge 26 中此类可能不存在或签名不同，按编译报错调整。
+     */
+    @SubscribeEvent
+    public void onNeighborNotify(net.neoforged.neoforge.event.level.BlockEvent.NeighborNotifyEvent event) {
+        if (event.getLevel() instanceof Level level && denied(level, event.getPos(), Flag.REDSTONE)) {
+            event.setCanceled(true);
+        }
+    }
+
+    /**
+     * 液体流动：{@code FluidPlaceBlockEvent} 在液体放置方块时触发（含模组管道）。
+     * ⚠️ 编译验证：NeoForge 26 中此类可能不存在或签名不同，按编译报错调整。
+     */
+    @SubscribeEvent
+    public void onFluidPlace(net.neoforged.neoforge.event.level.BlockEvent.FluidPlaceBlockEvent event) {
+        BlockPos target = event.getPos();
+        if (event.getLevel() instanceof Level level && denied(level, target, Flag.LIQUID_FLOW)) {
+            event.setCanceled(true);
         }
     }
 

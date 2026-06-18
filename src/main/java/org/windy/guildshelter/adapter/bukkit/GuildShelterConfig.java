@@ -8,7 +8,7 @@ import org.windy.guildshelter.persistence.StorageSettings;
 
 /** 把 Bukkit 的 config.yml 解析成 domain 的配置对象。 */
 public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, TerrainPrepMode terrainPrep,
-                                 StorageSettings storage) {
+                                 StorageSettings storage, String proxyType, String serverName) {
 
     public static GuildShelterConfig from(FileConfiguration cfg) {
         int plotInitial = cfg.getInt("member-plot.initial-chunks", 6);
@@ -39,14 +39,23 @@ public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, Terrain
             prep = TerrainPrepMode.CLEAR_VEGETATION;
         }
 
+        String proxyType = cfg.getString("proxy", "none").toLowerCase();
+        String serverName = cfg.getString("server-name", "");
+
+        // 跨服模式强制 MySQL
+        String storageType = cfg.getString("storage.type", "sqlite");
+        if (!proxyType.equals("none") && !storageType.equals("mysql")) {
+            storageType = "mysql";
+        }
+
         StorageSettings storage = new StorageSettings(
-                cfg.getString("storage.type", "sqlite"),
+                storageType,
                 cfg.getString("storage.mysql.host", "localhost"),
                 cfg.getInt("storage.mysql.port", 3306),
                 cfg.getString("storage.mysql.database", "guildshelter"),
                 cfg.getString("storage.mysql.user", "root"),
                 cfg.getString("storage.mysql.password", ""));
 
-        return new GuildShelterConfig(layout, levels, prep, storage);
+        return new GuildShelterConfig(layout, levels, prep, storage, proxyType, serverName);
     }
 }

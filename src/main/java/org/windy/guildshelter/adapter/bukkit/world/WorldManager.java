@@ -9,8 +9,11 @@ import org.windy.guildshelter.domain.layout.LayoutCalculator;
 import org.windy.guildshelter.domain.layout.SpiralIndex;
 import org.windy.guildshelter.domain.model.GuildId;
 import org.windy.guildshelter.domain.model.GuildWorld;
+import org.windy.guildshelter.domain.model.TerrainPrepMode;
 import org.windy.guildshelter.domain.port.WorldControl;
 import org.windy.guildshelter.domain.rule.LevelRules;
+import org.bukkit.generator.ChunkGenerator;
+import org.bukkit.generator.WorldInfo;
 
 import java.util.Locale;
 import java.util.logging.Logger;
@@ -49,15 +52,50 @@ public final class WorldManager implements WorldControl {
             applyBorderTo(existing, gw);
             return gw;
         }
-        World world = Bukkit.createWorld(new WorldCreator(gw.worldName())
+        WorldCreator creator = new WorldCreator(gw.worldName())
                 .environment(World.Environment.NORMAL)
-                .seed(gw.seed()));
+                .seed(gw.seed());
+
+        // 按地形模式选生成器
+        TerrainPrepMode mode = gw.terrainMode();
+        if (mode == TerrainPrepMode.VOID) {
+            creator.generator(new VoidChunkGenerator());
+            logger.info("[GuildShelter] 创建虚空世界: " + gw.worldName());
+        } else if (mode == TerrainPrepMode.FLAT) {
+            // 超平坦：基岩+泥土x2+草方块，与 SelfHomeMain 的默认 NormalType=2 一致
+            creator.generatorSettings("minecraft:bedrock,2*minecraft:dirt,minecraft:grass_block;minecraft:plains");
+            logger.info("[GuildShelter] 创建超平坦世界: " + gw.worldName());
+        }
+
+        World world = Bukkit.createWorld(creator);
         if (world == null) {
             throw new IllegalStateException("创建公会世界失败: " + gw.worldName());
         }
-        int[] origin = anchorOnLand(world, new LayoutCalculator(gw.layout()));
+
+        // VOID/FLAT 模式不需要锚定陆地（世界已可控），直接用原点
+        int[] origin;
+        if (mode == TerrainPrepMode.VOID) {
+            origin = new int[]{0, 0};
+            // 虚空世界：在主城位置铺一层草方块作为出生平台
+            LayoutCalculator layout = new LayoutCalculator(gw.layout());
+            int sx = layout.spawnBlockX();
+            int sz = layout.spawnBlockZ();
+            int platformSize = 8; // 8x8 出生平台
+            for (int x = sx - platformSize; x <= sx + platformSize; x++) {
+                for (int z = sz - platformSize; z <= sz + platformSize; z++) {
+                    world.getBlockAt(x, 63, z).setType(org.bukkit.Material.GRASS_BLOCK, false);
+                }
+            }
+            world.setSpawnLocation(new Location(world, sx + 0.5, 64, sz + 0.5));
+        } else if (mode == TerrainPrepMode.FLAT) {
+            origin = new int[]{0, 0};
+            world.setSpawnLocation(new Location(world, 0.5, 4, 0.5));
+        } else {
+            origin = anchorOnLand(world, new LayoutCalculator(gw.layout()));
+            world.setSpawnLocation(safeSpawn(world, gw.withOrigin(origin[0], origin[1])));
+        }
+
         GuildWorld anchored = gw.withOrigin(origin[0], origin[1]);
-        world.setSpawnLocation(safeSpawn(world, anchored));
         applyBorderTo(world, anchored);
         return anchored;
     }
@@ -116,6 +154,24 @@ public final class WorldManager implements WorldControl {
         // 边界圈住 max(已分配, 当前等级名额容量) 个 slot：升级放开更多名额时即可见到预留的空地。
         int reserved = Math.max(gw.allocatedSlots(), levels.maxMembers(gw.guildLevel()));
         border.setSize(layout.borderSizeBlocks(reserved));
+    }
+
+    /** 虚空生成器：所有 chunk 为空气，用于 VOID 地形模式。 */
+    private static final class VoidChunkGenerator extends ChunkGenerator {
+        @Override
+        public boolean shouldGenerateNoise() { return false; }
+        @Override
+        public boolean shouldGenerateSurface() { return false; }
+        @Override
+        public boolean shouldGenerateBedrock() { return false; }
+        @Override
+        public boolean shouldGenerateCaves() { return false; }
+        @Override
+        public boolean shouldGenerateDecorations() { return false; }
+        @Override
+        public boolean shouldGenerateMobs() { return false; }
+        @Override
+        public boolean shouldGenerateStructures() { return false; }
     }
 
     @Override

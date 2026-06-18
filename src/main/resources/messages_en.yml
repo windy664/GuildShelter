@@ -61,6 +61,7 @@ error:
   not_guild_world_target: "§e%s is not in your guild world."
   is_member_cannot_kick: "§e%s is a plot member, can't kick. Use /gs deny to blacklist."
   export_failed: "§cExport failed: %s"
+  unknown_terrain: "§cUnknown terrain type: %s (options: NONE, CLEAR_VEGETATION, FLATTEN, VOID, FLAT)"
   template_not_exist: "§cTemplate '%s' doesn't exist."
   template_already_exist: "§eTemplate '%s' already exists."
   sub_not_exist: "§cSub-territory '%s' doesn't exist."
@@ -158,6 +159,7 @@ success:
   titles_off: "§eTitles disabled (chat instead)."
   comment_added: "§aCommented on plot #%s."
   welcome: "§6==== Welcome to Guild Camp ====\n§7You've been assigned to §f%s §7plot §f#%s\n§7Type §e/gs home §7to teleport\n§7Type §e/gs help §7for all commands"
+  cross_server: "§aTeleporting to server §f%s §a..."
 
 info:
   no_guilds: "§eNo guild camps yet."
@@ -212,6 +214,7 @@ info:
   card_price: "§6│ §7Entry fee: §e%s"
   card_footer: "§6│"
   card_score: "§6│ §7Active flags: §f%s"
+  card_visits: "§6│ §7Visits: §e%s"
   card_score_line: "§6│ §eScore: §a§l%s §7pts"
   card_bottom: "§6└─────────────────────────"
   done_status: "§a✔ Done"
@@ -253,7 +256,7 @@ usage:
   sub_setflag: "Usage: /gs sub setflag <sub-name> <flag> <value>"
   toggle: "Usage: /gs toggle titles"
   admin: "Usage: /gs admin <create|tp|claim|fill|map|upgrade-manor|upgrade-guild|delete|worlds|whereami|reload|setowner|purge|regen|export> [guild]"
-  admin_create: "Usage: /gs admin create <guild>"
+  admin_create: "Usage: /gs admin create <guild> [terrain: NONE|CLEAR_VEGETATION|FLATTEN|VOID|FLAT]"
   admin_tp: "Usage: /gs admin tp <guild>"
   admin_claim: "Usage: /gs admin claim <guild>"
   admin_fill: "Usage: /gs admin fill <guild> <count>"

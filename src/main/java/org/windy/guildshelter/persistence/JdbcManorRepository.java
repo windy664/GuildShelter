@@ -238,6 +238,36 @@ public final class JdbcManorRepository implements ManorRepository {
         return out;
     }
 
+    // ===== 访问统计 =====
+
+    @Override
+    public void incrementVisit(GuildId guild, int slot) {
+        String sql = dialect instanceof SqliteDialect
+                ? "INSERT INTO manor_visit(guild_id,slot,visit_count) VALUES(?,?,1) ON CONFLICT(guild_id,slot) DO UPDATE SET visit_count=visit_count+1"
+                : "INSERT INTO manor_visit(guild_id,slot,visit_count) VALUES(?,?,1) ON DUPLICATE KEY UPDATE visit_count=visit_count+1";
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new PersistenceException("记录访问失败", e);
+        }
+    }
+
+    @Override
+    public int getVisitCount(GuildId guild, int slot) {
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT visit_count FROM manor_visit WHERE guild_id=? AND slot=?")) {
+            ps.setString(1, guild.value());
+            ps.setInt(2, slot);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt("visit_count") : 0;
+            }
+        } catch (SQLException e) {
+            throw new PersistenceException("查询访问次数失败", e);
+        }
+    }
+
     // ===== 评分系统 =====
 
     @Override

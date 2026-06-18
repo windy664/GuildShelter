@@ -48,11 +48,21 @@ public final class GuildService {
 
     /** 建会：创建（或返回已有的）公会世界，按<b>当前 config</b> 冻结其布局参数。 */
     public GuildWorld createGuild(GuildId guild, long seed) {
+        return createGuild(guild, seed, prepMode);
+    }
+
+    /** 建会（指定地形模式）：允许创建时选择 VOID/FLAT/NONE 等不同地形。 */
+    public GuildWorld createGuild(GuildId guild, long seed, TerrainPrepMode terrainMode) {
+        return createGuild(guild, seed, terrainMode, "");
+    }
+
+    /** 建会（指定地形模式+服务器名）：跨服模式下标记世界所在服务器。 */
+    public GuildWorld createGuild(GuildId guild, long seed, TerrainPrepMode terrainMode, String serverName) {
         Optional<GuildWorld> existing = guilds.find(guild);
         if (existing.isPresent()) {
             return existing.get();
         }
-        GuildWorld gw = GuildWorld.create(guild, worlds.worldName(guild), seed, currentLayout);
+        GuildWorld gw = GuildWorld.create(guild, worlds.worldName(guild), seed, currentLayout, terrainMode, serverName);
         gw = worlds.ensureWorld(gw);
         guilds.save(gw);
         return gw;

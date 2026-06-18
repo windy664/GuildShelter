@@ -24,7 +24,8 @@ import java.util.Objects;
 public record GuildWorld(GuildId guild, String worldName, long seed,
                          int originChunkX, int originChunkZ,
                          int guildLevel, int allocatedSlots,
-                         LayoutConfig layout, double funds, String bulletin) {
+                         LayoutConfig layout, double funds, String bulletin,
+                         TerrainPrepMode terrainMode, String serverName) {
 
     public GuildWorld {
         Objects.requireNonNull(guild, "guild");
@@ -39,27 +40,46 @@ public record GuildWorld(GuildId guild, String worldName, long seed,
     }
 
     /** 用给定（当前 config 的）布局参数新建一个世界记录。 */
+    public static GuildWorld create(GuildId guild, String worldName, long seed, LayoutConfig layout,
+                                    TerrainPrepMode terrainMode, String serverName) {
+        return new GuildWorld(guild, worldName, seed, 0, 0, 1, 0, layout, 0, "", terrainMode, serverName);
+    }
+
+    /** 兼容旧签名（terrainMode 默认 CLEAR_VEGETATION，serverName 为空）。 */
+    public static GuildWorld create(GuildId guild, String worldName, long seed, LayoutConfig layout, TerrainPrepMode terrainMode) {
+        return create(guild, worldName, seed, layout, terrainMode, "");
+    }
+
+    /** 兼容旧签名。 */
     public static GuildWorld create(GuildId guild, String worldName, long seed, LayoutConfig layout) {
-        return new GuildWorld(guild, worldName, seed, 0, 0, 1, 0, layout, 0, "");
+        return create(guild, worldName, seed, layout, TerrainPrepMode.CLEAR_VEGETATION, "");
     }
 
     public GuildWorld withOrigin(int chunkX, int chunkZ) {
-        return new GuildWorld(guild, worldName, seed, chunkX, chunkZ, guildLevel, allocatedSlots, layout, funds, bulletin);
+        return new GuildWorld(guild, worldName, seed, chunkX, chunkZ, guildLevel, allocatedSlots, layout, funds, bulletin, terrainMode, serverName);
     }
 
     public GuildWorld withGuildLevel(int newLevel) {
-        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, newLevel, allocatedSlots, layout, funds, bulletin);
+        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, newLevel, allocatedSlots, layout, funds, bulletin, terrainMode, serverName);
     }
 
     public GuildWorld withAllocatedSlots(int newAllocated) {
-        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, guildLevel, newAllocated, layout, funds, bulletin);
+        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, guildLevel, newAllocated, layout, funds, bulletin, terrainMode, serverName);
     }
 
     public GuildWorld withFunds(double newFunds) {
-        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, guildLevel, allocatedSlots, layout, newFunds, bulletin);
+        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, guildLevel, allocatedSlots, layout, newFunds, bulletin, terrainMode, serverName);
     }
 
     public GuildWorld withBulletin(String newBulletin) {
-        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, guildLevel, allocatedSlots, layout, funds, newBulletin);
+        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, guildLevel, allocatedSlots, layout, funds, newBulletin, terrainMode, serverName);
+    }
+
+    public GuildWorld withTerrainMode(TerrainPrepMode mode) {
+        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, guildLevel, allocatedSlots, layout, funds, bulletin, mode, serverName);
+    }
+
+    public GuildWorld withServerName(String name) {
+        return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, guildLevel, allocatedSlots, layout, funds, bulletin, terrainMode, name);
     }
 }

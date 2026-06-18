@@ -18,6 +18,7 @@ import org.windy.guildshelter.adapter.bukkit.Messages;
 import org.windy.guildshelter.adapter.bukkit.Permissions;
 import org.windy.guildshelter.adapter.bukkit.listener.ManorAccessListener;
 import org.windy.guildshelter.adapter.bukkit.world.WorldManager;
+import org.windy.guildshelter.adapter.bungee.ProxyChannel;
 import org.windy.guildshelter.domain.flag.Flag;
 import org.windy.guildshelter.domain.flag.FlagType;
 import org.windy.guildshelter.domain.layout.Classification;
@@ -27,6 +28,7 @@ import org.windy.guildshelter.domain.model.GuildId;
 import org.windy.guildshelter.domain.model.GuildWorld;
 import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
+import org.windy.guildshelter.domain.model.TerrainPrepMode;
 import org.windy.guildshelter.domain.port.GuildRepository;
 import org.windy.guildshelter.domain.port.ManorRepository;
 import org.windy.guildshelter.domain.rule.LevelRules;
@@ -86,11 +88,14 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     private final ManorEntityCensus census;
     private final MergeRegistry merges;
     private ManorAccessListener accessListener; // 可选，toggle 需要
+    private final ProxyChannel proxyChannel;
+    private final String serverName;
     private final Logger logger;
 
     public GsCommand(WorldManager worlds, GuildRepository guilds, ManorRepository manors,
                      GuildService service, GuildWorldRegistry registry,
-                     LevelRules levels, ManorEntityCensus census, MergeRegistry merges, Logger logger) {
+                     LevelRules levels, ManorEntityCensus census, MergeRegistry merges,
+                     ProxyChannel proxyChannel, String serverName, Logger logger) {
         this.worlds = worlds;
         this.guilds = guilds;
         this.manors = manors;
@@ -99,6 +104,8 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         this.levels = levels;
         this.census = census;
         this.merges = merges;
+        this.proxyChannel = proxyChannel;
+        this.serverName = serverName;
         this.logger = logger;
     }
 
@@ -620,6 +627,12 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         GuildWorld gw = guilds.find(guild).orElse(null);
         if (gw == null) {
             sender.sendMessage(Messages.get("error.guild_not_exist", guild.value()));
+            return;
+        }
+        // 跨服检查：目标世界在别的服务器上
+        if (proxyChannel.isAvailable() && !gw.serverName().isEmpty() && !gw.serverName().equals(serverName)) {
+            proxyChannel.sendToServer(player, gw.serverName());
+            sender.sendMessage(Messages.get("success.cross_server", gw.serverName()));
             return;
         }
         gw = worlds.ensureWorld(gw);
@@ -2041,8 +2054,19 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.guild_already_exist", guild.value()));
             return;
         }
+        // 可选地形参数: /gs admin create <guild> [NONE|CLEAR_VEGETATION|FLATTEN|VOID|FLAT]
+        TerrainPrepMode terrainMode = null; // null = 用 config 默认值
+        if (args.length >= 4) {
+            try {
+                terrainMode = TerrainPrepMode.valueOf(args[3].toUpperCase());
+            } catch (IllegalArgumentException e) {
+                sender.sendMessage(Messages.get("error.unknown_terrain", args[3]));
+                return;
+            }
+        }
         long seed = ThreadLocalRandom.current().nextLong();
-        GuildWorld gw = service.createGuild(guild, seed);
+        TerrainPrepMode mode = terrainMode != null ? terrainMode : org.windy.guildshelter.domain.model.TerrainPrepMode.CLEAR_VEGETATION;
+        GuildWorld gw = service.createGuild(guild, seed, mode, serverName);
         registry.register(gw);
         sender.sendMessage(Messages.get("success.create_world", gw.worldName(), gw.seed(), gw.originChunkX(), gw.originChunkZ()));
         logMap(guild);
@@ -2380,6 +2404,10 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             for (String s : new String[]{"create", "tp", "claim", "fill", "map", "upgrade-manor",
                     "upgrade-guild", "delete", "worlds", "whereami"}) {
                 out.add(s);
+            }
+        } else if (args.length == 4 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("create")) {
+            for (TerrainPrepMode m : TerrainPrepMode.values()) {
+                out.add(m.name());
             }
         }
         return out;

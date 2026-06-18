@@ -28,6 +28,8 @@ public final class MysqlDialect implements SqlDialect {
                 "ALTER TABLE guild_world ADD COLUMN layout_params TEXT",
                 "ALTER TABLE guild_world ADD COLUMN funds DOUBLE DEFAULT 0",
                 "ALTER TABLE guild_world ADD COLUMN bulletin TEXT DEFAULT ''",
+                "ALTER TABLE guild_world ADD COLUMN terrain_mode VARCHAR(32) DEFAULT 'CLEAR_VEGETATION'",
+                "ALTER TABLE guild_world ADD COLUMN server_name VARCHAR(255) DEFAULT ''",
                 """
                 CREATE TABLE IF NOT EXISTS manor (
                     guild_id   VARCHAR(255) NOT NULL,
@@ -102,14 +104,21 @@ public final class MysqlDialect implements SqlDialect {
                     max_z    INT NOT NULL,
                     flags    TEXT NOT NULL,
                     PRIMARY KEY (guild_id, slot, name)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_visit (
+                    guild_id   VARCHAR(255) NOT NULL,
+                    slot       INT NOT NULL,
+                    visit_count INT NOT NULL DEFAULT 0,
+                    PRIMARY KEY (guild_id, slot)
                 )""");
     }
 
     @Override
     public String upsertGuildWorld() {
         return """
-                INSERT INTO guild_world(guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin)
-                VALUES(?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO guild_world(guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin, terrain_mode, server_name)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                 ON DUPLICATE KEY UPDATE
                     world_name=VALUES(world_name),
                     seed=VALUES(seed),
@@ -119,7 +128,9 @@ public final class MysqlDialect implements SqlDialect {
                     allocated_slots=VALUES(allocated_slots),
                     layout_params=VALUES(layout_params),
                     funds=VALUES(funds),
-                    bulletin=VALUES(bulletin)""";
+                    bulletin=VALUES(bulletin),
+                    terrain_mode=VALUES(terrain_mode),
+                    server_name=VALUES(server_name)""";
     }
 
     @Override

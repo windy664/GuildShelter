@@ -26,6 +26,14 @@ public interface ManorRepository {
     /** 该公会下一个空闲 slot（优先复用最小空缺，保持螺旋紧凑排满）。 */
     int nextFreeSlot(GuildId guild);
 
+    // ===== 访问统计 =====
+
+    /** 地皮被访问时调用，原子 +1（不读整个 Manor，直接 UPDATE）。 */
+    void incrementVisit(GuildId guild, int slot);
+
+    /** 获取某地皮的累计访问次数。 */
+    int getVisitCount(GuildId guild, int slot);
+
     // ===== 评分系统 =====
 
     /** 给地皮打分（1-10，同一玩家重复评分会覆盖）。 */

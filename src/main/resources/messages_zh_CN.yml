@@ -61,6 +61,7 @@ error:
   not_guild_world_target: "§e%s 不在你的公会世界里。"
   is_member_cannot_kick: "§e%s 是地皮成员，不能踢。用 /gs deny 拉黑。"
   export_failed: "§c导出失败: %s"
+  unknown_terrain: "§c未知地形类型: %s（可选: NONE, CLEAR_VEGETATION, FLATTEN, VOID, FLAT）"
   template_not_exist: "§c模板 '%s' 不存在。"
   template_already_exist: "§e模板 '%s' 已存在。"
   sub_not_exist: "§c子领地 '%s' 不存在。"
@@ -158,6 +159,7 @@ success:
   titles_off: "§e已关闭进出标题消息（改为聊天框显示）。"
   comment_added: "§a已给地皮 #%s 留言。"
   welcome: "§6==== 欢迎来到公会营地 ====\n§7你已被分配到 §f%s §7的地皮 §f#%s\n§7输入 §e/gs home §7传送到你的地皮\n§7输入 §e/gs help §7查看所有命令"
+  cross_server: "§a正在传送到服务器 §f%s §a..."
 
 info:
   no_guilds: "§e还没有任何公会营地。"
@@ -213,6 +215,7 @@ info:
   card_footer: "§6│"
   card_score: "§6│ §7活跃flag: §f%s §7个"
   card_score_line: "§6│ §e综合评分: §a§l%s §7分"
+  card_visits: "§6│ §7访问次数: §e%s"
   card_bottom: "§6└─────────────────────────"
   done_status: "§a✔ 已完工"
   building_status: "§e🔨 建造中"

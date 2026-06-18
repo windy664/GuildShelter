@@ -28,6 +28,8 @@ public final class SqliteDialect implements SqlDialect {
                 "ALTER TABLE guild_world ADD COLUMN layout_params TEXT",
                 "ALTER TABLE guild_world ADD COLUMN funds REAL DEFAULT 0",
                 "ALTER TABLE guild_world ADD COLUMN bulletin TEXT DEFAULT ''",
+                "ALTER TABLE guild_world ADD COLUMN terrain_mode TEXT DEFAULT 'CLEAR_VEGETATION'",
+                "ALTER TABLE guild_world ADD COLUMN server_name TEXT DEFAULT ''",
                 """
                 CREATE TABLE IF NOT EXISTS manor (
                     guild_id   TEXT NOT NULL,
@@ -102,14 +104,21 @@ public final class SqliteDialect implements SqlDialect {
                     max_z    INTEGER NOT NULL,
                     flags    TEXT NOT NULL,
                     PRIMARY KEY (guild_id, slot, name)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS manor_visit (
+                    guild_id   TEXT NOT NULL,
+                    slot       INTEGER NOT NULL,
+                    visit_count INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (guild_id, slot)
                 )""");
     }
 
     @Override
     public String upsertGuildWorld() {
         return """
-                INSERT INTO guild_world(guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin)
-                VALUES(?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO guild_world(guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin, terrain_mode, server_name)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(guild_id) DO UPDATE SET
                     world_name=excluded.world_name,
                     seed=excluded.seed,
@@ -119,7 +128,9 @@ public final class SqliteDialect implements SqlDialect {
                     allocated_slots=excluded.allocated_slots,
                     layout_params=excluded.layout_params,
                     funds=excluded.funds,
-                    bulletin=excluded.bulletin""";
+                    bulletin=excluded.bulletin,
+                    terrain_mode=excluded.terrain_mode,
+                    server_name=excluded.server_name""";
     }
 
     @Override

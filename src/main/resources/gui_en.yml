@@ -1,0 +1,89 @@
+# GuildShelter GUI Configuration (English)
+# Customize menu layouts, button materials, click commands.
+# Missing menus/buttons fall back to hardcoded defaults.
+# Color codes: § (same as Minecraft).
+
+# Global settings
+settings:
+  pane-material: GRAY_STAINED_GLASS_PANE
+  back-material: BARRIER
+
+# Menu definitions
+menus:
+  # Plot info panel
+  manor_info:
+    title: "§8[§6Plot Manager§8]"
+    rows: 3
+    items:
+      0:
+        material: BOOK
+        name: "§6Plot Info"
+        lore:
+          - "§7Guild: §f{guild}"
+          - "§7Level: §f{level}/{max_level}"
+          - "§7Owner: §f{owner}"
+        action: ""
+      1:
+        material: REDSTONE_TORCH
+        name: "§eEdit Flags"
+        lore:
+          - "§7Click to open flag editor"
+        action: "menu.flags"
+      2:
+        material: PLAYER_HEAD
+        name: "§eMembers"
+        lore:
+          - "§7trusted: §f{trusted_count}"
+          - "§7member: §f{member_count}"
+          - "§7denied: §c{denied_count}"
+        action: "menu.members"
+      9:
+        material: PAPER
+        name: "§7Description"
+        lore:
+          - "§f{description}"
+        action: ""
+      10:
+        material: GOLD_INGOT
+        name: "§7Entry Fee"
+        lore:
+          - "§e{price}"
+        action: ""
+      17:
+        material: BARRIER
+        name: "§cClose"
+        action: "close"
+
+  # Member manager panel
+  member_manager:
+    title: "§8[§6Member Manager§8]"
+    rows: 3
+    items:
+      0:
+        material: GOLDEN_HELMET
+        name: "§6Owner"
+        lore:
+          - "§f{owner}"
+        action: ""
+      1:
+        material: DIAMOND_HELMET
+        name: "§bTrusted ({trusted_count})"
+        lore:
+          - "{trusted_list}"
+        action: "menu.members.trusted"
+      2:
+        material: IRON_HELMET
+        name: "§aMembers ({member_count})"
+        lore:
+          - "{member_list}"
+        action: "menu.members.members"
+      3:
+        material: REDSTONE_BLOCK
+        name: "§cDenied ({denied_count})"
+        lore:
+          - "{denied_list}"
+        action: "menu.members.denied"
+      8:
+        material: BARRIER
+        name: "§cBack"
+        action: "menu.info"

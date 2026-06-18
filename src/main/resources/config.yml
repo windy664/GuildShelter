@@ -2,6 +2,17 @@
 # 语言设置: zh_CN(中文) / en_US(英文)，语言文件在 plugins/GuildShelter/messages_*.yml
 language: zh_CN
 
+# 代理模式: none(单服) | bungeecord(BungeeCord 代理) | velocity(Velocity 代理)
+# 设为 bungeecord/velocity 时：
+#   - storage.type 自动强制 mysql（多服共享数据）
+#   - /gs visit 和 /gs home 支持跨服传送
+#   - 需在代理端配置 forwarding mode
+proxy: none
+
+# 本服务器名称（跨服模式必填，每台服不同，如 "survival" / "creative"）
+# 用于标识公会世界在哪台服务器上，代理跨服传送时使用
+server-name: ""
+
 # 每日维护费（从公会资金扣除，余额不足广播警告）
 upkeep:
   enabled: false          # 是否启用每日维护费

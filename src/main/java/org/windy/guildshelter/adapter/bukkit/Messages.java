@@ -85,6 +85,7 @@ public final class Messages {
         put("error.not_guild_world_target", "§e%s 不在你的公会世界里。");
         put("error.is_member_cannot_kick", "§e%s 是地皮成员，不能踢。用 /gs deny 拉黑。");
         put("error.export_failed", "§c导出失败: %s");
+        put("error.unknown_terrain", "§c未知地形类型: %s（可选: NONE, CLEAR_VEGETATION, FLATTEN, VOID, FLAT）");
         put("error.template_not_exist", "§c模板 '%s' 不存在。");
         put("error.template_already_exist", "§e模板 '%s' 已存在。");
         put("error.sub_not_exist", "§c子领地 '%s' 不存在。");
@@ -182,6 +183,7 @@ public final class Messages {
         put("success.titles_off", "§e已关闭进出标题消息（改为聊天框显示）。");
         put("success.comment_added", "§a已给地皮 #%s 留言。");
         put("success.welcome", "§6==== 欢迎来到公会营地 ====\n§7你已被分配到 §f%s §7的地皮 §f#%s\n§7输入 §e/gs home §7传送到你的地皮\n§7输入 §e/gs help §7查看所有命令");
+        put("success.cross_server", "§a正在传送到服务器 §f%s §a...");
 
         // === 信息 ===
         put("info.no_guilds", "§e还没有任何公会营地。");
@@ -237,6 +239,7 @@ public final class Messages {
         put("info.card_score", "§6│ §7活跃flag: §f%s §7个");
         put("info.card_footer", "§6│");
         put("info.card_score_line", "§6│ §e综合评分: §a§l%s §7分");
+        put("info.card_visits", "§6│ §7访问次数: §e%s");
         put("info.card_bottom", "§6└─────────────────────────");
         put("info.done_status", "§a✔ 已完工");
         put("info.building_status", "§e🔨 建造中");
@@ -277,7 +280,7 @@ public final class Messages {
         put("usage.sub_setflag", "用法: /gs sub setflag <子领地名> <flag> <值>");
         put("usage.toggle", "用法: /gs toggle titles");
         put("usage.admin", "用法: /gs admin <create|tp|claim|fill|map|upgrade-manor|upgrade-guild|delete|worlds|whereami|reload|setowner|purge|regen|export> [公会id]");
-        put("usage.admin_create", "用法: /gs admin create <公会id>");
+        put("usage.admin_create", "用法: /gs admin create <公会id> [地形: NONE|CLEAR_VEGETATION|FLATTEN|VOID|FLAT]");
         put("usage.admin_tp", "用法: /gs admin tp <公会id>");
         put("usage.admin_claim", "用法: /gs admin claim <公会id>");
         put("usage.admin_fill", "用法: /gs admin fill <公会id> <数量>");

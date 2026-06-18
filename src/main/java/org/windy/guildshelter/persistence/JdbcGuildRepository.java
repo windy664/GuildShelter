@@ -3,6 +3,7 @@ package org.windy.guildshelter.persistence;
 import org.windy.guildshelter.domain.layout.LayoutConfig;
 import org.windy.guildshelter.domain.model.GuildId;
 import org.windy.guildshelter.domain.model.GuildWorld;
+import org.windy.guildshelter.domain.model.TerrainPrepMode;
 import org.windy.guildshelter.domain.port.GuildRepository;
 
 import java.sql.Connection;
@@ -28,7 +29,7 @@ public final class JdbcGuildRepository implements GuildRepository {
 
     @Override
     public Optional<GuildWorld> find(GuildId guild) {
-        String sql = "SELECT world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin "
+        String sql = "SELECT world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin, terrain_mode, server_name "
                 + "FROM guild_world WHERE guild_id=?";
         try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, guild.value());
@@ -66,6 +67,8 @@ public final class JdbcGuildRepository implements GuildRepository {
             ps.setString(8, LayoutCsv.toCsv(world.layout()));
             ps.setDouble(9, world.funds());
             ps.setString(10, world.bulletin());
+            ps.setString(11, world.terrainMode().name());
+            ps.setString(12, world.serverName());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new PersistenceException("保存公会世界失败: " + world.guild().value(), e);
@@ -85,7 +88,7 @@ public final class JdbcGuildRepository implements GuildRepository {
 
     @Override
     public List<GuildWorld> findAll() {
-        String sql = "SELECT guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin "
+        String sql = "SELECT guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin, terrain_mode, server_name "
                 + "FROM guild_world";
         List<GuildWorld> out = new ArrayList<>();
         try (Connection c = db.getConnection();
@@ -101,6 +104,14 @@ public final class JdbcGuildRepository implements GuildRepository {
     }
 
     private GuildWorld read(GuildId guild, ResultSet rs) throws SQLException {
+        String modeStr = rs.getString("terrain_mode");
+        TerrainPrepMode mode;
+        try {
+            mode = modeStr != null ? TerrainPrepMode.valueOf(modeStr) : TerrainPrepMode.CLEAR_VEGETATION;
+        } catch (IllegalArgumentException e) {
+            mode = TerrainPrepMode.CLEAR_VEGETATION;
+        }
+        String serverName = rs.getString("server_name");
         return new GuildWorld(
                 guild,
                 rs.getString("world_name"),
@@ -111,6 +122,8 @@ public final class JdbcGuildRepository implements GuildRepository {
                 rs.getInt("allocated_slots"),
                 LayoutCsv.parse(rs.getString("layout_params"), fallbackLayout),
                 rs.getDouble("funds"),
-                rs.getString("bulletin"));
+                rs.getString("bulletin"),
+                mode,
+                serverName != null ? serverName : "");
     }
 }

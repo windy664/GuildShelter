@@ -1,0 +1,91 @@
+# GuildShelter GUI 配置
+# 自定义菜单布局、按钮材质、点击命令。
+# 缺失的菜单/按钮会用硬编码默认值兜底。
+# 颜色码用 §（与 Minecraft 一致）。
+
+# 全局设置
+settings:
+  # 玻璃板材质（分隔线）
+  pane-material: GRAY_STAINED_GLASS_PANE
+  # 返回按钮材质
+  back-material: BARRIER
+
+# 菜单定义
+menus:
+  # 地皮信息面板
+  manor_info:
+    title: "§8[§6地皮管理§8]"
+    rows: 3
+    items:
+      0:  # slot 0
+        material: BOOK
+        name: "§6地皮信息"
+        lore:
+          - "§7公会: §f{guild}"
+          - "§7等级: §f{level}/{max_level}"
+          - "§7庄主: §f{owner}"
+        action: ""
+      1:
+        material: REDSTONE_TORCH
+        name: "§e编辑 Flag"
+        lore:
+          - "§7点击打开 flag 编辑器"
+        action: "menu.flags"
+      2:
+        material: PLAYER_HEAD
+        name: "§e成员管理"
+        lore:
+          - "§7trusted: §f{trusted_count}"
+          - "§7member: §f{member_count}"
+          - "§7denied: §c{denied_count}"
+        action: "menu.members"
+      9:
+        material: PAPER
+        name: "§7描述"
+        lore:
+          - "§f{description}"
+        action: ""
+      10:
+        material: GOLD_INGOT
+        name: "§7入场费"
+        lore:
+          - "§e{price}"
+        action: ""
+      17:
+        material: BARRIER
+        name: "§c关闭"
+        action: "close"
+
+  # 成员管理面板
+  member_manager:
+    title: "§8[§6成员管理§8]"
+    rows: 3
+    items:
+      0:
+        material: GOLDEN_HELMET
+        name: "§6庄主"
+        lore:
+          - "§f{owner}"
+        action: ""
+      1:
+        material: DIAMOND_HELMET
+        name: "§b共建人 ({trusted_count})"
+        lore:
+          - "{trusted_list}"
+        action: "menu.members.trusted"
+      2:
+        material: IRON_HELMET
+        name: "§a成员 ({member_count})"
+        lore:
+          - "{member_list}"
+        action: "menu.members.members"
+      3:
+        material: REDSTONE_BLOCK
+        name: "§c黑名单 ({denied_count})"
+        lore:
+          - "{denied_list}"
+        action: "menu.members.denied"
+      8:
+        material: BARRIER
+        name: "§c返回"
+        action: "menu.info"

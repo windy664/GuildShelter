@@ -16,6 +16,7 @@ import org.windy.guildshelter.domain.flag.Flag;
 import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
 import org.windy.guildshelter.domain.port.EconomyPort;
+import org.windy.guildshelter.domain.port.ManorRepository;
 
 import java.util.Map;
 import java.util.Set;
@@ -36,6 +37,7 @@ public final class ManorAccessListener implements Listener {
 
     private final ManorLookup lookup;
     private final EconomyPort economy; // null = 无 Vault，price flag 不生效
+    private final ManorRepository manors; // 访问计数用
     private final WorldCache cache;
     /** UUID → long 编码的 chunk 坐标 (cx << 32 | cz)，避免每次分配 long[]。 */
     private final Map<UUID, Long> lastChunk = new ConcurrentHashMap<>();
@@ -45,9 +47,10 @@ public final class ManorAccessListener implements Listener {
     /** 个人开关：关闭 titles 的玩家集合。 */
     private final Set<UUID> titlesDisabled = ConcurrentHashMap.newKeySet();
 
-    public ManorAccessListener(ManorLookup lookup, EconomyPort economy, WorldCache cache) {
+    public ManorAccessListener(ManorLookup lookup, EconomyPort economy, ManorRepository manors, WorldCache cache) {
         this.lookup = lookup;
         this.economy = economy;
+        this.manors = manors;
         this.cache = cache;
     }
 
@@ -135,6 +138,12 @@ public final class ManorAccessListener implements Listener {
         }
         // 进入 cur
         if (cur != null) {
+            // 访问计数：每次进入地皮 +1（异步写库，不阻塞移动事件）
+            try {
+                manors.incrementVisit(cur.guild(), cur.slot());
+            } catch (Exception ignored) {
+                // 计数失败不影响玩家体验
+            }
             // 入场费：成员/管理免付；访客每次进入收费地皮都要付
             if (!chargeEntry(player, cur, ref)) {
                 // 余额不足 → 推回

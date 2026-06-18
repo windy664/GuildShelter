@@ -1,6 +1,7 @@
 package org.windy.guildshelter.adapter.bukkit.gui;
 
 import org.bukkit.Material;
+import org.windy.guildshelter.GuildShelterPlugin;
 import org.windy.guildshelter.domain.flag.Flag;
 import org.windy.guildshelter.domain.model.GuildWorld;
 import org.windy.guildshelter.domain.model.Manor;
@@ -12,10 +13,35 @@ import java.util.Map;
 
 /**
  * 预置菜单构造器：创建各种管理菜单的 GuiSpec。
+ * 优先从 gui.yml 加载（服主可自定义），缺失时用硬编码默认值。
  */
 public final class Menus {
 
     private Menus() {}
+
+    /**
+     * 尝试从 YAML 加载菜单，未定义则返回 null（调用方 fallback 到硬编码）。
+     */
+    public static GuiSpec fromYaml(String menuId, Map<String, Object> context) {
+        YamlGuiLoader loader = GuildShelterPlugin.guiLoader();
+        return loader != null ? loader.loadMenu(menuId, context) : null;
+    }
+
+    /** 地皮信息面板（YAML 优先，硬编码兜底）。 */
+    public static GuiSpec manorInfoYaml(Manor manor, GuildWorld gw, LevelRules levels) {
+        Map<String, Object> ctx = Map.of("manor", manor, "guildWorld", gw);
+        GuiSpec yaml = fromYaml("manor_info", ctx);
+        if (yaml != null) return yaml;
+        return manorInfo(manor, gw, levels);
+    }
+
+    /** 成员管理面板（YAML 优先，硬编码兜底）。 */
+    public static GuiSpec memberManagerYaml(Manor manor) {
+        Map<String, Object> ctx = Map.of("manor", manor);
+        GuiSpec yaml = fromYaml("member_manager", ctx);
+        if (yaml != null) return yaml;
+        return memberManager(manor);
+    }
 
     /** 地皮信息面板。 */
     public static GuiSpec manorInfo(Manor manor, GuildWorld gw, LevelRules levels) {
