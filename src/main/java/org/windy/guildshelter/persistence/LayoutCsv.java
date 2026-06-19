@@ -10,7 +10,7 @@ final class LayoutCsv {
 
     static String toCsv(LayoutConfig l) {
         return l.plotChunks() + "," + l.roadChunks() + ","
-                + l.mainCityHalfCellsInitial() + "," + l.mainCityHalfCellsMax() + ","
+                + l.mainCityInitialChunks() + "," + l.mainCityMaxChunks() + ","
                 + l.plotDefaultChunks() + "," + l.plotChunksPerLevel() + ","
                 + l.baseY() + "," + l.marginChunks();
     }

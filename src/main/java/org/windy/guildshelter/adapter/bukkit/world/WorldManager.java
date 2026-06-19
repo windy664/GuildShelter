@@ -5,8 +5,10 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.WorldBorder;
 import org.bukkit.WorldCreator;
+import org.windy.guildshelter.adapter.bukkit.GuildShelterConfig.OceanReseedConfig;
 import org.windy.guildshelter.domain.layout.LayoutCalculator;
 import org.windy.guildshelter.domain.layout.SpiralIndex;
+import org.windy.guildshelter.domain.model.ChunkRegion;
 import org.windy.guildshelter.domain.model.GuildId;
 import org.windy.guildshelter.domain.model.GuildWorld;
 import org.windy.guildshelter.domain.model.TerrainPrepMode;
@@ -15,7 +17,9 @@ import org.windy.guildshelter.domain.rule.LevelRules;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.generator.WorldInfo;
 
+import java.io.File;
 import java.util.Locale;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Logger;
 
 /**
@@ -32,11 +36,21 @@ public final class WorldManager implements WorldControl {
     private static final int MAX_LAND_PROBES = 200;
 
     private final LevelRules levels;
+    private final OceanReseedConfig oceanReseed;
     private final Logger logger;
+    private Boolean neoForgePresent; // null=未探测；见 neoForgePresent()
+    private org.windy.guildshelter.domain.port.GuildProvider guildProvider =
+            org.windy.guildshelter.domain.port.GuildProvider.NONE; // 宿主人数上限来源，延迟注入
 
-    public WorldManager(LevelRules levels, Logger logger) {
+    public WorldManager(LevelRules levels, OceanReseedConfig oceanReseed, Logger logger) {
         this.levels = levels;
+        this.oceanReseed = oceanReseed;
         this.logger = logger;
+    }
+
+    /** 注入宿主公会 provider（边界按宿主人数上限画预留区，与发地容量一致）。 */
+    public void setGuildProvider(org.windy.guildshelter.domain.port.GuildProvider provider) {
+        this.guildProvider = provider != null ? provider : org.windy.guildshelter.domain.port.GuildProvider.NONE;
     }
 
     @Override
@@ -53,6 +67,15 @@ public final class WorldManager implements WorldControl {
             return gw;
         }
 
+        TerrainPrepMode mode = gw.terrainMode();
+        // 真·首建判定：磁盘上还没有该世界文件夹。卸载后惰性重载时文件夹仍在，那时必须沿用已存档的
+        // 种子/origin，绝不能换种子重建（会毁掉玩家已建造的存档）。
+        boolean firstCreation = !worldFolderExists(gw.worldName());
+        boolean naturalTerrain = mode != TerrainPrepMode.VOID && mode != TerrainPrepMode.FLAT;
+        if (oceanReseed.enabled() && firstCreation && naturalTerrain) {
+            return createNaturalWithReseed(gw);
+        }
+
         // 修复点 1：获取主世界（通常是列表第一个，下标为0）作为模板，继承其群系和注册表数据。
         // 这是为了防止混合端（NeoForge）在新世界生成自然地形时因为找不到注册表映射而导致 IndexOutOfBoundsException (-1)
         World mainWorld = Bukkit.getWorlds().get(0);
@@ -63,7 +86,6 @@ public final class WorldManager implements WorldControl {
                 .seed(gw.seed());
 
         // 按地形模式选生成器
-        TerrainPrepMode mode = gw.terrainMode();
         if (mode == TerrainPrepMode.VOID) {
             creator.generator(new VoidChunkGenerator());
             logger.info("[GuildShelter] 创建虚空世界: " + gw.worldName());
@@ -107,8 +129,144 @@ public final class WorldManager implements WorldControl {
     }
 
     /**
+     * 自然地形世界的<b>首建</b>：建好后采样主城网格 footprint 的水占比，超阈值就换随机种子删库重建，
+     * 直到拿到陆地为主的世界（或用尽 {@code maxAttempts}）。避免整片海洋让铺路架桥成千上万列、
+     * 压垮混合端区块/光照子系统而崩服。返回带<b>最终种子 + 锚定 origin</b> 的记录，调用方负责持久化。
+     */
+    private GuildWorld createNaturalWithReseed(GuildWorld gw) {
+        World mainWorld = Bukkit.getWorlds().get(0); // 继承主世界注册表，见 ensureWorld 修复点 1
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        int maxAttempts = Math.max(1, oceanReseed.maxAttempts());
+        World world = null;
+        int[] origin = null;
+        for (int attempt = 1; ; attempt++) {
+            world = Bukkit.createWorld(new WorldCreator(gw.worldName())
+                    .copy(mainWorld)
+                    .environment(World.Environment.NORMAL)
+                    .seed(gw.seed()));
+            if (world == null) {
+                throw new IllegalStateException("创建公会世界失败: " + gw.worldName());
+            }
+            origin = anchorOnLand(world, layout);
+            double waterRatio = sampleWaterRatio(world, gw.withOrigin(origin[0], origin[1]), layout);
+            logger.info("[GuildShelter] " + gw.worldName() + " 首建尝试 " + attempt + "/" + maxAttempts
+                    + " seed=" + gw.seed() + " 主城水占比=" + String.format(Locale.ROOT, "%.0f%%", waterRatio * 100));
+
+            if (waterRatio <= oceanReseed.maxWaterRatio() || attempt >= maxAttempts) {
+                if (waterRatio > oceanReseed.maxWaterRatio()) {
+                    logger.warning("[GuildShelter] " + gw.worldName() + " 重建 " + maxAttempts
+                            + " 次仍水占比偏高（" + String.format(Locale.ROOT, "%.0f%%", waterRatio * 100)
+                            + "），接受当前世界。可调 ocean-reseed.max-attempts / max-water-ratio。");
+                }
+                break;
+            }
+            // 水太多：卸载（不存盘）+ 删世界文件夹 + 换随机种子重建
+            logger.info("[GuildShelter] " + gw.worldName() + " 水占比过高，换种子重建…");
+            Bukkit.unloadWorld(world, false);
+            if (!deleteWorldFolder(world.getWorldFolder())) {
+                logger.warning("[GuildShelter] 无法删除世界文件夹 " + world.getWorldFolder()
+                        + "（可能文件占用），中止重建并接受当前世界。");
+                world = Bukkit.createWorld(new WorldCreator(gw.worldName())
+                        .copy(mainWorld).environment(World.Environment.NORMAL).seed(gw.seed()));
+                origin = anchorOnLand(world, layout);
+                break;
+            }
+            gw = gw.withSeed(ThreadLocalRandom.current().nextLong());
+        }
+
+        GuildWorld anchored = gw.withOrigin(origin[0], origin[1]);
+        world.setSpawnLocation(safeSpawn(world, anchored));
+        applyBorderTo(world, anchored);
+        return anchored;
+    }
+
+    /** 公会世界文件夹是否已在磁盘上（用于区分"真·首建"与"卸载后惰性重载"）。 */
+    private boolean worldFolderExists(String worldName) {
+        return new File(Bukkit.getWorldContainer(), worldName).isDirectory();
+    }
+
+    /** 递归删除世界文件夹；全部删净返回 true。须先 {@code unloadWorld} 释放文件句柄。 */
+    private boolean deleteWorldFolder(File dir) {
+        if (dir == null || !dir.exists()) {
+            return true;
+        }
+        boolean ok = true;
+        File[] children = dir.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                ok &= child.isDirectory() ? deleteWorldFolder(child) : child.delete();
+            }
+        }
+        return dir.delete() && ok;
+    }
+
+    /**
+     * 采样主城网格 footprint（{@link LayoutCalculator#mainCityRegion()} 按最大尺寸预留的中心区，含 origin 偏移）
+     * 上 {@code gridN×gridN} 个均布探点的<b>水占比</b>。主城是必用核心区、成员地皮从其边缘向外长，
+     * 故中心区水占比能代表整张网格是否泡海。
+     *
+     * <p><b>优先走 NeoForge 群系源采样（零生成）</b>：直接问种子这些列是不是海/河群系，<b>不加载/生成区块</b>，
+     * 避开混合端+mod 在"地物装饰"阶段的 {@code -1} 越界崩（见 {@link org.windy.guildshelter.neoforge.NeoForgeBiomeSampler}）。
+     * 纯 Bukkit 环境回退到强制生成看地表液体（无该 mod 装饰 bug）。
+     */
+    private double sampleWaterRatio(World world, GuildWorld gw, LayoutCalculator layout) {
+        ChunkRegion city = layout.mainCityRegion();
+        int ox = gw.originChunkX() << 4;
+        int oz = gw.originChunkZ() << 4;
+        int minX = city.minBlockX() + ox, maxX = city.maxBlockX() + ox;
+        int minZ = city.minBlockZ() + oz, maxZ = city.maxBlockZ() + oz;
+        int gridN = Math.max(2, oceanReseed.sampleGrid());
+        int sampleY = layout.config().baseY();
+
+        if (neoForgePresent()) {
+            // 混合端只走群系采样：绝不回退到"强制生成"那条会触发地物装饰越界崩的路径。
+            try {
+                double r = org.windy.guildshelter.neoforge.NeoForgeBiomeSampler
+                        .waterBiomeRatio(world.getName(), minX, maxX, minZ, maxZ, gridN, sampleY);
+                if (r >= 0) {
+                    return r; // 群系采样成功（零生成）
+                }
+                logger.warning("[GuildShelter] 群系采样找不到世界 " + world.getName() + "，跳过水占比判定（视为可接受，不重建）。");
+            } catch (Throwable t) {
+                logger.warning("[GuildShelter] NeoForge 群系采样异常，跳过水占比判定（不重建）: " + t);
+            }
+            return 0.0;
+        }
+        // 纯 Bukkit（无 mod 装饰 bug）：强制生成看地表液体
+        int liquid = 0, total = 0;
+        for (int i = 0; i < gridN; i++) {
+            int x = minX + (int) ((long) (maxX - minX) * i / (gridN - 1));
+            for (int j = 0; j < gridN; j++) {
+                int z = minZ + (int) ((long) (maxZ - minZ) * j / (gridN - 1));
+                world.loadChunk(x >> 4, z >> 4, true);
+                if (world.getHighestBlockAt(x, z).isLiquid()) {
+                    liquid++;
+                }
+                total++;
+            }
+        }
+        return total == 0 ? 0.0 : (double) liquid / total;
+    }
+
+    /** NeoForge 是否在场（决定锚陆地/测水占比走零生成群系采样还是块兜底）。探测一次缓存。 */
+    private boolean neoForgePresent() {
+        if (neoForgePresent == null) {
+            try {
+                Class.forName("net.neoforged.fml.loading.FMLLoader");
+                neoForgePresent = Boolean.TRUE;
+            } catch (Throwable t) {
+                neoForgePresent = Boolean.FALSE;
+            }
+        }
+        return neoForgePresent;
+    }
+
+    /**
      * 把网格原点锚定到陆地：从世界原版出生点所在 chunk 起螺旋向外探测，
-     * 找到第一个"主城中心列不是液体"的位置，返回网格 origin 偏移（chunk）。
+     * 找到第一个"主城中心列不是水域"的位置，返回网格 origin 偏移（chunk）。
+     *
+     * <p>同 {@link #sampleWaterRatio} 优先走 NeoForge 群系采样（零生成），避开混合端"地物装饰"越界崩；
+     * 纯 Bukkit 回退强制生成看地表液体。
      */
     private int[] anchorOnLand(World world, LayoutCalculator layout) {
         int layoutCityChunkX = layout.spawnBlockX() >> 4;
@@ -116,6 +274,8 @@ public final class WorldManager implements WorldControl {
         Location vanilla = world.getSpawnLocation();
         int baseChunkX = vanilla.getBlockX() >> 4;
         int baseChunkZ = vanilla.getBlockZ() >> 4;
+        boolean neo = neoForgePresent();
+        int sampleY = layout.config().baseY();
 
         for (int i = 0; i < MAX_LAND_PROBES; i++) {
             SpiralIndex.GridCell cell = SpiralIndex.toCell(i);
@@ -123,14 +283,30 @@ public final class WorldManager implements WorldControl {
             int cityChunkZ = baseChunkZ + cell.z();
             int cx = (cityChunkX << 4) + 8;
             int cz = (cityChunkZ << 4) + 8;
-            world.loadChunk(cityChunkX, cityChunkZ, true); // 强制生成后判断
-            if (!world.getHighestBlockAt(cx, cz).isLiquid()) {
+            if (!isWaterColumn(world, cx, cz, sampleY, neo)) {
                 return new int[]{cityChunkX - layoutCityChunkX, cityChunkZ - layoutCityChunkZ};
             }
         }
         logger.warning("[GuildShelter] " + world.getName()
                 + " 探测 " + MAX_LAND_PROBES + " 个 chunk 仍是海，回退到原版出生点。");
         return new int[]{baseChunkX - layoutCityChunkX, baseChunkZ - layoutCityChunkZ};
+    }
+
+    /**
+     * 某列是不是水域。NeoForge 走零生成群系采样（异常/找不到世界则视为陆地，<b>绝不在混合端强制生成</b>，
+     * 那是地物装饰越界崩的路径）；纯 Bukkit 才回退强制生成看地表液体。
+     */
+    private boolean isWaterColumn(World world, int blockX, int blockZ, int sampleY, boolean neo) {
+        if (neo) {
+            try {
+                return org.windy.guildshelter.neoforge.NeoForgeBiomeSampler
+                        .isWaterColumn(world.getName(), blockX, blockZ, sampleY);
+            } catch (Throwable t) {
+                return false; // 链接异常：当陆地处理，不强制生成
+            }
+        }
+        world.loadChunk(blockX >> 4, blockZ >> 4, true);
+        return world.getHighestBlockAt(blockX, blockZ).isLiquid();
     }
 
     /** 主城中心列的安全出生位置（含 origin 偏移）：强制生成所在区块后取地表最高点上方一格。 */
@@ -157,8 +333,9 @@ public final class WorldManager implements WorldControl {
         double cx = layout.borderCenterBlockX() + (gw.originChunkX() << 4) + 0.5;
         double cz = layout.borderCenterBlockZ() + (gw.originChunkZ() << 4) + 0.5;
         border.setCenter(cx, cz);
-        // 边界圈住 max(已分配, 当前等级名额容量) 个 slot：升级放开更多名额时即可见到预留的空地。
-        int reserved = Math.max(gw.allocatedSlots(), levels.maxMembers(gw.guildLevel()));
+        // 边界圈住 max(已分配, 名额容量) 个 slot：容量优先用宿主人数上限(与发地一致)，否则用我们等级容量。
+        int capacity = guildProvider.memberCap(gw.guild()).orElseGet(() -> levels.maxMembers(gw.guildLevel()));
+        int reserved = Math.max(gw.allocatedSlots(), capacity);
         border.setSize(layout.borderSizeBlocks(reserved));
     }
 

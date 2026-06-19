@@ -124,6 +124,12 @@ public final class MysqlDialect implements SqlDialect {
                 CREATE TABLE IF NOT EXISTS manor_move_record (
                     player_uuid VARCHAR(36) PRIMARY KEY,
                     last_move_at BIGINT NOT NULL
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS guild_city_trust (
+                    guild_id    VARCHAR(255) NOT NULL,
+                    player_uuid VARCHAR(36) NOT NULL,
+                    PRIMARY KEY (guild_id, player_uuid)
                 )""");
     }
 

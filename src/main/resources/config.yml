@@ -32,17 +32,42 @@ member-plot:
   grow-per-level: 1     # 每升一级 +1 chunk（+16 方块）→ 升满需 (15-6)/1+1 = 10 级
                         # (庄园满级数由这三项自动推出，无需另设)
 
-# 公会主城：全公会共享的中央出生广场，随公会升级从初始长到最大。
-# 重要：中心永久按 max 预留，成员地皮一律排在最大主城之外 → 扩城不会压到成员地皮。
+# 公会主城：全公会共享的中央出生广场，占【中心那一格】角落的一块方形区域，按 chunk 配置、
+# 角落锚定（出生点在角落）、随公会升级从 initial 长到 max。主城【四周自动被路环绕】——
+# 中心格里主城之外的部分全是路，再外面才是成员地皮网格。
+#   1 chunk = 16 方块。max-chunks 必须 ≤ member-plot.max-chunks(默认15)，因为主城要容在中心一格里。
+#   想要更大的主城：调大下面的 max-chunks（上限=member-plot.max-chunks）；若还嫌小，就把
+#   member-plot.max-chunks 一起调大（那会同时放大每块成员地皮）。
 main-city:
-  initial-cells: 1      # 初始"半径"（格）→ 3×3 格 = 768×768 方块
-  max-cells: 2          # 最大"半径"（格）→ 5×5 格 = 1280×1280 方块（公会满级时达到）
-                        # (pitch = 地皮15+路1 = 16 chunk = 256 方块/格)
+  initial-chunks: 5     # 初始边长（chunk，1 级公会）→ 6 chunk = 96×96 方块
+  max-chunks: 15        # 最大边长（chunk，满级达到）→ 15 chunk = 240×240 方块（= 一块满级成员地皮大小）
 
 # 道路宽度（路面顶层会自动铺成路面块，并清掉路上的植被/树/竹子；terrain-prep=NONE 时不铺）
 road-chunks: 1          # = 16 方块
-# 路面方块（命名空间 id，支持模组方块；默认土径）。例: minecraft:stone_bricks / minecraft:dirt_path
+# 陆地路面方块（命名空间 id，支持模组方块；默认土径）。例: minecraft:stone_bricks / minecraft:dirt_path
 road-surface-block: minecraft:dirt_path
+# 水面桥（路穿过水面那段架的栈桥）：桥面 + 护栏，可分别自定义。
+#   auto = 按群系自动选木（针叶林→云杉、丛林→丛林木、其余→橡木，护栏同理）。
+road-bridge-block: auto        # 桥面块，如 minecraft:oak_planks
+road-bridge-rail-block: auto   # 桥边护栏块，如 minecraft:oak_fence
+
+# 海洋换种子重建：首建公会世界时，若主城网格区域水占比过高，自动换随机种子重建，
+# 直到拿到陆地为主的世界。避免世界开在整片海洋——那样铺路会架成千上万列水面桥，
+# 压垮混合端的区块/光照子系统导致崩服。仅对自然地形(非 VOID/FLAT)、且世界首次创建时生效；
+# 卸载后重载已存档世界绝不触发（不会动玩家建筑）。
+ocean-reseed:
+  enabled: true            # 关掉则沿用旧行为（只锚定主城中心，整片网格仍可能泡海）
+  max-water-ratio: 0.5     # 主城区域水占比超过此值(0~1)就换种子重建
+  max-attempts: 8          # 最多重建次数，超过则接受最后一个并告警
+  sample-grid: 12          # 主城区域上的采样网格边数(12 → 12×12=144 个探点)
+
+# 主城围墙：沿最大主城 footprint 外缘建一圈墙。
+# 注意：主城现在是中心一格大小、四面环路，所以默认【关闭】；想要可设 enabled: true，
+# 并用 /gs admin citywall <公会> 给已建好的公会补建。
+city-wall:
+  enabled: false                      # 默认关；开了会把主城 footprint 四边围起来
+  block: minecraft:cobblestone_wall   # 围墙方块，如 minecraft:oak_fence / minecraft:stone_brick_wall
+  height: 1                           # 墙高（格）
 
 # 公会等级与容量
 guild:

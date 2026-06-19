@@ -1,5 +1,6 @@
 package org.windy.guildshelter.domain.port;
 
+import org.windy.guildshelter.domain.layout.RoadMask;
 import org.windy.guildshelter.domain.model.ChunkRegion;
 import org.windy.guildshelter.domain.model.TerrainPrepMode;
 
@@ -19,6 +20,17 @@ public interface TerrainPreparer {
     /**
      * 把给定区域的<b>道路顶层</b>铺成土径：穿过并清掉植被/树木/积雪定位真正的自然地面，
      * 再把地面顶层换成土径；水面/虚空跳过。实现侧负责异步/分批。
+     *
+     * @param roadMask 路网判定（世界 chunk 坐标）。水上架桥时据此抑制十字路口护栏：外侧也是路则不架栏。
+     *                 无需路口感知时传 {@link RoadMask#NONE}。
      */
-    void surfaceRoad(String worldName, ChunkRegion worldRegion);
+    void surfaceRoad(String worldName, ChunkRegion worldRegion, RoadMask roadMask);
+
+    /**
+     * 沿<b>最大主城</b>外缘建一圈围墙（栅栏/墙），只立在<b>外侧是成员地皮（非路）</b>的主城边块上：
+     * 这样不踩成员地皮、贴道路的那几段自动留口。{@code maxCityRegion} 为世界坐标（已含 origin 偏移），
+     * {@code roadMask} 判外侧那格是不是路。实现侧负责异步/分批；未启用或不支持则空操作。
+     */
+    default void encloseMainCity(String worldName, ChunkRegion maxCityRegion, RoadMask roadMask) {
+    }
 }

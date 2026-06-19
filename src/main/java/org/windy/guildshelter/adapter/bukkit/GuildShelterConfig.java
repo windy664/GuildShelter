@@ -9,10 +9,31 @@ import org.windy.guildshelter.persistence.StorageSettings;
 /** 把 Bukkit 的 config.yml 解析成 domain 的配置对象。 */
 public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, TerrainPrepMode terrainPrep,
                                  StorageSettings storage, String proxyType, String serverName,
-                                 PerformanceConfig performance, MoveConfig move) {
+                                 PerformanceConfig performance, MoveConfig move, OceanReseedConfig oceanReseed,
+                                 CityWallConfig cityWall) {
+
+    /**
+     * 主城围墙：沿<b>最大主城</b>外缘建一圈墙，只立在外侧是成员地皮（非路）的边上（贴路自动留口、不踩地皮）。
+     *
+     * @param enabled 是否启用（默认 true）
+     * @param block   围墙方块 id（默认 {@code minecraft:cobblestone_wall}）
+     * @param height  墙高（格，默认 1）
+     */
+    public record CityWallConfig(boolean enabled, String block, int height) {}
 
     /** 搬家配置。 */
     public record MoveConfig(boolean enabled, double cost, int cooldownDays) {}
+
+    /**
+     * 海洋换种子重建：首建公会世界时若主城网格 footprint 水占比过高，换随机种子重建（最多 maxAttempts 次），
+     * 直到拿到陆地为主的世界。避免整片海洋导致铺路架桥成千上万列、压垮混合端区块/光照子系统而崩服。
+     *
+     * @param enabled       是否启用（默认 true）
+     * @param maxWaterRatio 主城 footprint 水占比超过此值则重掷种子（0~1，默认 0.5）
+     * @param maxAttempts   最多重建次数（默认 8），超过则接受最后一个并告警
+     * @param sampleGrid    footprint 上的采样网格边数（gridN×gridN 个探点，默认 12）
+     */
+    public record OceanReseedConfig(boolean enabled, double maxWaterRatio, int maxAttempts, int sampleGrid) {}
 
 
     /** 性能优化配置。 */
@@ -32,8 +53,8 @@ public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, Terrain
         LayoutConfig layout = new LayoutConfig(
                 plotMax,                                       // 地皮满级边长
                 cfg.getInt("road-chunks", 1),
-                cfg.getInt("main-city.initial-cells", 1),
-                cfg.getInt("main-city.max-cells", 2),
+                cfg.getInt("main-city.initial-chunks", 6),
+                cfg.getInt("main-city.max-chunks", 15),
                 plotInitial,                                   // 地皮初始边长
                 plotGrow,
                 cfg.getInt("advanced.base-y", 64),
@@ -97,6 +118,17 @@ public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, Terrain
                 cfg.getDouble("manor-move.cost", 10000),
                 cfg.getInt("manor-move.cooldown-days", 7));
 
-        return new GuildShelterConfig(layout, levels, prep, storage, proxyType, serverName, perf, move);
+        OceanReseedConfig oceanReseed = new OceanReseedConfig(
+                cfg.getBoolean("ocean-reseed.enabled", true),
+                cfg.getDouble("ocean-reseed.max-water-ratio", 0.5),
+                cfg.getInt("ocean-reseed.max-attempts", 8),
+                cfg.getInt("ocean-reseed.sample-grid", 12));
+
+        CityWallConfig cityWall = new CityWallConfig(
+                cfg.getBoolean("city-wall.enabled", false), // 主城已缩小成中心一格、四面环路，围墙暂关
+                cfg.getString("city-wall.block", "minecraft:cobblestone_wall"),
+                cfg.getInt("city-wall.height", 1));
+
+        return new GuildShelterConfig(layout, levels, prep, storage, proxyType, serverName, perf, move, oceanReseed, cityWall);
     }
 }

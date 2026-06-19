@@ -89,6 +89,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
     private MergeRegistry mergeRegistry;
     private WorldCache worldCache;
     private SupervisorCache supervisorCache;
+    private org.windy.guildshelter.adapter.bukkit.CityTrustCache cityTrustCache;
     private YamlGuiLoader guiLoader;
 
     public static GuildShelterPlugin get() {
@@ -121,6 +122,11 @@ public final class GuildShelterPlugin extends JavaPlugin {
     /** 合并缓存注册表（provider 解散公会时需清理缓存）。 */
     public static MergeRegistry mergeRegistry() {
         return instance == null ? null : instance.mergeRegistry;
+    }
+
+    /** 主城信任缓存（命令授权、provider 解散/退会时清理）。onEnable 前为 null。 */
+    public static org.windy.guildshelter.adapter.bukkit.CityTrustCache cityTrustCache() {
+        return instance == null ? null : instance.cityTrustCache;
     }
 
     /** YAML GUI 加载器（从 gui.yml 读菜单定义）。 */
@@ -179,15 +185,20 @@ public final class GuildShelterPlugin extends JavaPlugin {
             getLogger().info("跨服代理: " + config.proxyType() + "（服务器名: " + config.serverName() + "）");
         }
 
-        this.worldManager = new WorldManager(config.levels(), getLogger());
+        this.worldManager = new WorldManager(config.levels(), config.oceanReseed(), getLogger());
         // 整地按载体分流
         TerrainPreparer terrain;
+        String roadBlock = getConfig().getString("road-surface-block", "minecraft:dirt_path");
+        String bridgeBlock = getConfig().getString("road-bridge-block", "auto");
+        String bridgeRail = getConfig().getString("road-bridge-rail-block", "auto");
+        var wall = config.cityWall();
         if (isNeoForgePresent()) {
-            terrain = new org.windy.guildshelter.neoforge.NeoForgeTerrainPreparer(
-                    this, getConfig().getString("road-surface-block", "minecraft:dirt_path"));
+            terrain = new org.windy.guildshelter.neoforge.NeoForgeTerrainPreparer(this, roadBlock, bridgeBlock, bridgeRail,
+                    wall.enabled(), wall.block(), wall.height());
             getLogger().info("整地：NeoForge 原生端（混合端）。");
         } else {
-            terrain = new BukkitTerrainPreparer(this, getConfig().getString("road-surface-block", "minecraft:dirt_path"));
+            terrain = new BukkitTerrainPreparer(this, roadBlock, bridgeBlock, bridgeRail,
+                    wall.enabled(), wall.block(), wall.height());
         }
 
         GuildService service = new GuildService(guilds, manors, worldManager, terrain,
@@ -231,7 +242,39 @@ public final class GuildShelterPlugin extends JavaPlugin {
         this.worldCache.setManorRepository(manors);
         this.supervisorCache = new SupervisorCache();
         GuildMemberCache memberCache = new GuildMemberCache(manors, guilds.findAll());
-        service.setMembershipListener(memberCache);
+
+        // 宿主公会 provider（会长角色 + 人数上限），早于 ClaimGuard 选好以便注入主城权限判定。
+        org.windy.guildshelter.domain.port.GuildProvider guildProvider;
+        if (getServer().getPluginManager().getPlugin("PlayerGuild") != null) {
+            guildProvider = new org.windy.guildshelter.adapter.provider.PlayerGuildProvider();
+            getLogger().info("宿主能力来源: PlayerGuild（会长角色 + 人数上限）。");
+        } else if (getServer().getPluginManager().getPlugin("LegendaryGuildRemapped") != null) {
+            guildProvider = new org.windy.guildshelter.adapter.provider.LegendaryGuildProvider();
+            getLogger().info("宿主能力来源: LegendaryGuild（会长 owner + 人数上限）。");
+        } else {
+            guildProvider = org.windy.guildshelter.domain.port.GuildProvider.NONE;
+        }
+        service.setGuildProvider(guildProvider);
+        this.worldManager.setGuildProvider(guildProvider);
+
+        // 主城信任缓存（会长额外信任的会内成员可建主城）；启动全量加载。
+        this.cityTrustCache = new org.windy.guildshelter.adapter.bukkit.CityTrustCache(
+                storage.cityTrust(), guilds.findAll());
+
+        // 成员变更回调扇出：成员缓存 + 主城信任缓存（离会自动撤信任、解散清空）。
+        final GuildMemberCache mc = memberCache;
+        final org.windy.guildshelter.adapter.bukkit.CityTrustCache ctc = this.cityTrustCache;
+        service.setMembershipListener(new org.windy.guildshelter.domain.port.MembershipChangeListener() {
+            @Override public void onMemberAssigned(org.windy.guildshelter.domain.model.GuildId g, java.util.UUID p) {
+                mc.onMemberAssigned(g, p); ctc.onMemberAssigned(g, p);
+            }
+            @Override public void onMemberReleased(org.windy.guildshelter.domain.model.GuildId g, java.util.UUID p) {
+                mc.onMemberReleased(g, p); ctc.onMemberReleased(g, p);
+            }
+            @Override public void onGuildDissolved(org.windy.guildshelter.domain.model.GuildId g) {
+                mc.onGuildDissolved(g); ctc.onGuildDissolved(g);
+            }
+        });
 
         GsCommand command = new GsCommand(worldManager, guilds, manors, service, registry,
                 config.levels(), entityCensus, this.mergeRegistry, proxyChannel, config.serverName(), getLogger(), this);
@@ -252,7 +295,8 @@ public final class GuildShelterPlugin extends JavaPlugin {
         // 领地保护：加入极致啰嗦的启动诊断日志
         // =========================================================================
         if (getConfig().getBoolean("protection", true)) {
-            this.claimGuard = new ClaimGuard(registry, new PermissionRules(), this.worldCache, this.supervisorCache, memberCache);
+            this.claimGuard = new ClaimGuard(registry, new PermissionRules(), this.worldCache, this.supervisorCache,
+                    memberCache, this.cityTrustCache, guildProvider);
             ManorLookup lookup = new ManorLookup(registry, manors, this.worldCache);
             this.manorLookup = lookup;
             this.interactionPolicy = new InteractionPolicy(claimGuard, lookup);
@@ -331,6 +375,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
                 hooked = true;
             }
         }
+
 
         if (getServer().getPluginManager().getPlugin("Shetuan") != null) {
             ShetuanAccess access = ShetuanAccess.tryCreate(getServer().getPluginManager(), getLogger());

@@ -3,6 +3,7 @@ package org.windy.guildshelter.service;
 import org.windy.guildshelter.domain.flag.Flag;
 import org.windy.guildshelter.domain.layout.LayoutCalculator;
 import org.windy.guildshelter.domain.layout.LayoutConfig;
+import org.windy.guildshelter.domain.layout.RoadMask;
 import org.windy.guildshelter.domain.model.ChunkRegion;
 import org.windy.guildshelter.domain.model.GuildId;
 import org.windy.guildshelter.domain.model.GuildWorld;
@@ -10,6 +11,7 @@ import org.windy.guildshelter.domain.model.Manor;
 import org.windy.guildshelter.domain.model.PlayerRef;
 import org.windy.guildshelter.domain.model.TerrainPrepMode;
 import org.windy.guildshelter.domain.port.EconomyPort;
+import org.windy.guildshelter.domain.port.GuildProvider;
 import org.windy.guildshelter.domain.port.GuildRepository;
 import org.windy.guildshelter.domain.port.ManorMover;
 import org.windy.guildshelter.domain.port.ManorRepository;
@@ -39,6 +41,7 @@ public final class GuildService {
     private final LevelRules levels;
     private final TerrainPrepMode prepMode;
     private volatile MembershipChangeListener membershipListener; // 可选，延迟注入
+    private volatile GuildProvider guildProvider = GuildProvider.NONE; // 宿主角色/容量来源，延迟注入
 
     // 搬家相关（可选，null = 搬家未启用）
     private ManorMover manorMover;
@@ -95,6 +98,24 @@ public final class GuildService {
         this.membershipListener = listener;
     }
 
+    /** 注入宿主公会 provider（角色/人数上限来源）；未注入时为 {@link GuildProvider#NONE}。 */
+    public void setGuildProvider(GuildProvider provider) {
+        this.guildProvider = provider != null ? provider : GuildProvider.NONE;
+    }
+
+    /** 该玩家是否为该公会会长/管理（会长 + 副会长/官员），供主城信任命令授权用。 */
+    public boolean isGuildAdmin(PlayerRef player, GuildId guild) {
+        return guildProvider.isGuildAdmin(player, guild);
+    }
+
+    /**
+     * 该公会当前<b>有效名额容量</b>（发多少地皮 slot）：宿主插件有公会人数上限就跟宿主，
+     * 否则退回 GuildShelter 自己的等级容量（等级 × members-per-level）。
+     */
+    public int effectiveCapacity(GuildWorld gw) {
+        return guildProvider.memberCap(gw.guild()).orElseGet(() -> levels.maxMembers(gw.guildLevel()));
+    }
+
     /** 建会：创建（或返回已有的）公会世界，按<b>当前 config</b> 冻结其布局参数。 */
     public GuildWorld createGuild(GuildId guild, long seed) {
         return createGuild(guild, seed, prepMode);
@@ -114,7 +135,36 @@ public final class GuildService {
         GuildWorld gw = GuildWorld.create(guild, worlds.worldName(guild), seed, currentLayout, terrainMode, serverName);
         gw = worlds.ensureWorld(gw);
         guilds.save(gw);
+        prepareMainCityRoads(gw); // 建会即给主城铺一圈环路（主城非成员 slot，否则四周路会"被吞"）
+        buildCityWall(gw);        // 围墙（默认关）
         return gw;
+    }
+
+    /**
+     * 给主城铺<b>四周环路</b>：主城不是成员 slot，{@link #prepareManorTerrain} 的成员路网不覆盖它，
+     * 故单独铺 {@link LayoutCalculator#mainCityRoadStrips()} 这圈，让主城建会即被路环绕、与成员路网拼接。
+     * 建会时调用一次（幂等：重复铺同一圈无副作用）。
+     */
+    public void prepareMainCityRoads(GuildWorld gw) {
+        if (prepMode == TerrainPrepMode.NONE || gw.terrainMode() == TerrainPrepMode.VOID) {
+            return;
+        }
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        RoadMask roadMask = layout.roadMask(gw.originChunkX(), gw.originChunkZ());
+        for (ChunkRegion strip : layout.mainCityRoadStrips()) {
+            terrain.surfaceRoad(gw.worldName(), strip.shift(gw.originChunkX(), gw.originChunkZ()), roadMask);
+        }
+    }
+
+    /**
+     * 沿<b>最大主城</b>外缘建围墙：建会时自动、{@code /gs admin citywall} 手动重建。世界须已加载。
+     * 只在外侧是成员地皮（非路）的主城边块上立墙——贴道路的边自动留口、永不踩成员地皮。
+     */
+    public void buildCityWall(GuildWorld gw) {
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        ChunkRegion maxCity = layout.mainCityRegion().shift(gw.originChunkX(), gw.originChunkZ());
+        RoadMask roadMask = layout.roadMask(gw.originChunkX(), gw.originChunkZ());
+        terrain.encloseMainCity(gw.worldName(), maxCity, roadMask);
     }
 
     /**
@@ -135,7 +185,7 @@ public final class GuildService {
         // 成员 slot 从 0 起紧凑铺，前 capacity 个为合法名额；nextFreeSlot 会复用退会留下的空缺，
         // 故"下一个空缺 ≥ capacity"即等价于"在册成员已达 capacity"。
         int slot = manors.nextFreeSlot(guild);
-        int capacity = levels.maxMembers(gw.guildLevel());
+        int capacity = effectiveCapacity(gw); // 宿主有人数上限就跟宿主，否则用我们的等级容量
         if (slot >= capacity) {
             throw new GuildFullException(guild, capacity, gw.guildLevel());
         }
@@ -184,7 +234,7 @@ public final class GuildService {
         }
         worlds.unloadGuild(guild);
         guilds.delete(guild);
-        MembershipChangeListener l = membershipListener;
+        MembershipChangeListener l = membershipListener; // 缓存(成员/主城信任)经此回调清理
         if (l != null) l.onGuildDissolved(guild);
     }
 
@@ -197,7 +247,7 @@ public final class GuildService {
         }
         Manor upgraded = manor.withLevel(manor.level() + 1);
         manors.save(upgraded);
-        prepareManorTerrain(gw, upgraded, false); // 异步：玩家已在世界里，不卡主线程
+        prepareManorTerrain(gw, upgraded, false, false); // 异步、只整新解锁地皮，不重铺路（路与等级无关）
         return true;
     }
 
@@ -362,14 +412,25 @@ public final class GuildService {
 
     /** 把庄园当前实占范围（layout 坐标）平移到世界坐标后整地，并把本格道路铺成土径。 */
     public void prepareManorTerrain(GuildWorld gw, Manor manor, boolean sync) {
+        prepareManorTerrain(gw, manor, sync, true);
+    }
+
+    /**
+     * @param includeRoads 是否同时铺该格四周的路。<b>仅首次分配(assign)时铺</b>；升级地皮传 false——
+     *                     路是格子级的、与地皮等级无关，升级时重铺纯属浪费（且历史上还会触发路面逐级下沉）。
+     */
+    public void prepareManorTerrain(GuildWorld gw, Manor manor, boolean sync, boolean includeRoads) {
         if (prepMode == TerrainPrepMode.NONE) {
             return;
         }
         LayoutCalculator layout = new LayoutCalculator(gw.layout());
         ChunkRegion active = layout.activeRegion(manor.slot(), manor.level());
         terrain.prepare(gw.worldName(), active.shift(gw.originChunkX(), gw.originChunkZ()), prepMode, sync);
-        for (ChunkRegion road : layout.roadStripsFor(manor.slot())) {
-            terrain.surfaceRoad(gw.worldName(), road.shift(gw.originChunkX(), gw.originChunkZ()));
+        if (includeRoads) {
+            RoadMask roadMask = layout.roadMask(gw.originChunkX(), gw.originChunkZ());
+            for (ChunkRegion road : layout.roadStripsFor(manor.slot())) {
+                terrain.surfaceRoad(gw.worldName(), road.shift(gw.originChunkX(), gw.originChunkZ()), roadMask);
+            }
         }
     }
 }

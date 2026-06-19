@@ -10,6 +10,7 @@ import org.windy.guildshelter.domain.model.PlayerRef;
 import org.windy.guildshelter.domain.port.GuildProvider;
 
 import java.util.Optional;
+import java.util.OptionalInt;
 
 /**
  * {@link GuildProvider} 的 LegendaryGuild 实现。GuildId = LegendaryGuild 的公会名（其数据以公会名为主键）。
@@ -47,5 +48,23 @@ public final class LegendaryGuildProvider implements GuildProvider {
     public String displayName(GuildId guild) {
         Guild g = LegendaryGuild.getLegendaryGuild().getGuildsManager().getGuild(guild.value());
         return g != null ? g.getDisplay() : guild.value();
+    }
+
+    /** LegendaryGuild 只暴露会长(owner，以玩家名记)；无官员概念 → 仅会长算管理。需玩家在线拿名字。 */
+    @Override
+    public boolean isGuildAdmin(PlayerRef player, GuildId guild) {
+        Player p = Bukkit.getPlayer(player.uuid());
+        if (p == null) {
+            return false;
+        }
+        Guild g = LegendaryGuild.getLegendaryGuild().getGuildsManager().getGuild(guild.value());
+        return g != null && g.getOwner() != null && g.getOwner().equalsIgnoreCase(p.getName());
+    }
+
+    /** LegendaryGuild 公会人数上限 = 基础上限 + 额外名额。 */
+    @Override
+    public OptionalInt memberCap(GuildId guild) {
+        Guild g = LegendaryGuild.getLegendaryGuild().getGuildsManager().getGuild(guild.value());
+        return g != null ? OptionalInt.of(g.getMaxMembers() + g.getExtra_members()) : OptionalInt.empty();
     }
 }

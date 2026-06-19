@@ -1,5 +1,6 @@
 package org.windy.guildshelter.adapter.bukkit;
 
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 /**
@@ -58,10 +59,11 @@ public final class Permissions {
     // ===== 辅助方法 =====
 
     /**
-     * 该玩家是否持有指定的细粒度 admin 权限（ADMIN 总节点 = 自动拥有全部子节点）。
+     * 该发令者是否持有指定的细粒度 admin 权限（ADMIN 总节点 = 自动拥有全部子节点）。
+     * 参数用 {@link CommandSender}（Player 的超类），让命令上下文(控制台/命令方块/玩家)统一可用。
      */
-    public static boolean hasAdminPerm(Player player, String specific) {
-        return player.hasPermission(ADMIN) || player.hasPermission(specific);
+    public static boolean hasAdminPerm(CommandSender sender, String specific) {
+        return sender.hasPermission(ADMIN) || sender.hasPermission(specific);
     }
 
     /**

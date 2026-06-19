@@ -35,16 +35,28 @@ public final class ClaimGuard {
     private final WorldCache cache;
     private final SupervisorCache supervisorCache;
     private final GuildMemberCache memberCache;
+    private final CityTrustCache cityTrustCache;
+    private final org.windy.guildshelter.domain.port.GuildProvider guildProvider;
 
     private final Map<UUID, Long> lastDenyMsg = new ConcurrentHashMap<>();
 
     public ClaimGuard(GuildWorldRegistry registry, PermissionRules rules,
-                      WorldCache cache, SupervisorCache supervisorCache, GuildMemberCache memberCache) {
+                      WorldCache cache, SupervisorCache supervisorCache, GuildMemberCache memberCache,
+                      CityTrustCache cityTrustCache,
+                      org.windy.guildshelter.domain.port.GuildProvider guildProvider) {
         this.registry = registry;
         this.rules = rules;
         this.cache = cache;
         this.supervisorCache = supervisorCache;
         this.memberCache = memberCache;
+        this.cityTrustCache = cityTrustCache;
+        this.guildProvider = guildProvider != null
+                ? guildProvider : org.windy.guildshelter.domain.port.GuildProvider.NONE;
+    }
+
+    /** 主城可建判定：会长(含副会长) 或 会长信任的会内成员。热路径，O(1)（cityTrust 缓存 + provider 角色查）。 */
+    private boolean canBuildCity(GuildId guild, PlayerRef ref) {
+        return cityTrustCache.isTrusted(guild, ref.uuid()) || guildProvider.isGuildAdmin(ref, guild);
     }
 
     /**
@@ -84,9 +96,10 @@ public final class ClaimGuard {
                 }
             }
         } else {
-            // 非合并的原始判定：主城(member可建) / 道路(不可建)
+            // 非合并的原始判定：主城(会长/会长信任的会内人可建) / 道路(不可建)
             if (rules.canModify(layout, ref, inGuild, manorBySlot, lx, lz,
-                    (m, p) -> ManorRoles.effectiveBuildCached(m, p, supervisorCache))) {
+                    (m, p) -> ManorRoles.effectiveBuildCached(m, p, supervisorCache),
+                    p -> canBuildCity(guild, p))) {
                 return true;
             }
         }

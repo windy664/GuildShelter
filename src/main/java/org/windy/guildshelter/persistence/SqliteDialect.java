@@ -7,7 +7,13 @@ public final class SqliteDialect implements SqlDialect {
 
     @Override
     public List<String> preSchemaStatements() {
-        return List.of("PRAGMA journal_mode=WAL", "PRAGMA foreign_keys=ON");
+        // WAL 下 synchronous=NORMAL 是安全的(崩溃最多丢最后一个未 checkpoint 的事务，不损坏库)，
+        // 比默认 FULL 少一次 fsync，写入明显更快；busy_timeout 让短暂写锁竞争自动重试而非立刻抛错。
+        return List.of(
+                "PRAGMA journal_mode=WAL",
+                "PRAGMA synchronous=NORMAL",
+                "PRAGMA busy_timeout=5000",
+                "PRAGMA foreign_keys=ON");
     }
 
     @Override
@@ -124,6 +130,12 @@ public final class SqliteDialect implements SqlDialect {
                 CREATE TABLE IF NOT EXISTS manor_move_record (
                     player_uuid TEXT PRIMARY KEY,
                     last_move_at INTEGER NOT NULL
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS guild_city_trust (
+                    guild_id    TEXT NOT NULL,
+                    player_uuid TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, player_uuid)
                 )""");
     }
 

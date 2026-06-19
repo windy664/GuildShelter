@@ -2,6 +2,7 @@ package org.windy.guildshelter.adapter.provider;
 
 import com.gyzer.API.Events.CreateGuildEvent;
 import com.gyzer.API.Events.GuildDeleteEvent;
+import com.gyzer.API.Events.GuildLevelupEvent;
 import com.gyzer.API.Events.PlayerBeKickFromGuildEvent;
 import com.gyzer.API.Events.PlayerJoinGuildEvent;
 import com.gyzer.API.Events.PlayerQuitGuildEvent;
@@ -129,6 +130,24 @@ public final class LegendaryGuildListener implements Listener {
         logger.info("[GuildShelter] 成员被踢 " + playerName + " → 已释放其地皮。");
     }
 
+    /** 宿主公会升级 → 跟随把 GuildShelter 公会等级 +1（仍走我们自己的等级曲线，封顶在 config max-level）。 */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onGuildLevelup(GuildLevelupEvent event) {
+        String name = guildName(event.getGuild());
+        if (name == null) {
+            return;
+        }
+        GuildId guild = new GuildId(name);
+        if (!guilds.exists(guild)) {
+            return;
+        }
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (service.upgradeGuild(guild)) {
+                logger.info("[GuildShelter] 宿主公会升级 → " + name + " 跟随升一级。");
+            }
+        });
+    }
+
     @EventHandler(priority = EventPriority.MONITOR)
     public void onGuildDelete(GuildDeleteEvent event) {
         String name = guildName(event.getGuild());
@@ -137,7 +156,7 @@ public final class LegendaryGuildListener implements Listener {
         }
         GuildId guild = new GuildId(name);
         guilds.find(guild).ifPresent(gw -> registry.unregister(gw.worldName()));
-        service.dissolveGuild(guild);
+        service.dissolveGuild(guild); // 主城信任缓存经 MembershipChangeListener.onGuildDissolved 自动清理
         var mr = org.windy.guildshelter.GuildShelterPlugin.mergeRegistry();
         if (mr != null) mr.removeGuild(guild);
         logger.info("[GuildShelter] 公会解散 " + name + " → 已卸载世界并清理数据。");

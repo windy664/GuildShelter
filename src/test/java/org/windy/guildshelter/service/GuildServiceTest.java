@@ -216,6 +216,8 @@ class GuildServiceTest {
         public int getTodayFlowerCount(GuildId g, int s) { return 0; }
         public double getPopularity(GuildId g, int s) { return 0; }
         public boolean hasSentFlowerToday(GuildId g, int s, PlayerRef sender) { return false; }
+        public long getLastMoveTime(java.util.UUID playerUuid) { return 0; }
+        public void recordMove(java.util.UUID playerUuid, long timestamp) {}
     }
 
     static final class FakeWorldControl implements WorldControl {
@@ -240,7 +242,7 @@ class GuildServiceTest {
         public void prepare(String worldName, ChunkRegion region, TerrainPrepMode mode) {
             calls.add(new PrepCall(worldName, region, mode));
         }
-        public void surfaceRoad(String worldName, ChunkRegion region) {
+        public void surfaceRoad(String worldName, ChunkRegion region, org.windy.guildshelter.domain.layout.RoadMask roadMask) {
             roadCalls.add(region);
         }
     }

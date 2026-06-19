@@ -16,8 +16,8 @@ libraries:
   - com.mysql:mysql-connector-j:8.4.0
 commands:
   gs:
-    description: GuildShelter 插件命令
-    usage: /gs <home|spawn|upgrade|info|trust|untrust|list|visit|clear|flag|card|alias|sethome|done|kick|near|rate|top|middle|comment|inbox|swap|grant|merge|unmerge> | /gs admin ...
+    description: GuildShelter 公会营地插件命令
+    usage: /gs <子命令> | /gs help 查看全部命令
 permissions:
   guildshelter.admin:
     description: 全权管理 GuildShelter（自动拥有所有 admin 子节点）
@@ -101,3 +101,10 @@ permissions:
   guildshelter.command.sub: { default: true }
   guildshelter.command.bulletin: { default: true }
   guildshelter.command.move: { default: true }
+  guildshelter.command.open: { default: true }
+  guildshelter.command.close: { default: true }
+  guildshelter.command.flower: { default: true }
+  guildshelter.command.gift: { default: true }
+  guildshelter.command.board: { default: true }
+  guildshelter.command.citytrust: { default: true }
+  guildshelter.command.cityuntrust: { default: true }

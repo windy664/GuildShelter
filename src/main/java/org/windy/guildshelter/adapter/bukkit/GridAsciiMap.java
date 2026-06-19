@@ -1,7 +1,7 @@
 package org.windy.guildshelter.adapter.bukkit;
 
+import org.windy.guildshelter.domain.layout.Classification;
 import org.windy.guildshelter.domain.layout.LayoutCalculator;
-import org.windy.guildshelter.domain.layout.SpiralIndex;
 import org.windy.guildshelter.domain.model.GuildWorld;
 
 import java.util.ArrayList;
@@ -9,59 +9,67 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 把公会世界的螺旋网格渲染成控制台 ASCII 图，便于直观看清主城 / 已占地皮 / 空闲名额 / 容量边界的分布。
+ * 把公会世界渲染成控制台 <b>chunk 级</b> ASCII 图：1 字符 = 1 chunk（区域过大时按比例降采样），
+ * 直接用 {@link LayoutCalculator#classify} 上色，直观看清主城 / 路 / 各成员地皮的 chunk 分布。
  *
- * <p>一格 = 一块地皮（不是 chunk），用<b>定宽数字编号</b>标注每个成员 slot，方便对上"已分配地皮 #N"的日志。
- * 窗口为以主城为中心、半径 = 当前边界环的方形。纯 ASCII，避免 Windows 控制台码页乱码。
+ * <p>坐标系为<b>布局坐标</b>（(0,0)=主城锚定角，与 origin 无关），故只依赖 classify + slot 占用，纯 ASCII。
  */
 public final class GridAsciiMap {
+
+    /** 单行最多字符数：超出则按 step 降采样，避免刷屏。 */
+    private static final int MAX_CHARS = 64;
 
     private GridAsciiMap() {
     }
 
     /**
-     * @param occupiedSlots    已被占用的成员 slot（来自实际庄园记录，含退会留下的空缺判断）
-     * @param capacity         当前公会等级的名额容量
-     * @param currentCityHalf  当前公会等级下主城的实际"半径"（格）：≤ 预留(最大)半径
+     * @param occupiedSlots     已被占用的成员 slot（来自实际庄园记录）
+     * @param capacity          当前公会等级的名额容量
+     * @param currentCityChunks 当前公会等级下主城的实占边长（chunk）：仅表头显示
      */
     public static List<String> render(LayoutCalculator layout, GuildWorld gw,
-                                      Set<Integer> occupiedSlots, int capacity, int currentCityHalf) {
-        int base = layout.base();
+                                      Set<Integer> occupiedSlots, int capacity, int currentCityChunks) {
+        int pitch = layout.pitchChunks();
         int reserved = Math.max(gw.allocatedSlots(), capacity);
-        int r = layout.borderRingCells(reserved);
-
-        // 定宽：能放下最大编号(capacity-1) + 已占标记 '*'
-        int maxSlot = Math.max(0, capacity - 1);
-        int width = String.valueOf(maxSlot).length() + 1;
+        int r = layout.borderRingCells(reserved);          // 边界半径（格）
+        // 窗口(chunk)：覆盖 [-r..r] 格 → chunk [-r*pitch .. (r+1)*pitch-1]
+        int minC = -r * pitch;
+        int maxC = (r + 1) * pitch - 1;
+        int span = maxC - minC + 1;
+        int step = Math.max(1, (span + MAX_CHARS - 1) / MAX_CHARS); // 1 字符代表 step×step chunk
 
         List<String> lines = new ArrayList<>();
-        lines.add("== 公会世界 " + gw.worldName() + " 网格分布 ==");
+        lines.add("== 公会世界 " + gw.worldName() + " 区块图(1字符=" + (step == 1 ? "1" : step + "x" + step) + " chunk) ==");
         lines.add("  等级 " + gw.guildLevel() + " | 名额容量 " + capacity
-                + " | 已占 " + occupiedSlots.size() + " | 主城半径 " + currentCityHalf
+                + " | 已占 " + occupiedSlots.size() + " | 主城 " + currentCityChunks + " chunk"
                 + " | 边界半径 " + r + " 格");
-        lines.add("  图例: C=当前主城  c=预留扩城  *N=已占地皮#N  N=空闲名额#N  (空白)=容量外");
-        for (int gz = -r; gz <= r; gz++) {
+        lines.add("  图例: C=主城  #=已占地皮  +=空闲名额  .=路  (空白)=未开发/容量外");
+        for (int cz = minC; cz <= maxC; cz += step) {
             StringBuilder sb = new StringBuilder("  ");
-            for (int gx = -r; gx <= r; gx++) {
-                int s = SpiralIndex.toIndex(gx, gz);
-                String cell;
-                if (s < base) { // 中心预留(最大)主城区：按当前半径区分已建/预留
-                    int ring = Math.max(Math.abs(gx), Math.abs(gz));
-                    cell = ring <= currentCityHalf ? "C" : "c";
-                } else {
-                    int slot = s - base;
-                    if (occupiedSlots.contains(slot)) {
-                        cell = "*" + slot;          // 已生成的地皮：*编号
-                    } else if (slot < capacity) {
-                        cell = String.valueOf(slot); // 空闲名额：编号
-                    } else {
-                        cell = "";                   // 容量外：空白
-                    }
-                }
-                sb.append(String.format("%" + width + "s", cell)).append(' '); // 右对齐定宽
+            for (int cx = minC; cx <= maxC; cx += step) {
+                sb.append(symbol(layout, cx, cz, occupiedSlots, capacity));
             }
             lines.add(sb.toString());
         }
         return lines;
+    }
+
+    /** 单个 chunk(布局坐标) → 符号。 */
+    private static char symbol(LayoutCalculator layout, int cx, int cz, Set<Integer> occ, int capacity) {
+        Classification c = layout.classify(cx, cz);
+        if (c.isMainCity()) {
+            return 'C';
+        }
+        if (c.isRoad()) {
+            return '.';
+        }
+        if (c.isPlot()) {
+            int slot = c.slot();
+            if (occ.contains(slot)) {
+                return '#';     // 已占地皮
+            }
+            return slot < capacity ? '+' : ' '; // 空闲名额 / 容量外
+        }
+        return ' ';
     }
 }

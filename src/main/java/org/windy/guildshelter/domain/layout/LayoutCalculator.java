@@ -17,12 +17,14 @@ public final class LayoutCalculator {
     private final LayoutConfig config;
     private final int pitch;
     private final int plot;
+    private final int cityMax;
     private final int base;
 
     public LayoutCalculator(LayoutConfig config) {
         this.config = config;
         this.pitch = config.pitchChunks();
         this.plot = config.plotChunks();
+        this.cityMax = config.mainCityMaxChunks();
         this.base = config.mainCityBase();
     }
 
@@ -35,12 +37,13 @@ public final class LayoutCalculator {
         int gx = Math.floorDiv(chunkX, pitch);
         int gz = Math.floorDiv(chunkZ, pitch);
         int s = SpiralIndex.toIndex(gx, gz);
-        if (s < base) {
-            return Classification.mainCity();
-        }
         int lx = Math.floorMod(chunkX, pitch);
         int lz = Math.floorMod(chunkZ, pitch);
-        if (lx < plot && lz < plot) {
+        if (s < base) { // 中心格(cell 0) = 主城：只占角落 cityMax×cityMax，其余(含 +x/+z 宽边)皆为路 → 主城四周环路
+            return (lx < cityMax && lz < cityMax) ? Classification.mainCity() : Classification.road();
+        }
+        boolean inPlot = lx < plot && lz < plot;
+        if (inPlot) {
             boolean border = lx == 0 || lx == plot - 1 || lz == 0 || lz == plot - 1;
             return Classification.plot(s - base, border);
         }
@@ -54,23 +57,47 @@ public final class LayoutCalculator {
     }
 
     /**
-     * 成员 slot 所属网格格的<b>道路条带</b>（该格的右侧竖条 + 底部横条，呈 L 形）。
-     * 相邻格的条带彼此拼接成连续路网；用于给道路铺土径。roadChunks=0 时返回空。
+     * 构造把<b>世界 chunk 坐标</b>映射到"是否路网"的 {@link RoadMask}，{@code origin} 为公会世界原点（chunk）。
+     * 内部减去 origin 还原到布局坐标后复用 {@link #classify} 的路网规则，保证与生成器/铺路一致。
+     * 整地铺路时传给整地端口，用于十字路口护栏抑制：水上桥边若外侧也是路，则不架栏（见 {@link RoadMask}）。
+     */
+    public RoadMask roadMask(int originChunkX, int originChunkZ) {
+        return (cx, cz) -> classify(cx - originChunkX, cz - originChunkZ).isRoad();
+    }
+
+    /**
+     * 成员 slot 地皮的<b>四周环路</b>条带：绕地皮 footprint 铺一圈宽 {@code roadChunks} 的路框。
+     * 早期只铺右(+x)+下(+z)两条 L 形，地皮的 -x/-z 两侧路要等相邻格有成员才被铺（导致"负 z 轴没铺路"）；
+     * 改成整圈后，每块地皮认领即四周环路，与邻格 through-road 在共享边自然重合（重复铺幂等无副作用）。
      */
     public java.util.List<ChunkRegion> roadStripsFor(int slot) {
-        if (config.roadChunks() <= 0) {
+        ChunkRegion p = plotRegion(slot);
+        return ringStrips(p.minChunkX(), p.minChunkZ(), p.maxChunkX(), p.maxChunkZ());
+    }
+
+    /**
+     * 主城<b>四周环路</b>的道路条带：绕主城 footprint([0..cityMax-1]²) 铺一圈宽 {@code roadChunks} 的路框。
+     * 主城不是成员 slot、不会被 {@link #roadStripsFor} 覆盖，故由建会流程单独铺。{@code cityMax = plotChunks}
+     * 时该框正好落在网格 through-road 上、与成员路网无缝拼接；更小则在主城与成员格之间留一圈自然缓冲。
+     */
+    public java.util.List<ChunkRegion> mainCityRoadStrips() {
+        return ringStrips(0, 0, cityMax - 1, cityMax - 1);
+    }
+
+    /**
+     * 绕方形 footprint [minX..maxX]×[minZ..maxZ] 外侧铺一圈宽 {@code roadChunks} 的路框，
+     * 返回四条不重叠矩形（上/下满宽含角，左/右取中段）。roadChunks=0 返回空。地皮与主城共用。
+     */
+    private java.util.List<ChunkRegion> ringStrips(int minX, int minZ, int maxX, int maxZ) {
+        int r = config.roadChunks();
+        if (r <= 0) {
             return java.util.List.of();
         }
-        ChunkRegion plotR = plotRegion(slot);
-        int cellMinX = plotR.minChunkX();
-        int cellMinZ = plotR.minChunkZ();
-        int plotMaxX = plotR.maxChunkX();
-        int plotMaxZ = plotR.maxChunkZ();
-        int cellMaxX = cellMinX + pitch - 1;
-        int cellMaxZ = cellMinZ + pitch - 1;
-        ChunkRegion right = new ChunkRegion(plotMaxX + 1, cellMinZ, cellMaxX, cellMaxZ);
-        ChunkRegion bottom = new ChunkRegion(cellMinX, plotMaxZ + 1, plotMaxX, cellMaxZ);
-        return java.util.List.of(right, bottom);
+        ChunkRegion north = new ChunkRegion(minX - r, minZ - r, maxX + r, minZ - 1);
+        ChunkRegion south = new ChunkRegion(minX - r, maxZ + 1, maxX + r, maxZ + r);
+        ChunkRegion west = new ChunkRegion(minX - r, minZ, minX - 1, maxZ);
+        ChunkRegion east = new ChunkRegion(maxX + 1, minZ, maxX + r, maxZ);
+        return java.util.List.of(north, south, west, east);
     }
 
     /** 成员 slot → 其满级地皮的整 chunk 范围（P×P）。 */
@@ -99,34 +126,30 @@ public final class LayoutCalculator {
     }
 
     /**
-     * 主城<b>预留(最大)</b>整 chunk 范围（中心 (2*max+1) 个格全占，含路沟，连续）。
-     * 这是按最大尺寸永久预留的中心区，成员地皮一律排在它之外；世界边界、出生点等都以它为基准。
+     * 主城<b>预留(最大)</b>整 chunk 范围：中心格(cell 0)里<b>角落锚定</b>的 max×max 方块（与成员地皮 {@link #plotRegion}
+     * 同款，锚在 cell 0 最小角 (0,0)）。成员地皮一律排在 cell 0 之外；世界边界以螺旋中心为准。
      */
     public ChunkRegion mainCityRegion() {
-        return cityRegion(config.mainCityHalfCellsMax());
+        int m = config.mainCityMaxChunks();
+        return new ChunkRegion(0, 0, m - 1, m - 1);
     }
 
     /**
-     * 给定公会等级下<b>当前实际</b>主城范围（从 initial 长到 max，⊆ {@link #mainCityRegion()}）。
+     * 给定公会等级下<b>当前实际</b>主城范围（角落锚定，从 initial 长到 max，⊆ {@link #mainCityRegion()}）。
      * 用于按等级铺城/整地/围墙；当前与最大之间那圈是"留给未来扩城"的预留空地。
      */
     public ChunkRegion currentCityRegion(int guildLevel, int maxGuildLevel) {
-        return cityRegion(config.cityHalfAtLevel(guildLevel, maxGuildLevel));
+        int c = config.cityChunksAtLevel(guildLevel, maxGuildLevel);
+        return new ChunkRegion(0, 0, c - 1, c - 1);
     }
 
-    private ChunkRegion cityRegion(int half) {
-        int min = -half * pitch;
-        int max = (half + 1) * pitch - 1;
-        return new ChunkRegion(min, min, max, max);
-    }
-
-    /** 世界出生点所在方块（主城中心）。 */
+    /** 世界出生点所在方块（主城锚定角 = cell 0 最小角所在 chunk 的中心，故出生点在角落）。 */
     public int spawnBlockX() {
-        return mainCityRegion().centerBlockX();
+        return 8;
     }
 
     public int spawnBlockZ() {
-        return mainCityRegion().centerBlockZ();
+        return 8;
     }
 
     // ---- 世界边界（WorldBorder）派生 ----
@@ -139,16 +162,16 @@ public final class LayoutCalculator {
     public int borderRingCells(int reservedSlots) {
         return reservedSlots > 0
                 ? SpiralIndex.ringOf(base + reservedSlots - 1)
-                : config.mainCityHalfCellsMax(); // 无成员时也至少圈住预留(最大)主城
+                : 0; // 无成员时也至少圈住主城(cell 0) + margin
     }
 
-    /** 世界边界中心方块 X（= 主城中心）。 */
+    /** 世界边界中心方块 X（= 螺旋中心 cell 0 的中心，使边界对称圈住四周成员环；≠出生点角落）。 */
     public int borderCenterBlockX() {
-        return spawnBlockX();
+        return pitch * 8;
     }
 
     public int borderCenterBlockZ() {
-        return spawnBlockZ();
+        return pitch * 8;
     }
 
     /** 世界边界全宽（方块），以中心向四周覆盖到外环地皮外沿 + margin（取偏宽的安全上界）。 */

@@ -1,10 +1,11 @@
 package org.windy.guildshelter.adapter.provider;
 
-import com.handy.guild.api.PlayerGuildApi;
-import com.handy.guild.event.GuildCreateEvent;
-import com.handy.guild.event.GuildDissolutionEvent;
-import com.handy.guild.event.PlayerJoinGuildEvent;
-import com.handy.guild.event.PlayerLeaveGuildEvent;
+import cn.handyplus.guild.api.PlayerGuildApi;
+import cn.handyplus.guild.event.GuildCreateEvent;
+import cn.handyplus.guild.event.GuildDissolutionEvent;
+import cn.handyplus.guild.event.GuildUpEvent;
+import cn.handyplus.guild.event.PlayerJoinGuildEvent;
+import cn.handyplus.guild.event.PlayerLeaveGuildEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -122,28 +123,43 @@ public final class PlayerGuildListener implements Listener {
         logger.info("[GuildShelter] 成员退出 " + uuid + " → 已释放其地皮。");
     }
 
+    /** 宿主公会升级 → 跟随把 GuildShelter 公会等级 +1（仍走我们自己的等级曲线，封顶在 config max-level）。 */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onGuildUp(GuildUpEvent event) {
+        String name = event.getGuildInfo() != null ? event.getGuildInfo().getGuildName() : null;
+        if (name == null || name.isBlank()) {
+            return;
+        }
+        GuildId guild = new GuildId(name);
+        if (!guilds.exists(guild)) {
+            return;
+        }
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (service.upgradeGuild(guild)) {
+                logger.info("[GuildShelter] 宿主公会升级 → " + name + " 跟随升一级。");
+            }
+        });
+    }
+
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onGuildDissolution(GuildDissolutionEvent event) {
-        Player owner = event.getPlayer();
-        String guildName = owner != null ? PlayerGuildApi.getInstance().getPlayerGuildName(owner) : null;
+        // 新版 API：事件直接带公会名，无需再借 owner 反查（且 owner 离线也能拿到）。
+        String guildName = event.getGuildName();
         if (guildName == null || guildName.isBlank()) {
             logger.warning("[GuildShelter] 解散事件无法解析公会名，世界/数据需手动清理。");
             return;
         }
         GuildId guild = new GuildId(guildName);
         guilds.find(guild).ifPresent(gw -> registry.unregister(gw.worldName()));
-        service.dissolveGuild(guild);
+        service.dissolveGuild(guild); // 主城信任缓存经 MembershipChangeListener.onGuildDissolved 自动清理
         var mr = org.windy.guildshelter.GuildShelterPlugin.mergeRegistry();
         if (mr != null) mr.removeGuild(guild);
         logger.info("[GuildShelter] 公会解散 " + guildName + " → 已卸载世界并清理数据。");
     }
 
     private String resolveGuildName(UUID uuid) {
-        Player p = Bukkit.getPlayer(uuid);
-        if (p == null) {
-            return null;
-        }
-        String name = PlayerGuildApi.getInstance().getPlayerGuildName(p);
+        // 新版 API 按 UUID 静态查（在线/离线均可）。
+        String name = PlayerGuildApi.getPlayerGuildName(uuid);
         return (name == null || name.isBlank()) ? null : name;
     }
 }

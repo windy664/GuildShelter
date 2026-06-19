@@ -67,9 +67,14 @@ public final class RegionTitleListener implements Listener {
         int lz = cz - gw.originChunkZ();
         Classification c = layout.classify(lx, lz);
 
-        String key = c.type() + ":" + c.slot();
+        // 地皮额外算"已解锁/预留"状态并并入去重 key：让玩家在【自己地皮内】跨越解锁边界也能收到提示。
+        Manor manor = c.isPlot() ? cache.manorAt(gw, c.slot()) : null; // 2 秒 TTL 缓存，不查库
+        boolean plotActive = manor != null
+                && layout.activeRegion(c.slot(), manor.level()).containsChunk(lx, lz);
+
+        String key = c.type() + ":" + c.slot() + (c.isPlot() ? ":" + plotActive : "");
         if (key.equals(lastKey.get(id))) {
-            return; // 归类没变，不重复弹 title
+            return; // 区域+解锁状态都没变，不重复弹 title
         }
         lastKey.put(id, key);
 
@@ -77,19 +82,24 @@ public final class RegionTitleListener implements Listener {
             case MAIN_CITY -> player.sendTitle("§6§l主城",
                     "§e公会中心 · 公会 Lv" + gw.guildLevel(), 5, 30, 10);
             case ROAD -> player.sendTitle("§7§l道路", "§8公共土径", 5, 20, 10);
-            case PLOT -> showPlotTitle(player, gw, layout, lx, lz, c.slot());
+            case PLOT -> showPlotTitle(player, gw, manor, plotActive, c.slot());
         }
     }
 
-    private void showPlotTitle(Player player, GuildWorld gw, LayoutCalculator layout,
-                               int lx, int lz, int slot) {
-        Manor manor = cache.manorAt(gw, slot); // 2 秒 TTL 缓存，不查库
+    private void showPlotTitle(Player player, GuildWorld gw, Manor manor, boolean active, int slot) {
         if (manor != null) {
-            boolean active = layout.activeRegion(slot, manor.level()).containsChunk(lx, lz);
-            String tail = active ? "" : " §8[预留区·升级解锁]";
+            if (!active) {
+                // 走进了某块地皮的预留区——明确提示需升级庄园解锁（自己的地皮尤其有用）。
+                boolean own = manor.owner().uuid().equals(player.getUniqueId());
+                player.sendTitle("§e§l⚠ 预留区",
+                        own ? "§7尚未解锁 · §a/gs upgrade §7升级庄园解锁此处"
+                                : "§7地皮 #" + slot + " 的预留区 · 主人升级后启用",
+                        5, 40, 10);
+                return;
+            }
             player.sendTitle("§a§l地皮 #" + slot,
                     "§7主人:§f " + ownerName(manor.owner().uuid())
-                            + " §7· 庄园 Lv" + manor.level() + tail,
+                            + " §7· 庄园 Lv" + manor.level(),
                     5, 40, 10);
             return;
         }

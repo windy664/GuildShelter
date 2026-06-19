@@ -59,6 +59,11 @@ public record GuildWorld(GuildId guild, String worldName, long seed,
         return new GuildWorld(guild, worldName, seed, chunkX, chunkZ, guildLevel, allocatedSlots, layout, funds, bulletin, terrainMode, serverName);
     }
 
+    /** 换世界种子（仅用于首建时为避开海洋而重掷种子；已有世界禁用，会与磁盘存档错位）。 */
+    public GuildWorld withSeed(long newSeed) {
+        return new GuildWorld(guild, worldName, newSeed, originChunkX, originChunkZ, guildLevel, allocatedSlots, layout, funds, bulletin, terrainMode, serverName);
+    }
+
     public GuildWorld withGuildLevel(int newLevel) {
         return new GuildWorld(guild, worldName, seed, originChunkX, originChunkZ, newLevel, allocatedSlots, layout, funds, bulletin, terrainMode, serverName);
     }

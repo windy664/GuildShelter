@@ -22,4 +22,33 @@ public interface GuildProvider {
 
     /** 公会展示名。 */
     String displayName(GuildId guild);
+
+    /**
+     * 玩家是否是该公会的<b>会长/管理</b>（会长 + 副会长/官员）。供主城建造/信任授权等高权操作判定。
+     * 宿主插件无角色概念时返回 false（退化为只有显式信任生效）。默认 false。
+     */
+    default boolean isGuildAdmin(PlayerRef player, GuildId guild) {
+        return false;
+    }
+
+    /**
+     * 宿主插件给出的公会<b>人数上限</b>（含额外名额）。GuildShelter 据此决定发多少地皮 slot；
+     * 宿主无人数上限概念时返回 empty，调用方退回 GuildShelter 自己的等级容量。默认 empty。
+     */
+    default java.util.OptionalInt memberCap(GuildId guild) {
+        return java.util.OptionalInt.empty();
+    }
+
+    /** 无宿主角色/容量信息的空实现（仅装了无此能力的公会插件、或未接公会插件时用）。 */
+    GuildProvider NONE = new GuildProvider() {
+        @Override public Optional<GuildId> guildOf(PlayerRef player) {
+            return Optional.empty();
+        }
+        @Override public boolean isMember(PlayerRef player, GuildId guild) {
+            return false;
+        }
+        @Override public String displayName(GuildId guild) {
+            return guild.value();
+        }
+    };
 }

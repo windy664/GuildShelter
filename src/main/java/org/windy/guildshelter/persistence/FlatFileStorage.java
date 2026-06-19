@@ -32,6 +32,7 @@ public final class FlatFileStorage implements Storage {
 
     private final FileGuildRepo guilds;
     private final FileManorRepo manors;
+    private final FileCityTrustRepo cityTrust;
 
     public FlatFileStorage(Path dir, LayoutConfig fallbackLayout) {
         try {
@@ -41,6 +42,7 @@ public final class FlatFileStorage implements Storage {
         }
         this.guilds = new FileGuildRepo(dir.resolve("guilds.tsv"), fallbackLayout);
         this.manors = new FileManorRepo(dir.resolve("manors.tsv"));
+        this.cityTrust = new FileCityTrustRepo(dir.resolve("city_trust.tsv"));
     }
 
     @Override
@@ -51,6 +53,75 @@ public final class FlatFileStorage implements Storage {
     @Override
     public ManorRepository manors() {
         return manors;
+    }
+
+    @Override
+    public org.windy.guildshelter.domain.port.CityTrustStore cityTrust() {
+        return cityTrust;
+    }
+
+    /** 主城信任名单：每行 {@code guild\tuuid}，内存 {@code guild→Set<UUID>} 缓存，变更整文件重写。 */
+    static final class FileCityTrustRepo implements org.windy.guildshelter.domain.port.CityTrustStore {
+        private final Path file;
+        private final Map<String, java.util.Set<java.util.UUID>> byGuild = new LinkedHashMap<>();
+
+        FileCityTrustRepo(Path file) {
+            this.file = file;
+            for (String line : readLines(file)) {
+                if (line.isBlank()) {
+                    continue;
+                }
+                String[] f = line.split("\t", -1);
+                if (f.length < 2) {
+                    continue;
+                }
+                try {
+                    byGuild.computeIfAbsent(f[0], k -> new java.util.HashSet<>()).add(java.util.UUID.fromString(f[1]));
+                } catch (IllegalArgumentException ignored) {
+                    // 坏 UUID 跳过
+                }
+            }
+        }
+
+        @Override
+        public java.util.Set<java.util.UUID> trusted(GuildId guild) {
+            java.util.Set<java.util.UUID> set = byGuild.get(guild.value());
+            return set == null ? java.util.Set.of() : new java.util.HashSet<>(set);
+        }
+
+        @Override
+        public void add(GuildId guild, java.util.UUID player) {
+            byGuild.computeIfAbsent(guild.value(), k -> new java.util.HashSet<>()).add(player);
+            flush();
+        }
+
+        @Override
+        public void remove(GuildId guild, java.util.UUID player) {
+            java.util.Set<java.util.UUID> set = byGuild.get(guild.value());
+            if (set != null && set.remove(player)) {
+                if (set.isEmpty()) {
+                    byGuild.remove(guild.value());
+                }
+                flush();
+            }
+        }
+
+        @Override
+        public void clear(GuildId guild) {
+            if (byGuild.remove(guild.value()) != null) {
+                flush();
+            }
+        }
+
+        private void flush() {
+            List<String> lines = new java.util.ArrayList<>();
+            for (var e : byGuild.entrySet()) {
+                for (java.util.UUID u : e.getValue()) {
+                    lines.add(clean(e.getKey()) + "\t" + u);
+                }
+            }
+            writeLines(file, lines);
+        }
     }
 
     @Override

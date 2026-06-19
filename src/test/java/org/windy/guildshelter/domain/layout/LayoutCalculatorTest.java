@@ -10,9 +10,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LayoutCalculatorTest {
 
     // 测试用固定配置（不跟生产默认值走，免得 defaults() 调尺寸时几何断言全废）：
-    // P=4, R=1, pitch=5, 主城 initial=max=1(不成长,固定 3×3), base=9, 初始实占2 每级+1
+    // P=4, R=1, pitch=5, 主城=中心格(cell 0)角落 2×2 chunk, base=1, 地皮初始实占2 每级+1
     private final LayoutCalculator calc =
-            new LayoutCalculator(new LayoutConfig(4, 1, 1, 1, 2, 1, 64, 2));
+            new LayoutCalculator(new LayoutConfig(4, 1, 2, 2, 2, 1, 64, 2));
 
     @Test
     void centerIsMainCity() {
@@ -22,16 +22,22 @@ class LayoutCalculatorTest {
     }
 
     @Test
-    void mainCityBlockIsFullyMainCity() {
-        ChunkRegion city = calc.mainCityRegion();
-        assertEquals(-5, city.minChunkX());
-        assertEquals(9, city.maxChunkX());
-        for (int cx = city.minChunkX(); cx <= city.maxChunkX(); cx++) {
-            for (int cz = city.minChunkZ(); cz <= city.maxChunkZ(); cz++) {
+    void mainCityCellIsMainCityAndSurroundedByRoad() {
+        // 主城 = 中心格(cell 0) 角落 cityMax×cityMax = [0..1]²，全是主城
+        for (int cx = 0; cx < 2; cx++) {
+            for (int cz = 0; cz < 2; cz++) {
                 assertTrue(calc.classify(cx, cz).isMainCity(), "应为主城 @ (" + cx + "," + cz + ")");
             }
         }
-        // 主城外一圈不再是主城
+        ChunkRegion city = calc.mainCityRegion();
+        assertEquals(0, city.minChunkX());
+        assertEquals(1, city.maxChunkX());
+        // 主城【四周必须是路】：cityMax 之外的 cell0 区域(东/南宽边)与相邻格路沟(西/北)都是路
+        assertTrue(calc.classify(2, 0).isRoad(), "主城东侧应为路");
+        assertTrue(calc.classify(0, 2).isRoad(), "主城南侧应为路");
+        assertTrue(calc.classify(-1, 0).isRoad(), "主城西侧应为路");
+        assertTrue(calc.classify(0, -1).isRoad(), "主城北侧应为路");
+        // 主城既非成员地皮
         assertFalse(calc.classify(10, 0).isMainCity());
     }
 
@@ -79,8 +85,8 @@ class LayoutCalculatorTest {
 
     @Test
     void roadBetweenPlots() {
-        // slot 0 的格 = (2,-1) → 地皮 chunk [10..13]×[-5..-2], 路沟在 cx=14
-        assertTrue(calc.classify(14, -5).isRoad());
+        // base=1：slot 0 的格 = toCell(1) = (1,0) → 地皮 chunk [5..8]×[0..3], 右侧路沟在 cx=9
+        assertTrue(calc.classify(9, 0).isRoad());
     }
 
     @Test

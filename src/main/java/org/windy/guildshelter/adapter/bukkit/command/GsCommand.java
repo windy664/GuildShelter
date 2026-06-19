@@ -61,7 +61,8 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     private static final Set<String> PLAYER_SUBS = Set.of("home", "spawn", "upgrade", "info",
             "trust", "untrust", "member", "deny", "undeny", "list", "visit", "clear", "flag", "card",
             "alias", "sethome", "done", "kick", "near", "rate", "top", "middle",
-            "comment", "inbox", "swap", "grant", "merge", "unmerge", "confirm", "help", "desc", "toggle", "template", "sub", "bulletin", "open", "close", "flower", "gift", "board", "move");
+            "comment", "inbox", "swap", "grant", "merge", "unmerge", "confirm", "help", "desc", "toggle", "template", "sub", "bulletin", "open", "close", "flower", "gift", "board", "move",
+            "citytrust", "cityuntrust");
 
     /** 需要确认的危险操作。 */
     private static final Set<String> CONFIRM_REQUIRED = Set.of(
@@ -210,6 +211,8 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             case "gift" -> { gift(sender, args); return true; }
             case "board" -> { board(sender); return true; }
             case "move" -> { move(sender, args); return true; }
+            case "citytrust" -> { cityTrust(sender, args, true); return true; }
+            case "cityuntrust" -> { cityTrust(sender, args, false); return true; }
             case "admin" -> { /* 落到下面的管理分支 */ }
             default -> {
                 sender.sendMessage(Messages.get("usage.player_commands"));
@@ -239,6 +242,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             case "regen" -> regen(sender, args);
             case "export" -> exportData(sender);
             case "fund" -> fund(sender, args);
+            case "citywall" -> citywall(sender, args);
             default -> sender.sendMessage(Messages.get("usage.admin"));
         }
         return true;
@@ -274,12 +278,13 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                 cy = world.getHighestBlockYAt(cx, cz) + 1;
             }
         } else {
-            // 默认：实占中心
+            // 默认：地皮的【锚定角】（最小角那个 chunk 的中心）。与地皮"从角落向外扩"一致，
+            // 该点固定不随升级漂移、且 1 级就已解锁/整好地——比"实占中心"(随等级移动)更稳。
             ChunkRegion active = new LayoutCalculator(gw.layout())
                     .activeRegion(manor.slot(), manor.level())
                     .shift(gw.originChunkX(), gw.originChunkZ());
-            cx = (active.minBlockX() + active.maxBlockX()) / 2;
-            cz = (active.minBlockZ() + active.maxBlockZ()) / 2;
+            cx = active.minBlockX() + 8;
+            cz = active.minBlockZ() + 8;
             world.loadChunk(cx >> 4, cz >> 4, true);
             cy = world.getHighestBlockYAt(cx, cz) + 1;
         }
@@ -348,7 +353,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         int side = gw.layout().plotChunksByLevel(manor.level()) * 16;
-        int capacity = levels.maxMembers(gw.guildLevel());
+        int capacity = service.effectiveCapacity(gw); // 与发地口径一致(宿主有上限跟宿主)
         int members = manors.findAll(manor.guild()).size();
         sender.sendMessage(Messages.get("info.guild_info_header"));
         String alias = Flag.ALIAS.resolveString(manor.flags());
@@ -800,7 +805,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
 
         int side = gw.layout().plotChunksByLevel(manor.level()) * 16;
-        int capacity = levels.maxMembers(gw.guildLevel());
+        int capacity = service.effectiveCapacity(gw); // 与发地口径一致(宿主有上限跟宿主)
         int memberCount = manors.findAll(manor.guild()).size();
         String desc = Flag.DESCRIPTION.resolveString(manor.flags());
 
@@ -975,11 +980,20 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
 
     // ===== help / desc / reload / setowner =====
 
-    /** /gs help [命令]：显示帮助。 */
+    /** /gs help [命令]：显示帮助（分类展示，走 i18n）。 */
     private void help(CommandSender sender, String[] args) {
         if (args.length >= 2) {
             String cmd = args[1].toLowerCase();
+            // 模糊匹配：去掉参数部分只比较子命令名
             String desc = COMMAND_HELP.get(cmd);
+            if (desc == null) {
+                for (var e : COMMAND_HELP.entrySet()) {
+                    if (e.getKey().startsWith(cmd) || e.getKey().split(" ")[0].equals(cmd)) {
+                        desc = e.getValue();
+                        break;
+                    }
+                }
+            }
             if (desc != null) {
                 sender.sendMessage(Messages.get("info.help_cmd", cmd, desc));
             } else {
@@ -987,48 +1001,120 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             }
             return;
         }
+        boolean isAdmin = sender.isOp() || Permissions.hasAdminPerm(sender, Permissions.ADMIN);
         sender.sendMessage(Messages.get("info.help_header"));
-        for (Map.Entry<String, String> e : COMMAND_HELP.entrySet()) {
-            sender.sendMessage(Messages.get("info.help_entry", e.getKey(), e.getValue()));
+        sender.sendMessage(Messages.get("info.help_cat_teleport"));
+        helpLine(sender, "home"); helpLine(sender, "spawn"); helpLine(sender, "middle");
+        helpLine(sender, "sethome"); helpLine(sender, "visit");
+        sender.sendMessage(Messages.get("info.help_cat_info"));
+        helpLine(sender, "info"); helpLine(sender, "card"); helpLine(sender, "near");
+        helpLine(sender, "list"); helpLine(sender, "board"); helpLine(sender, "top");
+        sender.sendMessage(Messages.get("info.help_cat_people"));
+        helpLine(sender, "trust"); helpLine(sender, "untrust"); helpLine(sender, "member");
+        helpLine(sender, "deny"); helpLine(sender, "undeny"); helpLine(sender, "kick");
+        sender.sendMessage(Messages.get("info.help_cat_settings"));
+        helpLine(sender, "flag"); helpLine(sender, "flag_set"); helpLine(sender, "alias");
+        helpLine(sender, "desc"); helpLine(sender, "done"); helpLine(sender, "toggle");
+        helpLine(sender, "open"); helpLine(sender, "close");
+        sender.sendMessage(Messages.get("info.help_cat_social"));
+        helpLine(sender, "comment"); helpLine(sender, "inbox"); helpLine(sender, "rate");
+        helpLine(sender, "flower"); helpLine(sender, "gift"); helpLine(sender, "bulletin");
+        sender.sendMessage(Messages.get("info.help_cat_advanced"));
+        helpLine(sender, "upgrade"); helpLine(sender, "clear"); helpLine(sender, "swap");
+        helpLine(sender, "merge"); helpLine(sender, "unmerge"); helpLine(sender, "move");
+        helpLine(sender, "template"); helpLine(sender, "sub"); helpLine(sender, "confirm");
+        if (isAdmin) {
+            sender.sendMessage(Messages.get("info.help_cat_admin"));
+            helpLine(sender, "admin_create"); helpLine(sender, "admin_tp"); helpLine(sender, "admin_claim");
+            helpLine(sender, "admin_fill"); helpLine(sender, "admin_map");
+            helpLine(sender, "admin_upgrade_manor"); helpLine(sender, "admin_upgrade_guild");
+            helpLine(sender, "admin_delete"); helpLine(sender, "admin_worlds");
+            helpLine(sender, "admin_whereami"); helpLine(sender, "admin_reload");
+            helpLine(sender, "admin_setowner"); helpLine(sender, "admin_purge");
+            helpLine(sender, "admin_regen"); helpLine(sender, "admin_export");
+            helpLine(sender, "admin_fund"); helpLine(sender, "admin_citywall");
         }
         sender.sendMessage(Messages.get("info.help_footer"));
     }
 
-    /** 命令帮助文本表。 */
+    /** 输出一行帮助条目（从 i18n 取，不存在则静默跳过）。 */
+    private void helpLine(CommandSender sender, String key) {
+        String msg = Messages.get("info.help_ln_" + key);
+        // Messages.get 找不到时返回 key 本身，跳过
+        if (msg.startsWith("info.help_ln_")) return;
+        sender.sendMessage(msg);
+    }
+
+    /** 命令帮助文本表（按分类有序）。 */
     private static final Map<String, String> COMMAND_HELP = new java.util.LinkedHashMap<>();
     static {
+        // ── 传送 ──
         COMMAND_HELP.put("home", "传送到自己地皮（优先 sethome 坐标）");
         COMMAND_HELP.put("spawn", "传送到公会主城");
-        COMMAND_HELP.put("upgrade", "升级庄园");
-        COMMAND_HELP.put("info", "查看地皮+公会信息");
-        COMMAND_HELP.put("trust <玩家|*>", "加共建人（*=批量）");
+        COMMAND_HELP.put("middle", "传送到地皮正中心（无视 sethome）");
+        COMMAND_HELP.put("sethome", "把当前位置设为 home 传送点");
+        COMMAND_HELP.put("visit <公会>", "到访某公会的主城");
+        // ── 地皮信息 ──
+        COMMAND_HELP.put("info", "查看自己地皮+公会信息");
+        COMMAND_HELP.put("card [玩家]", "查看地皮档案卡（实体/成员/评分）");
+        COMMAND_HELP.put("near", "列出附近地皮（按距离排序）");
+        COMMAND_HELP.put("list [mine]", "列出所有公会营地（mine=只看自己的）");
+        COMMAND_HELP.put("board", "查看脚下地皮的留言墙");
+        COMMAND_HELP.put("top [公会] [排序]", "排行榜（rating/level/members/entities/visits）");
+        // ── 人员管理 ──
+        COMMAND_HELP.put("trust <玩家|*>", "加共建人（可建造/交互，*=批量）");
         COMMAND_HELP.put("untrust <玩家>", "移除共建人");
-        COMMAND_HELP.put("member <add|remove> <玩家>", "管理受限成员");
-        COMMAND_HELP.put("deny <玩家|*>", "拉黑（*=批量，需确认）");
+        COMMAND_HELP.put("citytrust <玩家>", "会长信任会内成员建造公会主城");
+        COMMAND_HELP.put("cityuntrust <玩家>", "撤销会内成员的主城建造信任");
+        COMMAND_HELP.put("member <add|remove> <玩家>", "管理受限成员（上级在线时才有权）");
+        COMMAND_HELP.put("deny <玩家|*>", "拉黑（禁止进入，*=批量，需确认）");
         COMMAND_HELP.put("undeny <玩家>", "移出黑名单");
-        COMMAND_HELP.put("list [mine]", "列出公会营地（mine=只看自己的）");
-        COMMAND_HELP.put("visit <公会>", "到访公会主城");
-        COMMAND_HELP.put("clear", "清空地表（需确认）");
-        COMMAND_HELP.put("flag [set|unset]", "管理地皮 flag");
-        COMMAND_HELP.put("card [玩家]", "查看地皮档案卡");
-        COMMAND_HELP.put("alias <名称>", "设置地皮别名");
-        COMMAND_HELP.put("sethome", "设置 home 传送点");
+        COMMAND_HELP.put("kick <玩家>", "把非成员踢出你的地皮");
+        // ── 地皮设置 ──
+        COMMAND_HELP.put("flag [set|unset] [flag] [值]", "查看/设置地皮 flag");
+        COMMAND_HELP.put("alias <名称>", "设置地皮别名（空参清除）");
+        COMMAND_HELP.put("desc <描述>", "设置地皮描述（空参清除）");
         COMMAND_HELP.put("done", "切换完工标记");
-        COMMAND_HELP.put("kick <玩家>", "踢出非成员");
-        COMMAND_HELP.put("near", "列出附近地皮");
+        COMMAND_HELP.put("toggle titles", "个人开关进出标题消息");
+        COMMAND_HELP.put("open [分钟]", "临时开放地皮给访客（0=永久，默认60分钟）");
+        COMMAND_HELP.put("close", "关闭地皮访客模式");
+        // ── 社交 ──
+        COMMAND_HELP.put("comment <留言>", "给当前所在地皮留言");
+        COMMAND_HELP.put("inbox", "查看自己地皮收到的留言");
         COMMAND_HELP.put("rate <1-10> [公会 slot]", "给地皮打分");
-        COMMAND_HELP.put("top [公会]", "评分排行榜");
-        COMMAND_HELP.put("middle", "传送到地皮正中心");
-        COMMAND_HELP.put("desc <描述>", "快捷设置地皮描述");
-        COMMAND_HELP.put("comment <留言>", "给地皮留言");
-        COMMAND_HELP.put("inbox", "查看收到的留言");
-        COMMAND_HELP.put("swap <玩家>", "互换地皮 slot（需确认）");
-        COMMAND_HELP.put("grant <玩家>", "分配额外地皮（admin，需确认）");
+        COMMAND_HELP.put("flower [公会 slot]", "给地皮送花（每天每块限一次）");
+        COMMAND_HELP.put("gift <玩家>", "把手持物品送给同世界的玩家");
+        COMMAND_HELP.put("bulletin <set|show|clear>", "公会公告板管理");
+        // ── 高级 ──
+        COMMAND_HELP.put("upgrade", "升级自己的庄园一级");
+        COMMAND_HELP.put("clear", "清空自己地皮的地表建筑（需确认）");
+        COMMAND_HELP.put("swap <玩家>", "与对方互换地皮 slot（需确认）");
+        COMMAND_HELP.put("merge <slot>", "合并相邻地皮到自己的地皮（需确认）");
+        COMMAND_HELP.put("unmerge [slot]", "取消合并（不填=全部）（需确认）");
         COMMAND_HELP.put("move <公会>", "搬家到另一个公会（保留建筑，需确认）");
-        COMMAND_HELP.put("merge <slot>", "合并相邻地皮（需确认）");
-        COMMAND_HELP.put("unmerge [slot]", "取消合并（需确认）");
+        COMMAND_HELP.put("template <子命令>", "权限模板管理（create/delete/apply/setflag/list）");
+        COMMAND_HELP.put("sub <子命令>", "子领地管理（create/delete/setflag/list）");
         COMMAND_HELP.put("confirm", "确认待执行的危险操作");
-        COMMAND_HELP.put("help [命令]", "显示帮助");
+        // ── 管理命令 ──
+        COMMAND_HELP.put("admin create <公会> [地形]", "创建公会世界");
+        COMMAND_HELP.put("admin tp <公会>", "传送到公会主城");
+        COMMAND_HELP.put("admin claim <公会>", "给自己分配一块地皮");
+        COMMAND_HELP.put("admin fill <公会> <数量>", "批量填充测试地皮");
+        COMMAND_HELP.put("admin map <公会>", "输出网格图到控制台");
+        COMMAND_HELP.put("admin upgrade-manor <公会>", "升级自己庄园一级");
+        COMMAND_HELP.put("admin upgrade-guild <公会>", "升级公会等级（扩名额+边界）");
+        COMMAND_HELP.put("admin delete <公会>", "卸载公会世界");
+        COMMAND_HELP.put("admin worlds", "列出所有已加载世界");
+        COMMAND_HELP.put("admin whereami", "显示当前坐标");
+        COMMAND_HELP.put("admin reload", "热重载 config.yml");
+        COMMAND_HELP.put("admin setowner <公会> <玩家>", "转移地皮所有权");
+        COMMAND_HELP.put("admin purge <天数> [公会]", "清理闲置地皮");
+        COMMAND_HELP.put("admin regen", "重置脚下地皮地形");
+        COMMAND_HELP.put("admin export", "导出数据到 CSV");
+        COMMAND_HELP.put("admin fund <公会> <add|check|set> [金额]", "管理公会资金");
+        COMMAND_HELP.put("admin citywall <公会>", "为主城补建围墙");
+        // ── 通用 ──
+        COMMAND_HELP.put("help [命令]", "显示帮助（加命令名看详细用法）");
     }
 
     /** /gs desc <描述>：快捷设置地皮描述（等效 /gs flag set description）。 */
@@ -1736,6 +1822,71 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
         service.clearManor(manor.guild(), ref);
         sender.sendMessage(Messages.get("success.regen", manor.slot()));
+    }
+
+    /**
+     * /gs citytrust &lt;玩家&gt; | /gs cityuntrust &lt;玩家&gt;：会长（含副会长）信任/撤销会内成员建造主城。
+     * 仅会长可用；被信任者必须在本公会内（拥有本会地皮）。
+     */
+    private void cityTrust(CommandSender sender, String[] args, boolean add) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Messages.get("error.player_only"));
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage("§e用法: /gs " + (add ? "citytrust" : "cityuntrust") + " <玩家>");
+            return;
+        }
+        PlayerRef self = PlayerRef.of(player.getUniqueId());
+        Manor myManor = manors.findByOwnerAnywhere(self).orElse(null);
+        if (myManor == null) {
+            sender.sendMessage(Messages.get("error.no_manor"));
+            return;
+        }
+        GuildId guild = myManor.guild();
+        // 仅会长/副会长可授主城信任
+        if (!service.isGuildAdmin(self, guild) && !player.isOp()) {
+            sender.sendMessage("§c只有会长（或副会长）能管理主城信任。");
+            return;
+        }
+        var cache = org.windy.guildshelter.GuildShelterPlugin.cityTrustCache();
+        if (cache == null) {
+            sender.sendMessage("§c主城信任功能未就绪。");
+            return;
+        }
+        org.bukkit.OfflinePlayer target = Bukkit.getOfflinePlayer(args[1]);
+        java.util.UUID targetId = target.getUniqueId();
+        if (add) {
+            // 被信任者必须是会内成员（在本公会拥有地皮）
+            if (manors.findByOwner(guild, PlayerRef.of(targetId)).isEmpty()) {
+                sender.sendMessage("§c只能信任本公会的成员。");
+                return;
+            }
+            cache.add(guild, targetId);
+            sender.sendMessage("§a已信任 §f" + args[1] + " §a建造公会主城。");
+        } else {
+            cache.remove(guild, targetId);
+            sender.sendMessage("§e已撤销 §f" + args[1] + " §e的主城建造信任。");
+        }
+    }
+
+    /** /gs admin citywall &lt;公会&gt;：给已建好的公会补铺主城环路（+ 围墙若启用），修旧世界"路被吞"。 */
+    private void citywall(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            sender.sendMessage("§e用法: /gs admin citywall <公会>");
+            return;
+        }
+        GuildId guild = new GuildId(args[2]);
+        GuildWorld gw = guilds.find(guild).orElse(null);
+        if (gw == null) {
+            sender.sendMessage(Messages.get("error.guild_not_exist", guild.value()));
+            return;
+        }
+        gw = worlds.ensureWorld(gw); // 确保世界已加载
+        guilds.save(gw);
+        service.prepareMainCityRoads(gw); // 补铺主城四周环路（修旧世界"路被吞"）
+        service.buildCityWall(gw);        // 围墙（默认关时无操作）
+        sender.sendMessage("§a已开始为公会 " + guild.value() + " 补铺主城环路（进度见控制台）。");
     }
 
     /** /gs admin export：导出所有公会数据到 CSV 文件。 */
@@ -2673,10 +2824,10 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         for (Manor m : manors.findAll(guild)) {
             occupied.add(m.slot());
         }
-        int capacity = levels.maxMembers(gw.guildLevel());
+        int capacity = service.effectiveCapacity(gw); // 与发地口径一致(宿主有上限跟宿主)
         LayoutCalculator layout = new LayoutCalculator(gw.layout()); // 用该世界冻结的布局
-        int cityHalf = gw.layout().cityHalfAtLevel(gw.guildLevel(), levels.maxGuildLevel());
-        for (String line : GridAsciiMap.render(layout, gw, occupied, capacity, cityHalf)) {
+        int cityChunks = gw.layout().cityChunksAtLevel(gw.guildLevel(), levels.maxGuildLevel());
+        for (String line : GridAsciiMap.render(layout, gw, occupied, capacity, cityChunks)) {
             logger.info(line);
         }
     }
@@ -2772,105 +2923,138 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                     "member", "deny", "undeny", "list", "visit", "clear", "flag", "card",
                     "alias", "sethome", "done", "kick", "near", "rate", "top", "middle",
                     "comment", "inbox", "swap", "grant", "merge", "unmerge", "confirm",
-                    "help", "desc", "admin"}) {
+                    "help", "desc", "toggle", "template", "sub", "bulletin", "open", "close",
+                    "flower", "gift", "board", "move", "admin"}) {
                 out.add(s);
             }
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("flag")) {
-            out.add("set");
-            out.add("unset");
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("card")) {
-            for (Player p : Bukkit.getOnlinePlayers()) {
-                out.add(p.getName());
-            }
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("kick")) {
-            for (Player p : Bukkit.getOnlinePlayers()) {
-                out.add(p.getName());
-            }
-        } else if (args.length == 2 && (args[0].equalsIgnoreCase("swap")
-                || args[0].equalsIgnoreCase("grant"))) {
-            for (Player p : Bukkit.getOnlinePlayers()) {
-                out.add(p.getName());
-            }
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("rate")) {
-            for (int i = 1; i <= 10; i++) {
-                out.add(String.valueOf(i));
-            }
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("top")) {
-            for (GuildWorld gw : guilds.findAll()) {
-                out.add(gw.guild().value());
-            }
-            out.addAll(java.util.List.of("rating", "level", "members", "entities", "visits"));
-        } else if (args.length == 3 && args[0].equalsIgnoreCase("top")) {
-            out.addAll(java.util.List.of("rating", "level", "members", "entities", "visits"));
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("help")) {
-            out.addAll(COMMAND_HELP.keySet());
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("list")) {
-            out.add("mine");
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("toggle")) {
-            out.add("titles");
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("template")) {
-            out.addAll(java.util.List.of("create", "delete", "apply", "setflag", "list"));
-        } else if (args.length == 3 && args[0].equalsIgnoreCase("template") && args[1].equalsIgnoreCase("apply")) {
-            Manor m = manors.findByOwnerAnywhere(PlayerRef.of(((Player) sender).getUniqueId())).orElse(null);
-            if (m != null) out.addAll(manors.listTemplates(m.guild()));
-        } else if (args.length == 3 && args[0].equalsIgnoreCase("template") && args[1].equalsIgnoreCase("setflag")) {
-            Manor m = manors.findByOwnerAnywhere(PlayerRef.of(((Player) sender).getUniqueId())).orElse(null);
-            if (m != null) out.addAll(manors.listTemplates(m.guild()));
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("sub")) {
-            out.addAll(java.util.List.of("create", "delete", "setflag", "list"));
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("bulletin")) {
-            out.addAll(java.util.List.of("set", "show", "clear"));
-        } else if (args.length == 3 && args[0].equalsIgnoreCase("flag")) {
-            for (Flag f : Flag.values()) {
-                out.add(f.id());
-            }
-        } else if (args.length == 4 && args[0].equalsIgnoreCase("flag") && args[1].equalsIgnoreCase("set")) {
-            Flag f = Flag.byId(args[2]).orElse(null);
-            if (f != null) {
-                if (f.type() == org.windy.guildshelter.domain.flag.FlagType.BOOLEAN) {
-                    out.add("true");
-                    out.add("false");
-                } else if (f.type() == org.windy.guildshelter.domain.flag.FlagType.INTEGER) {
-                    out.add("-1");
-                    out.add("0");
-                    out.add("10");
-                } else if (f.type() == org.windy.guildshelter.domain.flag.FlagType.DOUBLE) {
-                    out.add("0");
-                    out.add("100");
+        } else if (args.length == 2) {
+            String sub = args[0].toLowerCase();
+            switch (sub) {
+                case "flag" -> { out.add("set"); out.add("unset"); }
+                case "member" -> { out.add("add"); out.add("remove"); }
+                case "toggle" -> { out.add("titles"); }
+                case "template" -> { out.addAll(java.util.List.of("create", "delete", "apply", "setflag", "list", "save", "paste", "list-schematics")); }
+                case "sub" -> { out.addAll(java.util.List.of("create", "delete", "setflag", "list")); }
+                case "bulletin" -> { out.addAll(java.util.List.of("set", "show", "clear")); }
+                case "top" -> {
+                    for (GuildWorld gw : guilds.findAll()) out.add(gw.guild().value());
+                    out.addAll(java.util.List.of("rating", "level", "members", "entities", "visits"));
+                }
+                case "list" -> { out.add("mine"); }
+                case "open" -> { out.addAll(java.util.List.of("0", "30", "60", "120")); }
+                case "help" -> { out.addAll(COMMAND_HELP.keySet()); }
+                case "admin" -> {
+                    if (sender.isOp() || Permissions.hasAdminPerm(sender, Permissions.ADMIN)) {
+                        out.addAll(java.util.List.of("create", "tp", "claim", "fill", "map", "upgrade-manor",
+                                "upgrade-guild", "delete", "worlds", "whereami", "reload", "setowner",
+                                "purge", "regen", "export", "fund", "citywall"));
+                    }
+                }
+                default -> {
+                    // 在线玩家补全
+                    if (java.util.Set.of("card", "kick", "swap", "grant", "gift", "trust", "untrust", "deny", "undeny").contains(sub)) {
+                        if (sub.equals("trust") || sub.equals("deny")) out.add("*");
+                        for (Player p : Bukkit.getOnlinePlayers()) out.add(p.getName());
+                    }
+                    // 公会名补全
+                    if (java.util.Set.of("visit", "move").contains(sub)) {
+                        for (GuildWorld gw : guilds.findAll()) out.add(gw.guild().value());
+                    }
+                    // 评分 1-10
+                    if ("rate".equals(sub)) {
+                        for (int i = 1; i <= 10; i++) out.add(String.valueOf(i));
+                    }
                 }
             }
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("member")) {
-            out.add("add");
-            out.add("remove");
-        } else if (args.length == 2 && (args[0].equalsIgnoreCase("trust")
-                || args[0].equalsIgnoreCase("untrust") || args[0].equalsIgnoreCase("deny")
-                || args[0].equalsIgnoreCase("undeny"))) {
-            if (args[0].equalsIgnoreCase("trust") || args[0].equalsIgnoreCase("deny")) {
-                out.add("*");
+        } else if (args.length == 3) {
+            String sub = args[0].toLowerCase();
+            switch (sub) {
+                case "flag" -> { for (Flag f : Flag.values()) out.add(f.id()); }
+                case "member" -> { for (Player p : Bukkit.getOnlinePlayers()) out.add(p.getName()); }
+                case "top" -> { out.addAll(java.util.List.of("rating", "level", "members", "entities", "visits")); }
+                case "template" -> {
+                    String action = args[1].toLowerCase();
+                    if (action.equals("apply") || action.equals("setflag") || action.equals("delete") || action.equals("paste")) {
+                        if (sender instanceof Player player) {
+                            Manor m = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+                            if (m != null) out.addAll(manors.listTemplates(m.guild()));
+                        }
+                        if (action.equals("paste") && schematicStore != null) {
+                            out.addAll(schematicStore.list());
+                        }
+                    }
+                }
+                case "sub" -> {
+                    if (args[1].equalsIgnoreCase("delete") || args[1].equalsIgnoreCase("setflag")) {
+                        if (sender instanceof Player player) {
+                            Manor m = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+                            if (m != null) {
+                                out.addAll(manors.getSubs(m.guild(), m.slot()).stream()
+                                        .map(ManorRepository.SubEntry::name).toList());
+                            }
+                        }
+                    }
+                }
+                case "admin" -> {
+                    String action = args[1].toLowerCase();
+                    if (java.util.Set.of("create", "tp", "claim", "fill", "map", "upgrade-manor",
+                            "upgrade-guild", "delete", "setowner", "fund", "citywall").contains(action)) {
+                        for (GuildWorld gw : guilds.findAll()) out.add(gw.guild().value());
+                    }
+                }
+                case "rate" -> {
+                    // 第三个参数是公会名
+                    for (GuildWorld gw : guilds.findAll()) out.add(gw.guild().value());
+                }
             }
-            for (Player p : Bukkit.getOnlinePlayers()) {
-                out.add(p.getName());
+        } else if (args.length == 4) {
+            String sub = args[0].toLowerCase();
+            if (sub.equals("flag") && args[1].equalsIgnoreCase("set")) {
+                Flag f = Flag.byId(args[2]).orElse(null);
+                if (f != null) {
+                    switch (f.type()) {
+                        case BOOLEAN -> { out.add("true"); out.add("false"); }
+                        case INTEGER -> { out.addAll(java.util.List.of("-1", "0", "5", "10", "50", "100")); }
+                        case DOUBLE -> { out.addAll(java.util.List.of("0", "100", "500", "1000")); }
+                        default -> {}
+                    }
+                }
+            } else if (sub.equals("template") && args[1].equalsIgnoreCase("setflag")) {
+                for (Flag f : Flag.values()) out.add(f.id());
+            } else if (sub.equals("sub") && args[1].equalsIgnoreCase("setflag")) {
+                for (Flag f : Flag.values()) out.add(f.id());
+            } else if (sub.equals("admin")) {
+                String action = args[1].toLowerCase();
+                if (action.equals("create")) {
+                    for (TerrainPrepMode m : TerrainPrepMode.values()) out.add(m.name());
+                } else if (action.equals("setowner")) {
+                    for (Player p : Bukkit.getOnlinePlayers()) out.add(p.getName());
+                } else if (action.equals("fund")) {
+                    out.addAll(java.util.List.of("check", "add", "set"));
+                }
             }
-        } else if (args.length == 3 && args[0].equalsIgnoreCase("member")) {
-            for (Player p : Bukkit.getOnlinePlayers()) {
-                out.add(p.getName());
-            }
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("visit")) {
-            for (GuildWorld gw : guilds.findAll()) {
-                out.add(gw.guild().value());
-            }
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("move")) {
-            for (GuildWorld gw : guilds.findAll()) {
-                out.add(gw.guild().value());
-            }
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("admin")) {
-            for (String s : new String[]{"create", "tp", "claim", "fill", "map", "upgrade-manor",
-                    "upgrade-guild", "delete", "worlds", "whereami"}) {
-                out.add(s);
-            }
-        } else if (args.length == 4 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("create")) {
-            for (TerrainPrepMode m : TerrainPrepMode.values()) {
-                out.add(m.name());
+        } else if (args.length == 5) {
+            String sub = args[0].toLowerCase();
+            if (sub.equals("template") && args[1].equalsIgnoreCase("setflag")) {
+                Flag f = Flag.byId(args[3]).orElse(null);
+                if (f != null) {
+                    switch (f.type()) {
+                        case BOOLEAN -> { out.add("true"); out.add("false"); }
+                        case INTEGER -> { out.addAll(java.util.List.of("-1", "0", "5", "10", "50", "100")); }
+                        case DOUBLE -> { out.addAll(java.util.List.of("0", "100", "500", "1000")); }
+                        default -> {}
+                    }
+                }
+            } else if (sub.equals("sub") && args[1].equalsIgnoreCase("setflag")) {
+                Flag f = Flag.byId(args[3]).orElse(null);
+                if (f != null) {
+                    switch (f.type()) {
+                        case BOOLEAN -> { out.add("true"); out.add("false"); }
+                        case INTEGER -> { out.addAll(java.util.List.of("-1", "0", "5", "10", "50", "100")); }
+                        case DOUBLE -> { out.addAll(java.util.List.of("0", "100", "500", "1000")); }
+                        default -> {}
+                    }
+                }
             }
         }
         return out;

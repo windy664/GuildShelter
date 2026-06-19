@@ -50,7 +50,11 @@ public interface SchematicStore {
         //    只能靠类探测。模组版不在(只装了 Bukkit 版/FAWE)则落到 2/3，按 Bukkit 平台处理（模组方块会丢）。
         try {
             Class.forName("net.neoforged.fml.loading.FMLLoader");
-            Class.forName("com.sk89q.worldedit.neoforge.NeoForgeWorldEdit");
+            // 探测 NeoForgeSchematicStore 真正依赖的 NeoForgeAdapter。注意 WE 7.4.4 把平台主类挪进了
+            // .internal 子包（com.sk89q.worldedit.neoforge.internal.NeoForgeWorldEdit），旧探测
+            // com.sk89q.worldedit.neoforge.NeoForgeWorldEdit 已不存在 → 明明装了 WE 模组版却落到 Bukkit
+            // 平台，含模组方块的 .schem 被丢成空气。NeoForgeAdapter 仍在 neoforge 顶层包，探它最稳。
+            Class.forName("com.sk89q.worldedit.neoforge.NeoForgeAdapter");
             // 用反射创建 NeoForge 实现（避免纯 Bukkit 端加载到 NeoForge 类）
             return new NeoForgeSchematicStoreAdapter(dataDir, plugin);
         } catch (ClassNotFoundException ignored) {}
