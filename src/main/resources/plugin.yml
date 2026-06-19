@@ -108,3 +108,4 @@ permissions:
   guildshelter.command.board: { default: true }
   guildshelter.command.citytrust: { default: true }
   guildshelter.command.cityuntrust: { default: true }
+  guildshelter.command.unlock: { default: true }

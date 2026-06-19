@@ -90,8 +90,9 @@ public final class ClaimGuard {
             // 合并后的路 或 原始庄园：按庄园权限判定（用缓存的 supervisorOnline）
             Manor m = manorBySlot.apply(effective.slot());
             if (m != null && ManorRoles.effectiveBuildCached(m, ref, supervisorCache)) {
-                // 检查是否在实占范围内（合并后的路 chunk 视为在范围内）
-                if (raw.type() == RegionType.ROAD || layout.activeRegion(effective.slot(), m.level()).containsChunk(lx, lz)) {
+                // 检查是否在已解锁范围内（合并后的路 chunk 视为在范围内）
+                var plot = layout.plotRegion(effective.slot());
+                if (raw.type() == RegionType.ROAD || m.isUnlocked(lx - plot.minChunkX(), lz - plot.minChunkZ())) {
                     return true;
                 }
             }

@@ -88,6 +88,30 @@ public record LayoutConfig(
     }
 
     /**
+     * 给定庄园等级的<b>解锁额度上限</b>（可拥有多少个已解锁 chunk）。等级数由配置 {@code member-plot.max-level}
+     * 直接决定（{@code maxLevel} 传入），额度从<b>初始额度</b>（初始解锁正方形面积 = {@code plotDefaultChunks²}）
+     * <b>线性均摊到满级整块</b>（{@code plotChunks²}）：等级越多每级涨得越细，满级正好够铺满整块。
+     *
+     * @param manorLevel 当前庄园等级（1 起）
+     * @param maxLevel   庄园最高等级（来自 {@code LevelRules.manorMaxLevel()}）
+     */
+    public int quotaAtLevel(int manorLevel, int maxLevel) {
+        int initial = plotDefaultChunks * plotDefaultChunks; // 初始额度
+        int cap = plotChunks * plotChunks;                   // 满级整块封顶（解锁不能超出 plotRegion）
+        if (maxLevel <= 1 || manorLevel >= maxLevel) {
+            return cap;
+        }
+        int l = Math.max(1, manorLevel);
+        long q = initial + Math.round((double) (cap - initial) * (l - 1) / (maxLevel - 1));
+        return (int) Math.min(Math.max(q, initial), cap);
+    }
+
+    /** 庄园初始（1 级）解锁的正方形边长 = {@code plotDefaultChunks}。首次分配即解锁这块。 */
+    public int initialUnlockSide() {
+        return plotDefaultChunks;
+    }
+
+    /**
      * 一份合理的默认配置：庄园满级 15 chunk(240×240)、路 1 chunk、
      * 主城初始 6 chunk(96×96)成长到最大 15 chunk(240×240)、庄园初始 6 chunk(96×96)每级 +1(共 10 级)。
      */

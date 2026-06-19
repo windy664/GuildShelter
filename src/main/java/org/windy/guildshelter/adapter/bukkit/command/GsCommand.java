@@ -62,7 +62,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             "trust", "untrust", "member", "deny", "undeny", "list", "visit", "clear", "flag", "card",
             "alias", "sethome", "done", "kick", "near", "rate", "top", "middle",
             "comment", "inbox", "swap", "grant", "merge", "unmerge", "confirm", "help", "desc", "toggle", "template", "sub", "bulletin", "open", "close", "flower", "gift", "board", "move",
-            "citytrust", "cityuntrust");
+            "citytrust", "cityuntrust", "unlock");
 
     /** 需要确认的危险操作。 */
     private static final Set<String> CONFIRM_REQUIRED = Set.of(
@@ -213,6 +213,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             case "move" -> { move(sender, args); return true; }
             case "citytrust" -> { cityTrust(sender, args, true); return true; }
             case "cityuntrust" -> { cityTrust(sender, args, false); return true; }
+            case "unlock" -> { unlock(sender); return true; }
             case "admin" -> { /* 落到下面的管理分支 */ }
             default -> {
                 sender.sendMessage(Messages.get("usage.player_commands"));
@@ -336,6 +337,37 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    /** /gs unlock：用额度解锁玩家当前站立的 chunk（须在自己庄园内、相邻已解锁、有剩余额度）。 */
+    private void unlock(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Messages.get("error.player_only"));
+            return;
+        }
+        PlayerRef ref = PlayerRef.of(player.getUniqueId());
+        Manor manor = manors.findByOwnerAnywhere(ref).orElse(null);
+        if (manor == null) {
+            sender.sendMessage(Messages.get("error.no_manor"));
+            return;
+        }
+        int cx = player.getLocation().getBlockX() >> 4;
+        int cz = player.getLocation().getBlockZ() >> 4;
+        switch (service.unlockChunk(manor.guild(), ref, cx, cz)) {
+            case SUCCESS -> {
+                GuildWorld gw = guilds.find(manor.guild()).orElse(null);
+                Manor now = manors.findByOwnerAnywhere(ref).orElse(manor);
+                int remain = gw != null ? service.remainingQuota(gw, now) : 0;
+                sender.sendMessage("§a✓ 已解锁脚下区块 §7— 剩余额度 §f" + remain);
+                player.getWorld().spawnParticle(org.bukkit.Particle.HAPPY_VILLAGER,
+                        player.getLocation().add(0, 1, 0), 15, 0.5, 0.5, 0.5, 0);
+            }
+            case NOT_YOUR_PLOT -> sender.sendMessage("§c这里不是你的庄园范围，不能解锁。");
+            case ALREADY_UNLOCKED -> sender.sendMessage("§e脚下这块已经解锁了。");
+            case NO_QUOTA -> sender.sendMessage("§c额度不足！§7用 §f/gs upgrade §7升级庄园获取更多额度。");
+            case NOT_ADJACENT -> sender.sendMessage("§c只能解锁与已有领地§l相邻§r§c的区块（不能飞地）。");
+            case NO_MANOR -> sender.sendMessage(Messages.get("error.no_manor"));
+        }
+    }
+
     /** /gs info：显示自己的庄园 + 公会信息。 */
     private void info(CommandSender sender) {
         if (!(sender instanceof Player player)) {
@@ -352,7 +384,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.world_not_exist"));
             return;
         }
-        int side = gw.layout().plotChunksByLevel(manor.level()) * 16;
+        int side = gw.layout().plotChunks() * 16; // 满级整块尺寸(尺寸不随等级，等级只给额度)
         int capacity = service.effectiveCapacity(gw); // 与发地口径一致(宿主有上限跟宿主)
         int members = manors.findAll(manor.guild()).size();
         sender.sendMessage(Messages.get("info.guild_info_header"));
@@ -361,6 +393,9 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("info.guild_line", manor.guild().value(), gw.guildLevel(), levels.maxGuildLevel(), members, capacity));
         sender.sendMessage(Messages.get("info.plot_line", title, manor.level(), levels.manorMaxLevel(), side, side,
                 Flag.DONE.resolveBool(manor.flags()) ? Messages.get("info.done_status") : Messages.get("info.building_status")));
+        int unlocked = manor.unlockedChunks().size();
+        int quota = gw.layout().quotaAtLevel(manor.level(), levels.manorMaxLevel());
+        sender.sendMessage(Messages.get("info.unlock_line", unlocked, unlocked, quota, quota - unlocked));
         sender.sendMessage(Messages.get("info.trusted_line", sizeOrNone(manor.coBuilders()), sizeOrNone(manor.members()), sizeOrNone(manor.denied())));
         String desc = Flag.DESCRIPTION.resolveString(manor.flags());
         if (!desc.isBlank()) {
@@ -804,7 +839,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        int side = gw.layout().plotChunksByLevel(manor.level()) * 16;
+        int side = gw.layout().plotChunks() * 16; // 满级整块尺寸(尺寸不随等级)
         int capacity = service.effectiveCapacity(gw); // 与发地口径一致(宿主有上限跟宿主)
         int memberCount = manors.findAll(manor.guild()).size();
         String desc = Flag.DESCRIPTION.resolveString(manor.flags());
@@ -1086,7 +1121,8 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         COMMAND_HELP.put("gift <玩家>", "把手持物品送给同世界的玩家");
         COMMAND_HELP.put("bulletin <set|show|clear>", "公会公告板管理");
         // ── 高级 ──
-        COMMAND_HELP.put("upgrade", "升级自己的庄园一级");
+        COMMAND_HELP.put("upgrade", "升级庄园一级（提升解锁额度上限）");
+        COMMAND_HELP.put("unlock", "用额度解锁脚下区块（须与已有领地相邻）");
         COMMAND_HELP.put("clear", "清空自己庄园的地表建筑（需确认）");
         COMMAND_HELP.put("swap <玩家>", "与对方互换庄园 slot（需确认）");
         COMMAND_HELP.put("merge <slot>", "合并相邻庄园到自己的庄园（需确认）");

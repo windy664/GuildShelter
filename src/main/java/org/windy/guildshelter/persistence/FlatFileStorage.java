@@ -250,7 +250,9 @@ public final class FlatFileStorage implements Storage {
                 // members/denied 追加在 flags 之后(列 6/7);旧文件无这两列→空集。
                 Set<PlayerRef> members = parseUuidSet(f.length > 6 ? f[6] : null);
                 Set<PlayerRef> denied = parseUuidSet(f.length > 7 ? f[7] : null);
-                bySlot.put(key(g, slot), new Manor(slot, g, owner, level, co, members, denied, flags));
+                // 列 8 = 已解锁 chunk(packed int CSV,逗号分隔,不与 TSV 的 tab 冲突);旧文件无→空集。
+                Set<Integer> unlocked = UnlockedCsv.parse(f.length > 8 ? f[8] : null);
+                bySlot.put(key(g, slot), new Manor(slot, g, owner, level, co, members, denied, flags, unlocked));
             }
         }
 
@@ -316,13 +318,14 @@ public final class FlatFileStorage implements Storage {
         private void persist() {
             List<String> lines = new ArrayList<>();
             for (Manor m : bySlot.values()) {
-                // 列序: guild slot owner level coBuilders flags members denied
-                // (members/denied 追加在 flags 后, 保持旧列索引不变=向后兼容)
+                // 列序: guild slot owner level coBuilders flags members denied unlocked_chunks
+                // (新列追加在末尾, 保持旧列索引不变=向后兼容)
                 lines.add(String.join("\t",
                         clean(m.guild().value()), Integer.toString(m.slot()),
                         m.owner().uuid().toString(), Integer.toString(m.level()),
                         joinUuids(m.coBuilders()), FlagsCsv.toCsv(m.flags()),
-                        joinUuids(m.members()), joinUuids(m.denied())));
+                        joinUuids(m.members()), joinUuids(m.denied()),
+                        UnlockedCsv.toCsv(m.unlockedChunks())));
             }
             writeLines(file, lines);
         }

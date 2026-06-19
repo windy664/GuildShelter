@@ -112,17 +112,13 @@ public final class LayoutCalculator {
     }
 
     /**
-     * 成员 slot + 庄园等级 → 当前实占范围（"角落扩张式"：锚定在满级庄园的<b>最小角</b>，
-     * 从角落向 +x/+z 方向逐级向外扩，满级铺满整块；⊆ plotRegion）。
-     *
-     * <p>角落锚定让玩家庄园的原点固定、只朝一个方向长，规整可预测；避免居中算法的奇偶歪斜。
+     * @deprecated 庄园等级不再决定范围（改"额度 + 自由解锁"，可建范围请用 {@code Manor.unlockedChunks} 判定）。
+     * 本方法保留仅为兼容<b>面积类</b>调用（实体计数 / 掉落上限 / 粒子边框 / 搬家复制 / 传送中心）——按既定
+     * 选择一律返回<b>满级整块</b> {@link #plotRegion}。
      */
+    @Deprecated
     public ChunkRegion activeRegion(int slot, int manorLevel) {
-        ChunkRegion full = plotRegion(slot);
-        int active = config.plotChunksByLevel(manorLevel);
-        int ox = full.minChunkX();
-        int oz = full.minChunkZ();
-        return new ChunkRegion(ox, oz, ox + active - 1, oz + active - 1);
+        return plotRegion(slot);
     }
 
     /**

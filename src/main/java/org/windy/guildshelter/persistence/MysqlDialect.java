@@ -41,6 +41,7 @@ public final class MysqlDialect implements SqlDialect {
                     INDEX idx_manor_owner (guild_id, owner_uuid)
                 )""",
                 "ALTER TABLE manor ADD COLUMN flags TEXT", // 迁移:列已存在会被吞掉
+                "ALTER TABLE manor ADD COLUMN unlocked_chunks TEXT", // 已解锁 chunk 集合(packed int CSV)
                 """
                 CREATE TABLE IF NOT EXISTS manor_cobuilder (
                     guild_id    VARCHAR(255) NOT NULL,
@@ -155,10 +156,11 @@ public final class MysqlDialect implements SqlDialect {
     @Override
     public String upsertManor() {
         return """
-                INSERT INTO manor(guild_id, slot, owner_uuid, level, flags) VALUES(?,?,?,?,?)
+                INSERT INTO manor(guild_id, slot, owner_uuid, level, flags, unlocked_chunks) VALUES(?,?,?,?,?,?)
                 ON DUPLICATE KEY UPDATE
                     owner_uuid=VALUES(owner_uuid),
                     level=VALUES(level),
-                    flags=VALUES(flags)""";
+                    flags=VALUES(flags),
+                    unlocked_chunks=VALUES(unlocked_chunks)""";
     }
 }

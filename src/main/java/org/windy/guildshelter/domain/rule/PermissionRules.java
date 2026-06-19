@@ -66,7 +66,9 @@ public final class PermissionRules {
                 if (m == null || !canBuild.test(m, player)) {
                     yield false;
                 }
-                yield layout.activeRegion(c.slot(), m.level()).containsChunk(chunkX, chunkZ);
+                // 可建范围 = 已解锁的 chunk 集合（玩家凭额度自由解锁），不再是等级正方形。
+                var plot = layout.plotRegion(c.slot());
+                yield m.isUnlocked(chunkX - plot.minChunkX(), chunkZ - plot.minChunkZ());
             }
         };
     }

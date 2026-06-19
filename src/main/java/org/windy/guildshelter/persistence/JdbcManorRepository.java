@@ -30,7 +30,7 @@ public final class JdbcManorRepository implements ManorRepository {
 
     @Override
     public Optional<Manor> findBySlot(GuildId guild, int slot) {
-        String sql = "SELECT owner_uuid, level, flags FROM manor WHERE guild_id=? AND slot=?";
+        String sql = "SELECT owner_uuid, level, flags, unlocked_chunks FROM manor WHERE guild_id=? AND slot=?";
         try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, guild.value());
             ps.setInt(2, slot);
@@ -44,7 +44,8 @@ public final class JdbcManorRepository implements ManorRepository {
                         loadPlayers(c, "manor_cobuilder", guild, slot),
                         loadPlayers(c, "manor_member", guild, slot),
                         loadPlayers(c, "manor_denied", guild, slot),
-                        FlagsCsv.parse(rs.getString("flags"))));
+                        FlagsCsv.parse(rs.getString("flags")),
+                        UnlockedCsv.parse(rs.getString("unlocked_chunks"))));
             }
         } catch (SQLException e) {
             throw new PersistenceException("查询庄园失败: " + guild.value() + "#" + slot, e);
@@ -53,7 +54,7 @@ public final class JdbcManorRepository implements ManorRepository {
 
     @Override
     public Optional<Manor> findByOwner(GuildId guild, PlayerRef owner) {
-        String sql = "SELECT slot, level, flags FROM manor WHERE guild_id=? AND owner_uuid=? LIMIT 1";
+        String sql = "SELECT slot, level, flags, unlocked_chunks FROM manor WHERE guild_id=? AND owner_uuid=? LIMIT 1";
         try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, guild.value());
             ps.setString(2, owner.uuid().toString());
@@ -67,7 +68,8 @@ public final class JdbcManorRepository implements ManorRepository {
                         loadPlayers(c, "manor_cobuilder", guild, slot),
                         loadPlayers(c, "manor_member", guild, slot),
                         loadPlayers(c, "manor_denied", guild, slot),
-                        FlagsCsv.parse(rs.getString("flags"))));
+                        FlagsCsv.parse(rs.getString("flags")),
+                        UnlockedCsv.parse(rs.getString("unlocked_chunks"))));
             }
         } catch (SQLException e) {
             throw new PersistenceException("按庄主查询庄园失败: " + guild.value(), e);
@@ -76,7 +78,7 @@ public final class JdbcManorRepository implements ManorRepository {
 
     @Override
     public Optional<Manor> findByOwnerAnywhere(PlayerRef owner) {
-        String sql = "SELECT guild_id, slot, level, flags FROM manor WHERE owner_uuid=? LIMIT 1";
+        String sql = "SELECT guild_id, slot, level, flags, unlocked_chunks FROM manor WHERE owner_uuid=? LIMIT 1";
         try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, owner.uuid().toString());
             try (ResultSet rs = ps.executeQuery()) {
@@ -90,7 +92,8 @@ public final class JdbcManorRepository implements ManorRepository {
                         loadPlayers(c, "manor_cobuilder", guild, slot),
                         loadPlayers(c, "manor_member", guild, slot),
                         loadPlayers(c, "manor_denied", guild, slot),
-                        FlagsCsv.parse(rs.getString("flags"))));
+                        FlagsCsv.parse(rs.getString("flags")),
+                        UnlockedCsv.parse(rs.getString("unlocked_chunks"))));
             }
         } catch (SQLException e) {
             throw new PersistenceException("跨公会按 owner 查庄园失败", e);
@@ -99,7 +102,7 @@ public final class JdbcManorRepository implements ManorRepository {
 
     @Override
     public List<Manor> findAll(GuildId guild) {
-        String sql = "SELECT slot, owner_uuid, level, flags FROM manor WHERE guild_id=? ORDER BY slot";
+        String sql = "SELECT slot, owner_uuid, level, flags, unlocked_chunks FROM manor WHERE guild_id=? ORDER BY slot";
         List<Manor> result = new ArrayList<>();
         try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, guild.value());
@@ -112,7 +115,8 @@ public final class JdbcManorRepository implements ManorRepository {
                             loadPlayers(c, "manor_cobuilder", guild, slot),
                         loadPlayers(c, "manor_member", guild, slot),
                         loadPlayers(c, "manor_denied", guild, slot),
-                        FlagsCsv.parse(rs.getString("flags"))));
+                        FlagsCsv.parse(rs.getString("flags")),
+                        UnlockedCsv.parse(rs.getString("unlocked_chunks"))));
                 }
             }
         } catch (SQLException e) {
@@ -132,6 +136,7 @@ public final class JdbcManorRepository implements ManorRepository {
                     ps.setString(3, manor.owner().uuid().toString());
                     ps.setInt(4, manor.level());
                     ps.setString(5, FlagsCsv.toCsv(manor.flags()));
+                    ps.setString(6, UnlockedCsv.toCsv(manor.unlockedChunks()));
                     ps.executeUpdate();
                 }
                 replacePlayers(c, "manor_cobuilder", manor.guild(), manor.slot(), manor.coBuilders());

@@ -60,8 +60,12 @@ public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, Terrain
                 cfg.getInt("advanced.base-y", 64),
                 cfg.getInt("advanced.margin-chunks", 2));
 
-        // 庄园物理满级 = 从初始长到满级所需级数，由庄园尺寸自动推导（避免与尺寸脱节）。
-        int manorMaxLevel = plotGrow > 0 ? (plotMax - plotInitial) / plotGrow + 1 : 1;
+        // 庄园等级数：服主直接配 member-plot.max-level（想几级几级）；额度从初始线性涨到满级整块。
+        // 缺省(<1)则回退按尺寸推导，兼容旧配置。
+        int manorMaxLevel = cfg.getInt("member-plot.max-level", 0);
+        if (manorMaxLevel < 1) {
+            manorMaxLevel = plotGrow > 0 ? (plotMax - plotInitial) / plotGrow + 1 : 1;
+        }
         LevelRules levels = new LevelRules(
                 cfg.getInt("guild.max-level", 5),
                 cfg.getInt("guild.members-per-level", 5),

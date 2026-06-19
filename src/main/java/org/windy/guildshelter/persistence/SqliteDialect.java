@@ -46,6 +46,7 @@ public final class SqliteDialect implements SqlDialect {
                     PRIMARY KEY (guild_id, slot)
                 )""",
                 "ALTER TABLE manor ADD COLUMN flags TEXT", // 迁移:列已存在会被吞掉
+                "ALTER TABLE manor ADD COLUMN unlocked_chunks TEXT", // 已解锁 chunk 集合(packed int CSV)
                 "CREATE INDEX IF NOT EXISTS idx_manor_owner ON manor(guild_id, owner_uuid)",
                 """
                 CREATE TABLE IF NOT EXISTS manor_cobuilder (
@@ -161,10 +162,11 @@ public final class SqliteDialect implements SqlDialect {
     @Override
     public String upsertManor() {
         return """
-                INSERT INTO manor(guild_id, slot, owner_uuid, level, flags) VALUES(?,?,?,?,?)
+                INSERT INTO manor(guild_id, slot, owner_uuid, level, flags, unlocked_chunks) VALUES(?,?,?,?,?,?)
                 ON CONFLICT(guild_id, slot) DO UPDATE SET
                     owner_uuid=excluded.owner_uuid,
                     level=excluded.level,
-                    flags=excluded.flags""";
+                    flags=excluded.flags,
+                    unlocked_chunks=excluded.unlocked_chunks""";
     }
 }

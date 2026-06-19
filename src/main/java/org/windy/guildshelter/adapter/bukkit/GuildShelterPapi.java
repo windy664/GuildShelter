@@ -23,7 +23,9 @@ import org.windy.guildshelter.domain.rule.LevelRules;
  *   <li>%guildshelter_level% — 庄园等级</li>
  *   <li>%guildshelter_max_level% — 庄园最大等级</li>
  *   <li>%guildshelter_guild_level% — 公会等级</li>
- *   <li>%guildshelter_size% — 庄园尺寸（方块）</li>
+ *   <li>%guildshelter_size% — 庄园满级尺寸（方块）</li>
+ *   <li>%guildshelter_unlocked% — 已解锁 chunk 数</li>
+ *   <li>%guildshelter_quota% — 当前等级解锁额度上限</li>
  *   <li>%guildshelter_alias% — 庄园别名</li>
  *   <li>%guildshelter_description% — 庄园描述</li>
  *   <li>%guildshelter_members% — 成员数</li>
@@ -83,9 +85,11 @@ public final class GuildShelterPapi extends PlaceholderExpansion {
             case "max_level" -> String.valueOf(levels.manorMaxLevel());
             case "guild_level" -> gw != null ? String.valueOf(gw.guildLevel()) : "?";
             case "size" -> {
-                int side = gw != null ? gw.layout().plotChunksByLevel(manor.level()) * 16 : 0;
+                int side = gw != null ? gw.layout().plotChunks() * 16 : 0; // 满级整块尺寸(不随等级)
                 yield side + "x" + side;
             }
+            case "unlocked" -> String.valueOf(manor.unlockedChunks().size());
+            case "quota" -> gw != null ? String.valueOf(gw.layout().quotaAtLevel(manor.level(), levels.manorMaxLevel())) : "0";
             case "alias" -> {
                 String a = Flag.ALIAS.resolveString(manor.flags());
                 yield a.isBlank() ? manor.guild().value() + "#" + manor.slot() : a;

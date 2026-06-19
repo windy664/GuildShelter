@@ -42,6 +42,7 @@ public final class GuildService {
     private final TerrainPrepMode prepMode;
     private volatile MembershipChangeListener membershipListener; // 可选，延迟注入
     private volatile GuildProvider guildProvider = GuildProvider.NONE; // 宿主角色/容量来源，延迟注入
+    private volatile org.windy.guildshelter.domain.port.ManorUpgradeHook upgradeHook; // 升级扩展回调，可选
 
     // 搬家相关（可选，null = 搬家未启用）
     private ManorMover manorMover;
@@ -106,6 +107,11 @@ public final class GuildService {
     /** 该玩家是否为该公会会长/管理（会长 + 副会长/官员），供主城信任命令授权用。 */
     public boolean isGuildAdmin(PlayerRef player, GuildId guild) {
         return guildProvider.isGuildAdmin(player, guild);
+    }
+
+    /** 注入庄园升级扩展回调（buff/加成等玩法挂这里）；未注入则升级不触发额外效果。 */
+    public void setUpgradeHook(org.windy.guildshelter.domain.port.ManorUpgradeHook hook) {
+        this.upgradeHook = hook;
     }
 
     /**
@@ -189,7 +195,8 @@ public final class GuildService {
         if (slot >= capacity) {
             throw new GuildFullException(guild, capacity, gw.guildLevel());
         }
-        Manor manor = Manor.create(slot, guild, player);
+        // 初始解锁角落的初始正方形（initialUnlockSide² 个 chunk），给新成员一块整好的起点。
+        Manor manor = Manor.create(slot, guild, player).withUnlockedChunks(initialUnlocked(gw));
         manors.save(manor);
 
         int newAllocated = Math.max(gw.allocatedSlots(), slot + 1);
@@ -249,9 +256,14 @@ public final class GuildService {
         if (!levels.canUpgradeManor(manor.level())) { // 庄园只受物理满级限制，与公会等级无关
             return false;
         }
-        Manor upgraded = manor.withLevel(manor.level() + 1);
+        int oldLevel = manor.level();
+        Manor upgraded = manor.withLevel(oldLevel + 1);
         manors.save(upgraded);
-        return true; // 仅扩权限，不整地
+        var hook = upgradeHook; // 扩展回调：buff/加成等玩法在此挂接
+        if (hook != null) {
+            hook.onUpgrade(upgraded, oldLevel);
+        }
+        return true; // 升级只提升额度上限，不整地（玩家凭额度自由解锁）
     }
 
     /** 公会升级：扩主城上限 + 提升庄园上限；同步边界。 */
@@ -380,10 +392,11 @@ public final class GuildService {
                 srcRegion.minChunkX(), srcRegion.minChunkZ(),
                 srcRegion.maxChunkX(), srcRegion.maxChunkZ());
 
-        // 10. 更新 DB：旧 manor 删 → 新 manor 保留数据
+        // 10. 更新 DB：旧 manor 删 → 新 manor 保留数据（含已解锁 chunk 集合：解锁形状随搬家保留）
         manors.delete(oldManor.guild(), oldManor.slot());
         Manor newManor = new Manor(targetSlot, targetGuild, player, oldManor.level(),
-                oldManor.coBuilders(), oldManor.members(), oldManor.denied(), oldManor.flags());
+                oldManor.coBuilders(), oldManor.members(), oldManor.denied(), oldManor.flags(),
+                oldManor.unlockedChunks());
         manors.save(newManor);
 
         // 11. 更新目标世界 allocatedSlots + 边界
@@ -413,6 +426,72 @@ public final class GuildService {
         COPY_FAILED
     }
 
+    /** 庄园分配时初始解锁的角落正方形（{@code initialUnlockSide²} 个 chunk 的内部偏移）。 */
+    private java.util.Set<Integer> initialUnlocked(GuildWorld gw) {
+        int side = gw.layout().initialUnlockSide();
+        java.util.Set<Integer> set = new java.util.HashSet<>();
+        for (int dx = 0; dx < side; dx++) {
+            for (int dz = 0; dz < side; dz++) {
+                set.add(Manor.packOffset(dx, dz));
+            }
+        }
+        return set;
+    }
+
+    /** 解锁结果。 */
+    public enum UnlockResult {
+        SUCCESS, NO_MANOR, NOT_YOUR_PLOT, ALREADY_UNLOCKED, NO_QUOTA, NOT_ADJACENT
+    }
+
+    /**
+     * 玩家用额度解锁<b>世界 chunk ({@code worldChunkX,worldChunkZ})</b>。校验：必须落在自己庄园格内、
+     * 尚未解锁、还有剩余额度、且与已解锁区<b>相邻</b>（不能飞地）。通过则加入解锁集合、存库、整这一个 chunk。
+     */
+    public UnlockResult unlockChunk(GuildId guild, PlayerRef player, int worldChunkX, int worldChunkZ) {
+        GuildWorld gw = guilds.find(guild).orElse(null);
+        if (gw == null) {
+            return UnlockResult.NO_MANOR;
+        }
+        Manor manor = manors.findByOwner(guild, player).orElse(null);
+        if (manor == null) {
+            return UnlockResult.NO_MANOR;
+        }
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        int lx = worldChunkX - gw.originChunkX();
+        int lz = worldChunkZ - gw.originChunkZ();
+        var c = layout.classify(lx, lz);
+        if (!c.isPlot() || c.slot() != manor.slot()) {
+            return UnlockResult.NOT_YOUR_PLOT; // 站的不是自己庄园格（路/主城/别人地/预留格外）
+        }
+        ChunkRegion plot = layout.plotRegion(manor.slot());
+        int dx = lx - plot.minChunkX();
+        int dz = lz - plot.minChunkZ();
+        if (manor.isUnlocked(dx, dz)) {
+            return UnlockResult.ALREADY_UNLOCKED;
+        }
+        if (manor.unlockedChunks().size() >= gw.layout().quotaAtLevel(manor.level(), levels.manorMaxLevel())) {
+            return UnlockResult.NO_QUOTA;
+        }
+        if (!(manor.isUnlocked(dx - 1, dz) || manor.isUnlocked(dx + 1, dz)
+                || manor.isUnlocked(dx, dz - 1) || manor.isUnlocked(dx, dz + 1))) {
+            return UnlockResult.NOT_ADJACENT;
+        }
+        java.util.Set<Integer> nu = new java.util.HashSet<>(manor.unlockedChunks());
+        nu.add(Manor.packOffset(dx, dz));
+        manors.save(manor.withUnlockedChunks(nu));
+        // 整这一个 chunk（世界坐标，同步：单 chunk 很快）
+        if (prepMode != TerrainPrepMode.NONE) {
+            terrain.prepare(gw.worldName(),
+                    new ChunkRegion(worldChunkX, worldChunkZ, worldChunkX, worldChunkZ), prepMode, true);
+        }
+        return UnlockResult.SUCCESS;
+    }
+
+    /** 该庄园剩余可解锁额度（总额度 − 已解锁数，≥0）。 */
+    public int remainingQuota(GuildWorld gw, Manor manor) {
+        return Math.max(0, gw.layout().quotaAtLevel(manor.level(), levels.manorMaxLevel()) - manor.unlockedChunks().size());
+    }
+
     /** 把庄园当前实占范围（layout 坐标）平移到世界坐标后整地，并把本格道路铺成土径。 */
     public void prepareManorTerrain(GuildWorld gw, Manor manor, boolean sync) {
         prepareManorTerrain(gw, manor, sync, true);
@@ -427,8 +506,12 @@ public final class GuildService {
             return;
         }
         LayoutCalculator layout = new LayoutCalculator(gw.layout());
-        ChunkRegion active = layout.activeRegion(manor.slot(), manor.level());
-        terrain.prepare(gw.worldName(), active.shift(gw.originChunkX(), gw.originChunkZ()), prepMode, sync);
+        // 首次分配只整【初始解锁的角落正方形】(initialUnlockSide²)，不是满级整块——其余靠玩家自己解锁开荒。
+        ChunkRegion plot = layout.plotRegion(manor.slot());
+        int side = gw.layout().initialUnlockSide();
+        ChunkRegion initial = new ChunkRegion(plot.minChunkX(), plot.minChunkZ(),
+                plot.minChunkX() + side - 1, plot.minChunkZ() + side - 1);
+        terrain.prepare(gw.worldName(), initial.shift(gw.originChunkX(), gw.originChunkZ()), prepMode, sync);
         if (includeRoads) {
             RoadMask roadMask = layout.roadMask(gw.originChunkX(), gw.originChunkZ());
             for (ChunkRegion road : layout.roadStripsFor(manor.slot())) {
