@@ -21,7 +21,7 @@ import org.windy.guildshelter.domain.flag.ManorEntityClass;
 import java.lang.reflect.Method;
 
 /**
- * 地皮 flag 的 <b>NeoForge 后端</b>（A 氛围类，混合端覆盖模组内容）：
+ * 庄园 flag 的 <b>NeoForge 后端</b>（A 氛围类，混合端覆盖模组内容）：
  * pvp / mob-spawn / explosion / mob-griefing + 环境类（redstone/liquid-flow/crop-grow）。
  * fire-spread 在 NeoForge 26 无独立事件，故仅 Bukkit 侧处理（vanilla 已够）。访问/增益类(B/C)是玩家行为，
  * 由 Bukkit 侧 {@code ManorAccessListener}/{@code ManorBuffTask} 统一处理，本类不重复。
@@ -117,7 +117,7 @@ public final class NeoForgeFlags {
         };
     }
 
-    // ---- explosion（按方块剔除受保护地皮内的方块）----
+    // ---- explosion（按方块剔除受保护庄园内的方块）----
     @SubscribeEvent
     public void onExplode(ExplosionEvent.Detonate event) {
         Level level = event.getLevel();
@@ -164,7 +164,7 @@ public final class NeoForgeFlags {
         }
     }
 
-    /** 该位置该 flag 是否被禁止（子领地优先 → 庄园 → 默认）。无地皮不拦。 */
+    /** 该位置该 flag 是否被禁止（子领地优先 → 庄园 → 默认）。无庄园不拦。 */
     private static boolean denied(Level level, BlockPos pos, Flag flag) {
         org.bukkit.World world = bukkitWorld(level);
         if (world == null) return false;

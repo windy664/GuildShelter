@@ -4,7 +4,7 @@ package org.windy.guildshelter.domain.rule;
  * 两套<b>互相独立</b>的等级规则（纯逻辑，配置驱动）：
  *
  * <ul>
- *   <li><b>庄园等级</b>：成员个人的事——成员自行把自己那块地皮从初始升到满级，
+ *   <li><b>庄园等级</b>：成员个人的事——成员自行把自己那块庄园从初始升到满级，
  *       只受物理满级 {@code manorMaxLevelCap} 限制，<b>不</b>受公会等级门控。</li>
  *   <li><b>公会等级</b>：容量的事——公会升级 → 放开更多成员名额 {@code membersPerGuildLevel}，
  *       边界随之扩大，从而能容纳/加入更多新成员。</li>
@@ -12,7 +12,7 @@ package org.windy.guildshelter.domain.rule;
  *
  * @param maxGuildLevel        公会最高等级
  * @param membersPerGuildLevel 公会每升 1 级放开多少成员名额（容量 = 等级 × 本值）
- * @param manorMaxLevelCap     庄园等级绝对上限（= 地皮从初始涨到物理满级所需的级数）
+ * @param manorMaxLevelCap     庄园等级绝对上限（= 庄园从初始涨到物理满级所需的级数）
  */
 public record LevelRules(int maxGuildLevel, int membersPerGuildLevel, int manorMaxLevelCap) {
 

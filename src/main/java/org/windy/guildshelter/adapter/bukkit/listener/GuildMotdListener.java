@@ -14,7 +14,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 公会 MOTD（Message of the Day）：玩家进入公会世界时显示公会公告。
+ * 公会 MOTD（Message of the Day）：玩家进入公会营地时显示公会公告。
  * 公告内容取 GuildWorld.bulletin 字段。
  * 每个玩家每个世界每 5 分钟只显示一次（防刷屏）。
  */
@@ -36,7 +36,7 @@ public final class GuildMotdListener implements Listener {
         Player player = event.getPlayer();
         if (!org.windy.guildshelter.adapter.bukkit.FakePlayerFilter.isRealPlayer(player)) return;
         GuildWorld gw = registry.get(player.getWorld().getName());
-        if (gw == null) return; // 不是公会世界
+        if (gw == null) return; // 不是公会营地
 
         // 冷却检查
         long now = System.currentTimeMillis();

@@ -25,7 +25,7 @@ import java.util.logging.Logger;
 /**
  * {@link WorldControl} 的 Bukkit 实现：每个公会一个<b>普通自然地形</b>世界（随机种子，各异）。
  *
- * <p>不挂自定义生成器——世界是原版自然地形。主城/地皮/路是 {@link LayoutCalculator} 在自然地形上的
+ * <p>不挂自定义生成器——世界是原版自然地形。主城/庄园/路是 {@link LayoutCalculator} 在自然地形上的
  * 逻辑叠加；通过 {@link GuildWorld} 的 origin 偏移把整张网格平移到陆地上，避免主城落在海里。
  *
  * <p>在 Youer 上 {@code Bukkit.createWorld} 内部即 NeoForge 的 addLevel。所有方法须在主线程调用。
@@ -97,7 +97,7 @@ public final class WorldManager implements WorldControl {
 
         World world = Bukkit.createWorld(creator);
         if (world == null) {
-            throw new IllegalStateException("创建公会世界失败: " + gw.worldName());
+            throw new IllegalStateException("创建公会营地失败: " + gw.worldName());
         }
 
         // VOID/FLAT 模式不需要锚定陆地（世界已可控），直接用原点
@@ -145,7 +145,7 @@ public final class WorldManager implements WorldControl {
                     .environment(World.Environment.NORMAL)
                     .seed(gw.seed()));
             if (world == null) {
-                throw new IllegalStateException("创建公会世界失败: " + gw.worldName());
+                throw new IllegalStateException("创建公会营地失败: " + gw.worldName());
             }
             origin = anchorOnLand(world, layout);
             double waterRatio = sampleWaterRatio(world, gw.withOrigin(origin[0], origin[1]), layout);
@@ -180,7 +180,7 @@ public final class WorldManager implements WorldControl {
         return anchored;
     }
 
-    /** 公会世界文件夹是否已在磁盘上（用于区分"真·首建"与"卸载后惰性重载"）。 */
+    /** 公会营地文件夹是否已在磁盘上（用于区分"真·首建"与"卸载后惰性重载"）。 */
     private boolean worldFolderExists(String worldName) {
         return new File(Bukkit.getWorldContainer(), worldName).isDirectory();
     }
@@ -202,7 +202,7 @@ public final class WorldManager implements WorldControl {
 
     /**
      * 采样主城网格 footprint（{@link LayoutCalculator#mainCityRegion()} 按最大尺寸预留的中心区，含 origin 偏移）
-     * 上 {@code gridN×gridN} 个均布探点的<b>水占比</b>。主城是必用核心区、成员地皮从其边缘向外长，
+     * 上 {@code gridN×gridN} 个均布探点的<b>水占比</b>。主城是必用核心区、成员庄园从其边缘向外长，
      * 故中心区水占比能代表整张网格是否泡海。
      *
      * <p><b>优先走 NeoForge 群系源采样（零生成）</b>：直接问种子这些列是不是海/河群系，<b>不加载/生成区块</b>，

@@ -7,7 +7,7 @@ import org.windy.guildshelter.domain.model.GuildId;
 
 /**
  * 合并感知的 chunk 归类器：包装 {@link LayoutCalculator}，当 classify 返回 ROAD 时
- * 检查该 chunk 是否位于两块已合并地皮之间的路带上——如果是，返回主地皮的 PLOT 归属。
+ * 检查该 chunk 是否位于两块已合并庄园之间的路带上——如果是，返回主庄园的 PLOT 归属。
  *
  * <p>合并方向判定：两个相邻 slot 的网格格，若 gx 相同则为上下合并（中间横路），
  * 若 gz 相同则为左右合并（中间竖路）。路带宽 = pitch - plot 个 chunk。
@@ -32,11 +32,11 @@ public final class MergeAwareClassifier {
         return layout.classify(chunkX, chunkZ);
     }
 
-    /** 合并感知的 classify：ROAD chunk 若在合并路带上，返回主地皮的 PLOT。 */
+    /** 合并感知的 classify：ROAD chunk 若在合并路带上，返回主庄园的 PLOT。 */
     public Classification classify(int chunkX, int chunkZ) {
         Classification raw = layout.classify(chunkX, chunkZ);
         if (raw.type() != org.windy.guildshelter.domain.layout.RegionType.ROAD) {
-            return raw; // 主城/地皮直接返回
+            return raw; // 主城/庄园直接返回
         }
         // 检查该 ROAD chunk 是否在某对合并的路带上
         int pitch = layout.pitchChunks();
@@ -52,10 +52,10 @@ public final class MergeAwareClassifier {
             int leftSlot = slotOf(gx - 1, gz);
             int rightSlot = slotOf(gx, gz);
             if (leftSlot >= 0 && rightSlot >= 0 && isMerged(leftSlot, rightSlot)) {
-                return Classification.plot(leftSlot, false); // 路归左边主地皮
+                return Classification.plot(leftSlot, false); // 路归左边主庄园
             }
             if (leftSlot >= 0 && rightSlot >= 0 && isMerged(rightSlot, leftSlot)) {
-                return Classification.plot(rightSlot, false); // 路归右边主地皮
+                return Classification.plot(rightSlot, false); // 路归右边主庄园
             }
         }
         // 上-下合并：当前格是底部路带（lz >= plot），检查上邻格与当前格是否合并

@@ -51,7 +51,7 @@ import java.util.logging.Logger;
 /**
  * /gs 命令分发（验证 + 管理）。
  *
- * <p>admin 子命令：create 建公会世界、tp 进主城、claim 给自己分配一块地皮（自动整地）、
+ * <p>admin 子命令：create 建公会营地、tp 进主城、claim 给自己分配一块庄园（自动整地）、
  * delete 卸载、worlds/whereami 诊断。普通玩家命令将在接入 GuildProvider 后补全。
  */
 public final class GsCommand implements CommandExecutor, TabCompleter {
@@ -81,7 +81,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     }
     private final Map<UUID, PendingAction> pendingConfirm = new ConcurrentHashMap<>();
 
-    /** 地皮临时开放状态："guildId:slot" → 过期时间戳。0 = 永久开放（手动关闭）。 */
+    /** 庄园临时开放状态："guildId:slot" → 过期时间戳。0 = 永久开放（手动关闭）。 */
     private final Map<String, Long> openPlots = new ConcurrentHashMap<>();
 
     private final WorldManager worlds;
@@ -123,7 +123,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         this.accessListener = listener;
     }
 
-    /** 地皮开放状态 Map（供 ManorAccessListener 检查 deny-entry 豁免）。 */
+    /** 庄园开放状态 Map（供 ManorAccessListener 检查 deny-entry 豁免）。 */
     public java.util.Map<String, Long> openPlots() { return openPlots; }
 
     /** 注入 SchematicStore（模板系统）。 */
@@ -248,9 +248,9 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    // ===== 玩家命令（自管模式：以"拥有地皮"判定归属公会）=====
+    // ===== 玩家命令（自管模式：以"拥有庄园"判定归属公会）=====
 
-    /** /gs home：传送到自己地皮（优先用 sethome 坐标，否则实占中心）。 */
+    /** /gs home：传送到自己庄园（优先用 sethome 坐标，否则实占中心）。 */
     private void home(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -278,7 +278,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                 cy = world.getHighestBlockYAt(cx, cz) + 1;
             }
         } else {
-            // 默认：地皮的【锚定角】（最小角那个 chunk 的中心）。与地皮"从角落向外扩"一致，
+            // 默认：庄园的【锚定角】（最小角那个 chunk 的中心）。与庄园"从角落向外扩"一致，
             // 该点固定不随升级漂移、且 1 级就已解锁/整好地——比"实占中心"(随等级移动)更稳。
             ChunkRegion active = new LayoutCalculator(gw.layout())
                     .activeRegion(manor.slot(), manor.level())
@@ -336,7 +336,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /** /gs info：显示自己的地皮 + 公会信息。 */
+    /** /gs info：显示自己的庄园 + 公会信息。 */
     private void info(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -357,7 +357,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         int members = manors.findAll(manor.guild()).size();
         sender.sendMessage(Messages.get("info.guild_info_header"));
         String alias = Flag.ALIAS.resolveString(manor.flags());
-        String title = alias.isBlank() ? "地皮 #" + manor.slot() : alias + " (#" + manor.slot() + ")";
+        String title = alias.isBlank() ? "庄园 #" + manor.slot() : alias + " (#" + manor.slot() + ")";
         sender.sendMessage(Messages.get("info.guild_line", manor.guild().value(), gw.guildLevel(), levels.maxGuildLevel(), members, capacity));
         sender.sendMessage(Messages.get("info.plot_line", title, manor.level(), levels.manorMaxLevel(), side, side,
                 Flag.DONE.resolveBool(manor.flags()) ? Messages.get("info.done_status") : Messages.get("info.building_status")));
@@ -383,7 +383,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         return set.isEmpty() ? "§8无" : set.size() + " 人";
     }
 
-    /** /gs trust <玩家|*>：给自己的地皮加共建人（* = 批量，需 trust.everyone 权限）。 */
+    /** /gs trust <玩家|*>：给自己的庄园加共建人（* = 批量，需 trust.everyone 权限）。 */
     private void trust(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -615,7 +615,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("success.denied_removed", args[1]));
     }
 
-    /** /gs list [mine]：列出公会营地（mine=只看自己有地皮的）。 */
+    /** /gs list [mine]：列出公会营地（mine=只看自己有庄园的）。 */
     private void list(CommandSender sender, String[] args) {
         List<GuildWorld> all = guilds.findAll();
         boolean mineOnly = args.length >= 2 && args[1].equalsIgnoreCase("mine");
@@ -675,7 +675,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("success.visit_teleported", guild.value()));
     }
 
-    /** /gs clear：清空自己地皮的地表建筑。 */
+    /** /gs clear：清空自己庄园的地表建筑。 */
     private void clear(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -691,7 +691,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("success.cleared", manor.slot()));
     }
 
-    /** /gs flag [set|unset <flag> [值] | (空)查看]：管理地皮 flag（庄主 / 有 per-flag 权限者）。 */
+    /** /gs flag [set|unset <flag> [值] | (空)查看]：管理庄园 flag（庄主 / 有 per-flag 权限者）。 */
     private void flag(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -778,7 +778,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /** /gs card [玩家]：展示地皮档案卡（基础信息+实体统计+成员+描述+评分）。 */
+    /** /gs card [玩家]：展示庄园档案卡（基础信息+实体统计+成员+描述+评分）。 */
     private void card(CommandSender sender, String[] args) {
         PlayerRef targetRef;
         String targetName;
@@ -855,7 +855,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
 
     // ===== 新增命令：alias / sethome / done / kick =====
 
-    /** /gs alias <名称>：设置地皮别名（空参清除）。 */
+    /** /gs alias <名称>：设置庄园别名（空参清除）。 */
     private void alias(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -896,7 +896,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
         }
-        // 检查是否在自己的地皮上
+        // 检查是否在自己的庄园上
         GuildWorld gw = registry.get(player.getWorld().getName());
         if (gw == null || !gw.guild().equals(manor.guild())) {
             sender.sendMessage(Messages.get("error.not_in_own_world"));
@@ -911,7 +911,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("success.home_set", loc.getBlockX(), loc.getBlockY(), loc.getBlockZ()));
     }
 
-    /** /gs done：切换地皮完工标记。 */
+    /** /gs done：切换庄园完工标记。 */
     private void done(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -933,7 +933,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /** /gs kick <玩家>：把非成员从你的地皮上踢出去（传送到边界外）。 */
+    /** /gs kick <玩家>：把非成员从你的庄园上踢出去（传送到边界外）。 */
     private void kick(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -957,7 +957,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.cannot_self_kick"));
             return;
         }
-        // 检查目标是否在自己的地皮上
+        // 检查目标是否在自己的庄园上
         GuildWorld gw = registry.get(target.getWorld().getName());
         if (gw == null || !gw.guild().equals(manor.guild())) {
             sender.sendMessage(Messages.get("error.not_guild_world_target", target.getName()));
@@ -1049,17 +1049,17 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     private static final Map<String, String> COMMAND_HELP = new java.util.LinkedHashMap<>();
     static {
         // ── 传送 ──
-        COMMAND_HELP.put("home", "传送到自己地皮（优先 sethome 坐标）");
+        COMMAND_HELP.put("home", "传送到自己庄园（优先 sethome 坐标）");
         COMMAND_HELP.put("spawn", "传送到公会主城");
-        COMMAND_HELP.put("middle", "传送到地皮正中心（无视 sethome）");
+        COMMAND_HELP.put("middle", "传送到庄园正中心（无视 sethome）");
         COMMAND_HELP.put("sethome", "把当前位置设为 home 传送点");
         COMMAND_HELP.put("visit <公会>", "到访某公会的主城");
-        // ── 地皮信息 ──
-        COMMAND_HELP.put("info", "查看自己地皮+公会信息");
-        COMMAND_HELP.put("card [玩家]", "查看地皮档案卡（实体/成员/评分）");
-        COMMAND_HELP.put("near", "列出附近地皮（按距离排序）");
+        // ── 庄园信息 ──
+        COMMAND_HELP.put("info", "查看自己庄园+公会信息");
+        COMMAND_HELP.put("card [玩家]", "查看庄园档案卡（实体/成员/评分）");
+        COMMAND_HELP.put("near", "列出附近庄园（按距离排序）");
         COMMAND_HELP.put("list [mine]", "列出所有公会营地（mine=只看自己的）");
-        COMMAND_HELP.put("board", "查看脚下地皮的留言墙");
+        COMMAND_HELP.put("board", "查看脚下庄园的留言墙");
         COMMAND_HELP.put("top [公会] [排序]", "排行榜（rating/level/members/entities/visits）");
         // ── 人员管理 ──
         COMMAND_HELP.put("trust <玩家|*>", "加共建人（可建造/交互，*=批量）");
@@ -1069,47 +1069,47 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         COMMAND_HELP.put("member <add|remove> <玩家>", "管理受限成员（上级在线时才有权）");
         COMMAND_HELP.put("deny <玩家|*>", "拉黑（禁止进入，*=批量，需确认）");
         COMMAND_HELP.put("undeny <玩家>", "移出黑名单");
-        COMMAND_HELP.put("kick <玩家>", "把非成员踢出你的地皮");
-        // ── 地皮设置 ──
-        COMMAND_HELP.put("flag [set|unset] [flag] [值]", "查看/设置地皮 flag");
-        COMMAND_HELP.put("alias <名称>", "设置地皮别名（空参清除）");
-        COMMAND_HELP.put("desc <描述>", "设置地皮描述（空参清除）");
+        COMMAND_HELP.put("kick <玩家>", "把非成员踢出你的庄园");
+        // ── 庄园设置 ──
+        COMMAND_HELP.put("flag [set|unset] [flag] [值]", "查看/设置庄园 flag");
+        COMMAND_HELP.put("alias <名称>", "设置庄园别名（空参清除）");
+        COMMAND_HELP.put("desc <描述>", "设置庄园描述（空参清除）");
         COMMAND_HELP.put("done", "切换完工标记");
         COMMAND_HELP.put("toggle titles", "个人开关进出标题消息");
-        COMMAND_HELP.put("open [分钟]", "临时开放地皮给访客（0=永久，默认60分钟）");
-        COMMAND_HELP.put("close", "关闭地皮访客模式");
+        COMMAND_HELP.put("open [分钟]", "临时开放庄园给访客（0=永久，默认60分钟）");
+        COMMAND_HELP.put("close", "关闭庄园访客模式");
         // ── 社交 ──
-        COMMAND_HELP.put("comment <留言>", "给当前所在地皮留言");
-        COMMAND_HELP.put("inbox", "查看自己地皮收到的留言");
-        COMMAND_HELP.put("rate <1-10> [公会 slot]", "给地皮打分");
-        COMMAND_HELP.put("flower [公会 slot]", "给地皮送花（每天每块限一次）");
+        COMMAND_HELP.put("comment <留言>", "给当前所在庄园留言");
+        COMMAND_HELP.put("inbox", "查看自己庄园收到的留言");
+        COMMAND_HELP.put("rate <1-10> [公会 slot]", "给庄园打分");
+        COMMAND_HELP.put("flower [公会 slot]", "给庄园送花（每天每块限一次）");
         COMMAND_HELP.put("gift <玩家>", "把手持物品送给同世界的玩家");
         COMMAND_HELP.put("bulletin <set|show|clear>", "公会公告板管理");
         // ── 高级 ──
         COMMAND_HELP.put("upgrade", "升级自己的庄园一级");
-        COMMAND_HELP.put("clear", "清空自己地皮的地表建筑（需确认）");
-        COMMAND_HELP.put("swap <玩家>", "与对方互换地皮 slot（需确认）");
-        COMMAND_HELP.put("merge <slot>", "合并相邻地皮到自己的地皮（需确认）");
+        COMMAND_HELP.put("clear", "清空自己庄园的地表建筑（需确认）");
+        COMMAND_HELP.put("swap <玩家>", "与对方互换庄园 slot（需确认）");
+        COMMAND_HELP.put("merge <slot>", "合并相邻庄园到自己的庄园（需确认）");
         COMMAND_HELP.put("unmerge [slot]", "取消合并（不填=全部）（需确认）");
         COMMAND_HELP.put("move <公会>", "搬家到另一个公会（保留建筑，需确认）");
         COMMAND_HELP.put("template <子命令>", "权限模板管理（create/delete/apply/setflag/list）");
         COMMAND_HELP.put("sub <子命令>", "子领地管理（create/delete/setflag/list）");
         COMMAND_HELP.put("confirm", "确认待执行的危险操作");
         // ── 管理命令 ──
-        COMMAND_HELP.put("admin create <公会> [地形]", "创建公会世界");
+        COMMAND_HELP.put("admin create <公会> [地形]", "创建公会营地");
         COMMAND_HELP.put("admin tp <公会>", "传送到公会主城");
-        COMMAND_HELP.put("admin claim <公会>", "给自己分配一块地皮");
-        COMMAND_HELP.put("admin fill <公会> <数量>", "批量填充测试地皮");
+        COMMAND_HELP.put("admin claim <公会>", "给自己分配一块庄园");
+        COMMAND_HELP.put("admin fill <公会> <数量>", "批量填充测试庄园");
         COMMAND_HELP.put("admin map <公会>", "输出网格图到控制台");
         COMMAND_HELP.put("admin upgrade-manor <公会>", "升级自己庄园一级");
         COMMAND_HELP.put("admin upgrade-guild <公会>", "升级公会等级（扩名额+边界）");
-        COMMAND_HELP.put("admin delete <公会>", "卸载公会世界");
+        COMMAND_HELP.put("admin delete <公会>", "卸载公会营地");
         COMMAND_HELP.put("admin worlds", "列出所有已加载世界");
         COMMAND_HELP.put("admin whereami", "显示当前坐标");
         COMMAND_HELP.put("admin reload", "热重载 config.yml");
-        COMMAND_HELP.put("admin setowner <公会> <玩家>", "转移地皮所有权");
-        COMMAND_HELP.put("admin purge <天数> [公会]", "清理闲置地皮");
-        COMMAND_HELP.put("admin regen", "重置脚下地皮地形");
+        COMMAND_HELP.put("admin setowner <公会> <玩家>", "转移庄园所有权");
+        COMMAND_HELP.put("admin purge <天数> [公会]", "清理闲置庄园");
+        COMMAND_HELP.put("admin regen", "重置脚下庄园地形");
         COMMAND_HELP.put("admin export", "导出数据到 CSV");
         COMMAND_HELP.put("admin fund <公会> <add|check|set> [金额]", "管理公会资金");
         COMMAND_HELP.put("admin citywall <公会>", "为主城补建围墙");
@@ -1117,7 +1117,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         COMMAND_HELP.put("help [命令]", "显示帮助（加命令名看详细用法）");
     }
 
-    /** /gs desc <描述>：快捷设置地皮描述（等效 /gs flag set description）。 */
+    /** /gs desc <描述>：快捷设置庄园描述（等效 /gs flag set description）。 */
     private void desc(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -1350,7 +1350,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                 int minZ = Math.min(bz + dz1, bz + dz2);
                 int maxX = Math.max(bx + dx1, bx + dx2);
                 int maxZ = Math.max(bz + dz1, bz + dz2);
-                // 边界检查：sub 必须在自己的地皮实占范围内
+                // 边界检查：sub 必须在自己的庄园实占范围内
                 GuildWorld subGw = guilds.find(manor.guild()).orElse(null);
                 if (subGw == null) {
                     sender.sendMessage(Messages.get("error.world_not_exist"));
@@ -1478,7 +1478,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /** /gs board：查看脚下地皮的留言墙（格式化展示最近 10 条）。 */
+    /** /gs board：查看脚下庄园的留言墙（格式化展示最近 10 条）。 */
     private void board(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -1496,7 +1496,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("info.board_empty"));
             return;
         }
-        String alias = ""; // 获取地皮别名
+        String alias = ""; // 获取庄园别名
         Manor m = manors.findBySlot(gw.guild(), c.slot()).orElse(null);
         if (m != null) alias = Flag.ALIAS.resolveString(m.flags());
         String title = alias.isBlank() ? "#" + c.slot() : alias + " (#" + c.slot() + ")";
@@ -1510,7 +1510,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("info.board_footer"));
     }
 
-    /** /gs gift <玩家>：把手持物品送给同公会世界的玩家。 */
+    /** /gs gift <玩家>：把手持物品送给同公会营地的玩家。 */
     private void gift(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -1529,7 +1529,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.cannot_self"));
             return;
         }
-        // 必须在同一公会世界
+        // 必须在同一公会营地
         if (!player.getWorld().equals(target.getWorld())) {
             sender.sendMessage(Messages.get("error.not_same_world"));
             return;
@@ -1549,7 +1549,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         target.sendMessage(Messages.get("success.gift_received", player.getName(), item.getAmount(), item.getType().name()));
     }
 
-    /** /gs flower [公会名 slot]：给地皮送花（每天每块地皮限送一次）。 */
+    /** /gs flower [公会名 slot]：给庄园送花（每天每块庄园限送一次）。 */
     private void flower(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -1566,7 +1566,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage(Messages.get("usage.flower")); return;
             }
         } else {
-            // 默认：给脚下地皮送花
+            // 默认：给脚下庄园送花
             GuildWorld gw = registry.get(player.getWorld().getName());
             if (gw == null) { sender.sendMessage(Messages.get("error.not_in_guild_world")); return; }
             LayoutCalculator layout = new LayoutCalculator(gw.layout());
@@ -1595,14 +1595,14 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         String name = alias.isBlank() ? targetGuild.value() + " #" + targetSlot : alias;
         sender.sendMessage(Messages.get("success.flower_sent", name, todayCount));
 
-        // 通知地皮主人（如果在线）
+        // 通知庄园主人（如果在线）
         Player owner = Bukkit.getPlayer(target.owner().uuid());
         if (owner != null && owner.isOnline()) {
             owner.sendMessage(Messages.get("success.flower_received", player.getName(), name));
         }
     }
 
-    /** /gs open [时长]：临时开放地皮给访客（默认 1 小时，0=永久）。 */
+    /** /gs open [时长]：临时开放庄园给访客（默认 1 小时，0=永久）。 */
     private void openPlot(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -1644,7 +1644,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("success.plot_opened", timeStr));
     }
 
-    /** /gs close：手动关闭地皮访客模式。 */
+    /** /gs close：手动关闭庄园访客模式。 */
     private void closePlot(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -1660,7 +1660,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /** 检查某地皮是否处于临时开放状态（供 ManorAccessListener 用）。 */
+    /** 检查某庄园是否处于临时开放状态（供 ManorAccessListener 用）。 */
     public boolean isPlotOpen(GuildId guild, int slot) {
         String key = guild.value() + ":" + slot;
         Long expireAt = openPlots.get(key);
@@ -1740,7 +1740,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /** /gs admin setowner <公会> <玩家>：转移地皮所有权。 */
+    /** /gs admin setowner <公会> <玩家>：转移庄园所有权。 */
     private void setOwner(CommandSender sender, String[] args) {
         if (args.length < 4) {
             sender.sendMessage(Messages.get("usage.admin_setowner"));
@@ -1749,13 +1749,13 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         GuildId guild = new GuildId(args[2]);
         org.bukkit.OfflinePlayer target = org.bukkit.Bukkit.getOfflinePlayer(args[3]);
         PlayerRef newOwner = PlayerRef.of(target.getUniqueId());
-        // 找该玩家在该公会的地皮
+        // 找该玩家在该公会的庄园
         Manor existing = manors.findByOwner(guild, newOwner).orElse(null);
         if (existing != null) {
             sender.sendMessage(Messages.get("error.target_has_manor", args[3], existing.slot()));
             return;
         }
-        // 找该公会里最老的地皮（slot 最小的），转移给目标
+        // 找该公会里最老的庄园（slot 最小的），转移给目标
         List<Manor> all = manors.findAll(guild);
         if (all.isEmpty()) {
             sender.sendMessage(Messages.get("error.give_no_plots"));
@@ -1768,7 +1768,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("success.setowner", target2.slot(), args[3]));
     }
 
-    /** /gs admin purge <天数> [公会id]：清除 N 天未登录玩家的地皮。 */
+    /** /gs admin purge <天数> [公会id]：清除 N 天未登录玩家的庄园。 */
     private void purge(CommandSender sender, String[] args) {
         if (args.length < 3) {
             sender.sendMessage(Messages.get("usage.admin_purge"));
@@ -1808,7 +1808,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("success.purge", purged, days));
     }
 
-    /** /gs admin regen [公会id]：重置当前所在地皮的地形（清植被+整地）。 */
+    /** /gs admin regen [公会id]：重置当前所在庄园的地形（清植被+整地）。 */
     private void regen(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.only_player_regen"));
@@ -1826,7 +1826,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
 
     /**
      * /gs citytrust &lt;玩家&gt; | /gs cityuntrust &lt;玩家&gt;：会长（含副会长）信任/撤销会内成员建造主城。
-     * 仅会长可用；被信任者必须在本公会内（拥有本会地皮）。
+     * 仅会长可用；被信任者必须在本公会内（拥有本会庄园）。
      */
     private void cityTrust(CommandSender sender, String[] args, boolean add) {
         if (!(sender instanceof Player player)) {
@@ -1857,7 +1857,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         org.bukkit.OfflinePlayer target = Bukkit.getOfflinePlayer(args[1]);
         java.util.UUID targetId = target.getUniqueId();
         if (add) {
-            // 被信任者必须是会内成员（在本公会拥有地皮）
+            // 被信任者必须是会内成员（在本公会拥有庄园）
             if (manors.findByOwner(guild, PlayerRef.of(targetId)).isEmpty()) {
                 sender.sendMessage("§c只能信任本公会的成员。");
                 return;
@@ -1930,7 +1930,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
 
     // ===== near / rate / top / middle =====
 
-    /** /gs near：列出附近地皮（按距离排序，显示庄主+距离）。 */
+    /** /gs near：列出附近庄园（按距离排序，显示庄主+距离）。 */
     private void near(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -1971,7 +1971,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /** /gs rate <分数> [公会名 slot]：给地皮打分（站在地皮上直接打，或指定公会+slot）。 */
+    /** /gs rate <分数> [公会名 slot]：给庄园打分（站在庄园上直接打，或指定公会+slot）。 */
     private void rate(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -2006,7 +2006,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                 return;
             }
         } else {
-            // 模式2：站在地皮上自动检测
+            // 模式2：站在庄园上自动检测
             GuildWorld gw = registry.get(player.getWorld().getName());
             if (gw == null) {
                 sender.sendMessage(Messages.get("error.rate_need_world"));
@@ -2038,7 +2038,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("success.rated", targetManor.slot(), score, String.format("%.1f", avg), count));
     }
 
-    /** /gs top [公会名]：按评分排行（不需地皮；不填公会名则自动检测自己所在的公会）。 */
+    /** /gs top [公会名]：按评分排行（不需庄园；不填公会名则自动检测自己所在的公会）。 */
     /** /gs top [公会] [rating|level|members|entities]：排行榜。 */
     private void top(CommandSender sender, String[] args) {
         GuildId guild = null;
@@ -2125,7 +2125,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /** /gs middle：传送到地皮正中心（无视 sethome）。 */
+    /** /gs middle：传送到庄园正中心（无视 sethome）。 */
     private void middle(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -2152,7 +2152,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
 
     // ===== comment / inbox =====
 
-    /** /gs comment <留言>：给当前所在地皮留言。 */
+    /** /gs comment <留言>：给当前所在庄园留言。 */
     private void comment(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -2180,7 +2180,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("success.comment_added", c.slot()));
     }
 
-    /** /gs inbox：查看自己地皮收到的留言。 */
+    /** /gs inbox：查看自己庄园收到的留言。 */
     private void inbox(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -2203,7 +2203,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
 
     // ===== swap / grant / merge =====
 
-    /** /gs swap <玩家>：与对方互换地皮 slot。 */
+    /** /gs swap <玩家>：与对方互换庄园 slot。 */
     private void swap(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -2258,7 +2258,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         target.sendMessage(Messages.get("success.swap_notify", player.getName(), theirSlot, mySlot));
     }
 
-    /** /gs grant <玩家>：给玩家分配额外地皮（需 admin）。 */
+    /** /gs grant <玩家>：给玩家分配额外庄园（需 admin）。 */
     private void grant(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -2284,7 +2284,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
         PlayerRef targetRef = PlayerRef.of(target.getUniqueId());
         GuildId guild = myManor.guild();
-        // 检查目标是否已有该公会的地皮
+        // 检查目标是否已有该公会的庄园
         if (manors.findByOwner(guild, targetRef).isPresent()) {
             sender.sendMessage(Messages.get("error.target_has_manor", target.getName(), ""));
             return;
@@ -2298,7 +2298,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /** /gs merge <slot>：把相邻地皮合并到自己的地皮（砍掉中间的路）。 */
+    /** /gs merge <slot>：把相邻庄园合并到自己的庄园（砍掉中间的路）。 */
     private void mergeCmd(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
@@ -2325,7 +2325,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.cannot_self_merge"));
             return;
         }
-        // 检查目标 slot 是否已被其他地皮吸收
+        // 检查目标 slot 是否已被其他庄园吸收
         int existingTarget = merges.getMergedTarget(myManor.guild(), absorbedSlot);
         if (existingTarget != absorbedSlot && existingTarget != myManor.slot()) {
             sender.sendMessage(Messages.get("error.already_merged_to_other", absorbedSlot, existingTarget));
@@ -2340,7 +2340,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.slot_empty", absorbedSlot));
             return;
         }
-        // 安全检查：只能合并自己的地皮（或有 admin 权限）
+        // 安全检查：只能合并自己的庄园（或有 admin 权限）
         if (!absorbed.owner().equals(ref) && !Permissions.hasAdminPerm(player, Permissions.ADMIN_TRUST_OTHER)) {
             sender.sendMessage(Messages.get("error.only_owner"));
             return;
@@ -2473,7 +2473,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         double cost = service.moveCost();
         String costStr = cost > 0 ? String.format("%.0f", cost) : "免费";
         sender.sendMessage("§6==== 搬家确认 ====");
-        sender.sendMessage("§7当前公会: §f" + currentManor.guild().value() + " §7地皮 #" + currentManor.slot());
+        sender.sendMessage("§7当前公会: §f" + currentManor.guild().value() + " §7庄园 #" + currentManor.slot());
         sender.sendMessage("§7目标公会: §f" + targetGuild.value());
         sender.sendMessage("§7费用: §e" + costStr);
         sender.sendMessage("§7冷却: §f" + service.moveCooldownDays() + " §7天");
@@ -2494,7 +2494,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             }
         }
 
-        sender.sendMessage("§e⚠ 建筑将被复制到新公会世界，旧位置将被清空。");
+        sender.sendMessage("§e⚠ 建筑将被复制到新公会营地，旧位置将被清空。");
         sender.sendMessage("§e30秒内输入 §6/gs confirm §e确认搬家。");
     }
 
@@ -2543,7 +2543,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                 for (String modResult : service.getLastMoveModResults()) {
                     sender.sendMessage(modResult);
                 }
-                // 传送到新地皮
+                // 传送到新庄园
                 GuildWorld gw = ensureLoadedWorld(sender, targetGuild);
                 if (gw != null && newManor != null) {
                     World world = Bukkit.getWorld(gw.worldName());
@@ -2572,7 +2572,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /** 合并感知的 classify：ROAD chunk 若在合并路带上，返回主地皮的 PLOT。O(1) 内存查找。 */
+    /** 合并感知的 classify：ROAD chunk 若在合并路带上，返回主庄园的 PLOT。O(1) 内存查找。 */
     private Classification mergeClassify(LayoutCalculator layout, GuildId guild, int chunkX, int chunkZ) {
         Classification raw = layout.classify(chunkX, chunkZ);
         if (raw.type() != org.windy.guildshelter.domain.layout.RegionType.ROAD) {
@@ -2585,7 +2585,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         return merger.classify(chunkX, chunkZ);
     }
 
-    /** 确保该公会世界已加载并登记；失败返回 null 并已提示。 */
+    /** 确保该公会营地已加载并登记；失败返回 null 并已提示。 */
     private GuildWorld ensureLoadedWorld(CommandSender sender, GuildId guild) {
         GuildWorld gw = guilds.find(guild).orElse(null);
         if (gw == null) {
@@ -2668,7 +2668,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("success.tp_teleported", gw.worldName()));
     }
 
-    /** 给自己在该公会分配下一块地皮（自动整地），并传送过去观察。 */
+    /** 给自己在该公会分配下一块庄园（自动整地），并传送过去观察。 */
     private void claim(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.only_player_claim"));
@@ -2762,7 +2762,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /** 测试用：给随机 UUID 批量分配 n 块地皮，把网格填出来便于观察分布（满了即停）。 */
+    /** 测试用：给随机 UUID 批量分配 n 块庄园，把网格填出来便于观察分布（满了即停）。 */
     private void fill(CommandSender sender, String[] args) {
         if (args.length < 4) {
             sender.sendMessage(Messages.get("usage.admin_fill"));
@@ -2858,7 +2858,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("success.upgrade_guild", after.guildLevel(), levels.maxGuildLevel(),
                 levels.maxMembers(before.guildLevel()), levels.maxMembers(after.guildLevel()),
                 (int) oldBorder, (int) newBorder));
-        // 升级特效：公会世界里放烟花 + 全服广播
+        // 升级特效：公会营地里放烟花 + 全服广播
         World world = Bukkit.getWorld(after.worldName());
         if (world != null) {
             LayoutCalculator al = new LayoutCalculator(after.layout());

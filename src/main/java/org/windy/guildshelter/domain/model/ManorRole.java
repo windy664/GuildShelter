@@ -15,7 +15,7 @@ public enum ManorRole {
     MEMBER,
     /** 黑名单：进入/交互一律拒，覆盖访客 flag（owner/admin 除外）。 */
     DENIED,
-    /** 其余访客：权限由地皮访客 flag（use/container/...）决定。 */
+    /** 其余访客：权限由庄园访客 flag（use/container/...）决定。 */
     VISITOR;
 
     /** 是否无条件可建造/交互（owner 与 trusted）。member 需另判在线门控。 */

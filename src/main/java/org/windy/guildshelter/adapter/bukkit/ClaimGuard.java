@@ -60,7 +60,7 @@ public final class ClaimGuard {
     }
 
     /**
-     * 该玩家能否改动其所在世界 (blockX,blockZ) 处的方块。非公会世界一律放行。
+     * 该玩家能否改动其所在世界 (blockX,blockZ) 处的方块。非公会营地一律放行。
      *
      * <p>性能：manorBySlot 走 WorldCache.manorAt（2 秒 TTL），memberCache 走内存 O(1)。
      * 正常情况下 0 次 DB 查询（缓存命中时）。
@@ -68,7 +68,7 @@ public final class ClaimGuard {
     public boolean allowed(Player player, int blockX, int blockZ) {
         GuildWorld gw = registry.get(player.getWorld().getName());
         if (gw == null) {
-            return true; // 非公会世界，不干预
+            return true; // 非公会营地，不干预
         }
         int lx = (blockX >> 4) - gw.originChunkX();
         int lz = (blockZ >> 4) - gw.originChunkZ();
@@ -87,7 +87,7 @@ public final class ClaimGuard {
         }
 
         if (effective.type() == RegionType.PLOT) {
-            // 合并后的路 或 原始地皮：按地皮权限判定（用缓存的 supervisorOnline）
+            // 合并后的路 或 原始庄园：按庄园权限判定（用缓存的 supervisorOnline）
             Manor m = manorBySlot.apply(effective.slot());
             if (m != null && ManorRoles.effectiveBuildCached(m, ref, supervisorCache)) {
                 // 检查是否在实占范围内（合并后的路 chunk 视为在范围内）

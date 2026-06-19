@@ -109,14 +109,14 @@ public final class GuildService {
     }
 
     /**
-     * 该公会当前<b>有效名额容量</b>（发多少地皮 slot）：宿主插件有公会人数上限就跟宿主，
+     * 该公会当前<b>有效名额容量</b>（发多少庄园 slot）：宿主插件有公会人数上限就跟宿主，
      * 否则退回 GuildShelter 自己的等级容量（等级 × members-per-level）。
      */
     public int effectiveCapacity(GuildWorld gw) {
         return guildProvider.memberCap(gw.guild()).orElseGet(() -> levels.maxMembers(gw.guildLevel()));
     }
 
-    /** 建会：创建（或返回已有的）公会世界，按<b>当前 config</b> 冻结其布局参数。 */
+    /** 建会：创建（或返回已有的）公会营地，按<b>当前 config</b> 冻结其布局参数。 */
     public GuildWorld createGuild(GuildId guild, long seed) {
         return createGuild(guild, seed, prepMode);
     }
@@ -158,7 +158,7 @@ public final class GuildService {
 
     /**
      * 沿<b>最大主城</b>外缘建围墙：建会时自动、{@code /gs admin citywall} 手动重建。世界须已加载。
-     * 只在外侧是成员地皮（非路）的主城边块上立墙——贴道路的边自动留口、永不踩成员地皮。
+     * 只在外侧是成员庄园（非路）的主城边块上立墙——贴道路的边自动留口、永不踩成员庄园。
      */
     public void buildCityWall(GuildWorld gw) {
         LayoutCalculator layout = new LayoutCalculator(gw.layout());
@@ -174,14 +174,14 @@ public final class GuildService {
      */
     public Manor assignManor(GuildId guild, PlayerRef player) {
         GuildWorld gw = guilds.find(guild).orElseThrow(
-                () -> new IllegalStateException("公会世界不存在: " + guild.value()));
+                () -> new IllegalStateException("公会营地不存在: " + guild.value()));
 
         Optional<Manor> owned = manors.findByOwner(guild, player);
         if (owned.isPresent()) {
             return owned.get();
         }
 
-        // 容量门控：公会等级决定名额数，名额满了不能再分新地皮（需先升级公会）。
+        // 容量门控：公会等级决定名额数，名额满了不能再分新庄园（需先升级公会）。
         // 成员 slot 从 0 起紧凑铺，前 capacity 个为合法名额；nextFreeSlot 会复用退会留下的空缺，
         // 故"下一个空缺 ≥ capacity"即等价于"在册成员已达 capacity"。
         int slot = manors.nextFreeSlot(guild);
@@ -238,17 +238,20 @@ public final class GuildService {
         if (l != null) l.onGuildDissolved(guild);
     }
 
-    /** 庄园升级：受公会等级封顶；升级后对新扩出的实占范围整地。 */
+    /**
+     * 庄园升级：受公会等级封顶。升级<b>只解锁更大的可建造范围</b>（{@code activeRegion} 随等级扩大，
+     * 权限判定 {@code PermissionRules} 自动放行新范围）——<b>系统不再自动整地</b>，新解锁的那圈是原始自然地形，
+     * 由玩家自己开荒/建设（想要干净地基可自行 {@code /gs clear}）。这才是"自己经营自己庄园"的本意。
+     */
     public boolean upgradeManor(GuildId guild, PlayerRef player) {
-        GuildWorld gw = guilds.find(guild).orElseThrow();
+        guilds.find(guild).orElseThrow(); // 校验世界存在
         Manor manor = manors.findByOwner(guild, player).orElseThrow();
         if (!levels.canUpgradeManor(manor.level())) { // 庄园只受物理满级限制，与公会等级无关
             return false;
         }
         Manor upgraded = manor.withLevel(manor.level() + 1);
         manors.save(upgraded);
-        prepareManorTerrain(gw, upgraded, false, false); // 异步、只整新解锁地皮，不重铺路（路与等级无关）
-        return true;
+        return true; // 仅扩权限，不整地
     }
 
     /** 公会升级：扩主城上限 + 提升庄园上限；同步边界。 */
@@ -274,7 +277,7 @@ public final class GuildService {
     }
 
     /**
-     * 搬家：把庄园建筑从当前公会世界复制到目标公会世界。
+     * 搬家：把庄园建筑从当前公会营地复制到目标公会营地。
      * 建筑通过 chunk 级复制保留 TileEntity NBT（模组数据安全）。
      *
      * @param player 搬家的玩家
@@ -304,7 +307,7 @@ public final class GuildService {
             }
         }
 
-        // 3. 目标公会世界
+        // 3. 目标公会营地
         GuildWorld targetGw = guilds.find(targetGuild).orElse(null);
         if (targetGw == null) {
             return MoveResult.TARGET_NOT_EXIST;
@@ -416,8 +419,8 @@ public final class GuildService {
     }
 
     /**
-     * @param includeRoads 是否同时铺该格四周的路。<b>仅首次分配(assign)时铺</b>；升级地皮传 false——
-     *                     路是格子级的、与地皮等级无关，升级时重铺纯属浪费（且历史上还会触发路面逐级下沉）。
+     * @param includeRoads 是否同时铺该格四周的路。<b>仅首次分配(assign)时铺</b>；升级庄园传 false——
+     *                     路是格子级的、与庄园等级无关，升级时重铺纯属浪费（且历史上还会触发路面逐级下沉）。
      */
     public void prepareManorTerrain(GuildWorld gw, Manor manor, boolean sync, boolean includeRoads) {
         if (prepMode == TerrainPrepMode.NONE) {

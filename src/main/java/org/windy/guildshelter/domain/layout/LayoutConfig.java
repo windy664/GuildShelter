@@ -1,17 +1,17 @@
 package org.windy.guildshelter.domain.layout;
 
 /**
- * 公会世界布局参数，全部以 <b>chunk</b> 为单位（管理员配置，世界边界等由此派生）。
+ * 公会营地布局参数，全部以 <b>chunk</b> 为单位（管理员配置，世界边界等由此派生）。
  *
- * <p><b>主城和成员地皮同款算法</b>：主城就是<b>中心那一格(cell 0)</b>里的一块"地皮"，按 chunk 配置、
+ * <p><b>主城和成员庄园同款算法</b>：主城就是<b>中心那一格(cell 0)</b>里的一块"庄园"，按 chunk 配置、
  * 角落锚定、随公会等级从 {@code mainCityInitialChunks} 长到 {@code mainCityMaxChunks}（封顶 ≤ plotChunks，
  * 以容于单格）。成员 slot 从 cell 0 之外的螺旋格（1,2,…）开始铺；预留/边界按 max 算，升级随之外扩。
  *
- * @param plotChunks            单个地皮边长（chunk），即满级 slot 大小
- * @param roadChunks            地皮之间的间距/路宽（chunk）
+ * @param plotChunks            单个庄园边长（chunk），即满级 slot 大小
+ * @param roadChunks            庄园之间的间距/路宽（chunk）
  * @param mainCityInitialChunks 主城初始边长（chunk，1 级公会），∈ [1, mainCityMaxChunks]
  * @param mainCityMaxChunks     主城最大边长（chunk，公会满级达到），∈ [initial, plotChunks]
- * @param plotDefaultChunks     地皮初始实占边长（chunk，1 级庄园），≤ plotChunks
+ * @param plotDefaultChunks     庄园初始实占边长（chunk，1 级庄园），≤ plotChunks
  * @param plotChunksPerLevel    庄园每升一级实占边长增加多少 chunk
  * @param baseY                 地面高度（生成器用；放这里方便统一配置）
  * @param marginChunks          世界边界在已分配范围外额外留的余量（chunk）
@@ -51,7 +51,7 @@ public record LayoutConfig(
         }
     }
 
-    /** 网格节距：一个地皮 + 一条路。 */
+    /** 网格节距：一个庄园 + 一条路。 */
     public int pitchChunks() {
         return plotChunks + roadChunks;
     }
@@ -88,8 +88,8 @@ public record LayoutConfig(
     }
 
     /**
-     * 一份合理的默认配置：地皮满级 15 chunk(240×240)、路 1 chunk、
-     * 主城初始 6 chunk(96×96)成长到最大 15 chunk(240×240)、地皮初始 6 chunk(96×96)每级 +1(共 10 级)。
+     * 一份合理的默认配置：庄园满级 15 chunk(240×240)、路 1 chunk、
+     * 主城初始 6 chunk(96×96)成长到最大 15 chunk(240×240)、庄园初始 6 chunk(96×96)每级 +1(共 10 级)。
      */
     public static LayoutConfig defaults() {
         return new LayoutConfig(15, 1, 6, 15, 6, 1, 64, 2);

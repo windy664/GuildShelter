@@ -20,7 +20,7 @@ import java.util.OptionalInt;
 
 /**
  * 坐标 → 该处所属成员庄园(若有)。复用世界注册表 + 该世界冻结布局做归类。
- * flag 执行监听器用它判断"这块方块/这个位置属于哪块地皮、其 flag 如何"。
+ * flag 执行监听器用它判断"这块方块/这个位置属于哪块庄园、其 flag 如何"。
  */
 public final class ManorLookup {
 
@@ -44,7 +44,7 @@ public final class ManorLookup {
     }
 
     /**
-     * 返回 (blockX,blockZ) 处的成员庄园；不在公会世界/不在地皮/未分配则 empty。合并路 chunk 归主地皮。
+     * 返回 (blockX,blockZ) 处的成员庄园；不在公会营地/不在庄园/未分配则 empty。合并路 chunk 归主庄园。
      *
      * <p>性能：走 {@link WorldCache#manorAt} 的 2 秒 TTL 缓存，正常情况 0 次 DB 查询。
      * 所有监听器（Flag/Env/Entity/Protection/Access）共用此方法，确保热路径不查库。
@@ -106,7 +106,7 @@ public final class ManorLookup {
      */
     public boolean resolveFlag(World world, int blockX, int blockZ, Flag flag) {
         Optional<Manor> manorOpt = at(world, blockX, blockZ);
-        if (manorOpt.isEmpty()) return flag.resolveBool(Map.of()); // 无地皮 → 用默认值
+        if (manorOpt.isEmpty()) return flag.resolveBool(Map.of()); // 无庄园 → 用默认值
         Manor manor = manorOpt.get();
         // 先查子领地
         GuildWorld gw = registry.get(world.getName());
@@ -126,7 +126,7 @@ public final class ManorLookup {
         subCache.remove(guild.value() + ":" + slot);
     }
 
-    /** 地皮实占范围中心的 Location（供 deny-exit 传送用）。 */
+    /** 庄园实占范围中心的 Location（供 deny-exit 传送用）。 */
     public Location manorCenter(World world, Manor manor) {
         GuildWorld gw = registry.get(world.getName());
         if (gw == null) return null;

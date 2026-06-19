@@ -484,7 +484,7 @@ public final class JdbcManorRepository implements ManorRepository {
 
     @Override
     public List<CommentEntry> getInbox(PlayerRef owner, int limit) {
-        // 查该玩家拥有的所有地皮收到的留言
+        // 查该玩家拥有的所有庄园收到的留言
         try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(
                 "SELECT mc.guild_id, mc.slot, mc.author_uuid, mc.message, mc.created_at "
                         + "FROM manor_comment mc JOIN manor m ON mc.guild_id=m.guild_id AND mc.slot=m.slot "

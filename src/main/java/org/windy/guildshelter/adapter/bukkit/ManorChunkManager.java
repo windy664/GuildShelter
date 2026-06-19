@@ -19,8 +19,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 /**
- * 地皮级区块卸载：当地皮庄主和所有 trusted 都不在线超过 N 分钟，
- * 卸载该地皮实占范围内的 chunk（保留主城和道路 chunk）。
+ * 庄园级区块卸载：当庄园庄主和所有 trusted 都不在线超过 N 分钟，
+ * 卸载该庄园实占范围内的 chunk（保留主城和道路 chunk）。
  * 庄主/trusted 登录时立即重载。
  */
 public final class ManorChunkManager extends BukkitRunnable {
@@ -34,7 +34,7 @@ public final class ManorChunkManager extends BukkitRunnable {
 
     /** "guildId:slot" → 最后一次庄主/trusted 在线的时间戳。 */
     private final Map<String, Long> lastOnlineTime = new ConcurrentHashMap<>();
-    /** 已卸载的地皮集合（避免重复卸载）。 */
+    /** 已卸载的庄园集合（避免重复卸载）。 */
     private final Set<String> unloadedManors = ConcurrentHashMap.newKeySet();
 
     public ManorChunkManager(GuildWorldRegistry registry, GuildRepository guilds, ManorRepository manors,
@@ -66,7 +66,7 @@ public final class ManorChunkManager extends BukkitRunnable {
                     // 如果之前卸载了，重新加载
                     if (unloadedManors.remove(key)) {
                         reloadManorChunks(world, gw, manor, layout);
-                        logger.info("[GuildShelter] 重载地皮 chunk: " + manor.guild().value() + " #" + manor.slot());
+                        logger.info("[GuildShelter] 重载庄园 chunk: " + manor.guild().value() + " #" + manor.slot());
                     }
                     continue;
                 }
@@ -80,10 +80,10 @@ public final class ManorChunkManager extends BukkitRunnable {
                 if (now - lastTime < thresholdMs) continue;
                 if (unloadedManors.contains(key)) continue; // 已卸载
 
-                // 超时，卸载该地皮 chunk
+                // 超时，卸载该庄园 chunk
                 unloadManorChunks(world, gw, manor, layout);
                 unloadedManors.add(key);
-                logger.info("[GuildShelter] 卸载地皮 chunk: " + manor.guild().value() + " #" + manor.slot()
+                logger.info("[GuildShelter] 卸载庄园 chunk: " + manor.guild().value() + " #" + manor.slot()
                         + "（无上级在线 " + inactiveMinutes + " 分钟）");
             }
         }
@@ -100,7 +100,7 @@ public final class ManorChunkManager extends BukkitRunnable {
         return false;
     }
 
-    /** 卸载地皮实占范围内的 chunk。 */
+    /** 卸载庄园实占范围内的 chunk。 */
     private void unloadManorChunks(World world, GuildWorld gw, Manor manor, LayoutCalculator layout) {
         ChunkRegion region = layout.activeRegion(manor.slot(), manor.level())
                 .shift(gw.originChunkX(), gw.originChunkZ());
@@ -120,7 +120,7 @@ public final class ManorChunkManager extends BukkitRunnable {
         }
     }
 
-    /** 重新加载地皮实占范围内的 chunk。 */
+    /** 重新加载庄园实占范围内的 chunk。 */
     private void reloadManorChunks(World world, GuildWorld gw, Manor manor, LayoutCalculator layout) {
         ChunkRegion region = layout.activeRegion(manor.slot(), manor.level())
                 .shift(gw.originChunkX(), gw.originChunkZ());
@@ -133,7 +133,7 @@ public final class ManorChunkManager extends BukkitRunnable {
         }
     }
 
-    /** 玩家登录时调用：立即重载其地皮 chunk。 */
+    /** 玩家登录时调用：立即重载其庄园 chunk。 */
     public void onPlayerJoin(UUID playerId) {
         manors.findByOwnerAnywhere(PlayerRef.of(playerId)).ifPresent(manor -> {
             String key = manor.guild().value() + ":" + manor.slot();
@@ -144,7 +144,7 @@ public final class ManorChunkManager extends BukkitRunnable {
                 World world = Bukkit.getWorld(gw.worldName());
                 if (world == null) return;
                 reloadManorChunks(world, gw, manor, new LayoutCalculator(gw.layout()));
-                logger.info("[GuildShelter] 玩家登录重载地皮 chunk: " + manor.guild().value() + " #" + manor.slot());
+                logger.info("[GuildShelter] 玩家登录重载庄园 chunk: " + manor.guild().value() + " #" + manor.slot());
             }
         });
     }

@@ -27,7 +27,7 @@ public final class Menus {
         return loader != null ? loader.loadMenu(menuId, context) : null;
     }
 
-    /** 地皮信息面板（YAML 优先，硬编码兜底）。 */
+    /** 庄园信息面板（YAML 优先，硬编码兜底）。 */
     public static GuiSpec manorInfoYaml(Manor manor, GuildWorld gw, LevelRules levels) {
         Map<String, Object> ctx = Map.of("manor", manor, "guildWorld", gw);
         GuiSpec yaml = fromYaml("manor_info", ctx);
@@ -43,14 +43,14 @@ public final class Menus {
         return memberManager(manor);
     }
 
-    /** 地皮信息面板。 */
+    /** 庄园信息面板。 */
     public static GuiSpec manorInfo(Manor manor, GuildWorld gw, LevelRules levels) {
         Map<Integer, GuiItem> items = new HashMap<>();
         int slot = 0;
 
         // 基本信息
         items.put(slot++, GuiItem.of(Material.BOOK,
-                "§6地皮 #" + manor.slot(),
+                "§6庄园 #" + manor.slot(),
                 List.of("§7公会: §f" + manor.guild().value(),
                         "§7等级: §f" + manor.level() + "/" + levels.manorMaxLevel(),
                         "§7庄主: §f" + manor.owner()),
@@ -99,7 +99,7 @@ public final class Menus {
             items.put(10, GuiItem.of(Material.GOLD_INGOT, "§7入场费: §e" + price, List.of(), ""));
         }
 
-        return new GuiSpec("manor_info", "§8[§6地皮管理§8] §7#" + manor.slot(), 3, items,
+        return new GuiSpec("manor_info", "§8[§6庄园管理§8] §7#" + manor.slot(), 3, items,
                 Map.of("manor", manor, "guildWorld", gw));
     }
 

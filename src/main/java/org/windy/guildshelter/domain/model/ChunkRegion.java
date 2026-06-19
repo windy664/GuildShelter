@@ -3,7 +3,7 @@ package org.windy.guildshelter.domain.model;
 /**
  * 以 chunk 为单位的轴对齐矩形（AABB），上下界闭区间（inclusive）。
  *
- * <p>领域层的一切区域（主城、地皮、实占范围）都用它表示——纯整数、无 GIS。
+ * <p>领域层的一切区域（主城、庄园、实占范围）都用它表示——纯整数、无 GIS。
  * 提供 chunk↔block 的换算：一个 chunk = 16×16 个方块，chunk c 覆盖方块 [c*16, c*16+15]。
  */
 public record ChunkRegion(int minChunkX, int minChunkZ, int maxChunkX, int maxChunkZ) {

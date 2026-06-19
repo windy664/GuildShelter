@@ -25,14 +25,14 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 地皮 flag 的 <b>访问类</b> 执行（Bukkit 侧）：
+ * 庄园 flag 的 <b>访问类</b> 执行（Bukkit 侧）：
  * <ul>
  *   <li>deny-entry / deny-exit：挡非成员进入 / 困住非成员不让离开；</li>
  *   <li>greeting / farewell：进出消息（titles flag 开则用屏幕标题显示，否则聊天框）；</li>
  *   <li>notify-enter / notify-leave：有人进出时私信在线成员（庄主/共建人）；</li>
- *   <li>price：访客进入收费地皮时自动扣费（需 Vault；成员/管理免付）。</li>
+ *   <li>price：访客进入收费庄园时自动扣费（需 Vault；成员/管理免付）。</li>
  * </ul>
- * 仅在跨 chunk 时查库（性能），按"当前所在地皮"变化触发进出。OP / guildshelter.admin 不受进出限制。
+ * 仅在跨 chunk 时查库（性能），按"当前所在庄园"变化触发进出。OP / guildshelter.admin 不受进出限制。
  */
 public final class ManorAccessListener implements Listener {
 
@@ -40,13 +40,13 @@ public final class ManorAccessListener implements Listener {
     private final EconomyPort economy; // null = 无 Vault，price flag 不生效
     private final VisitCounter visitCounter; // 访问计数（内存缓冲 + 定时刷盘）
     private final WorldCache cache;
-    private volatile java.util.Map<String, Long> openPlots = java.util.Map.of(); // 临时开放地皮
+    private volatile java.util.Map<String, Long> openPlots = java.util.Map.of(); // 临时开放庄园
     /** UUID → long 编码的 chunk 坐标 (cx << 32 | cz)，避免每次分配 long[]。 */
     private final Map<UUID, Long> lastChunk = new ConcurrentHashMap<>();
     private final Map<UUID, Manor> lastManor = new ConcurrentHashMap<>();
     /** UUID → 上次所在世界名（跨世界时清理 lastManor，避免 slot 号相同误判）。 */
     private final Map<UUID, String> lastWorld = new ConcurrentHashMap<>();
-    /** 已付过入场费的玩家 → 已付费的地皮 slot+guild 组合（离开地皮时清除，下次再进要再付）。 */
+    /** 已付过入场费的玩家 → 已付费的庄园 slot+guild 组合（离开庄园时清除，下次再进要再付）。 */
     private final Map<UUID, String> paidManors = new ConcurrentHashMap<>();
     /** 个人开关：关闭 titles 的玩家集合。 */
     private final Set<UUID> titlesDisabled = ConcurrentHashMap.newKeySet();
@@ -58,7 +58,7 @@ public final class ManorAccessListener implements Listener {
         this.cache = cache;
     }
 
-    /** 注册临时开放地皮 Map（GsCommand 持有）。 */
+    /** 注册临时开放庄园 Map（GsCommand 持有）。 */
     public void setOpenPlots(java.util.Map<String, Long> map) { this.openPlots = map; }
 
     /** 切换玩家的 titles 个人开关。返回 true=现在开启。 */
@@ -95,7 +95,7 @@ public final class ManorAccessListener implements Listener {
         Player player = event.getPlayer();
         UUID id = player.getUniqueId();
 
-        // 跨世界清理：换了世界就清空上一个地皮记录（避免 slot 号相同误判）
+        // 跨世界清理：换了世界就清空上一个庄园记录（避免 slot 号相同误判）
         org.bukkit.World curWorld = event.getTo().getWorld();
         Manor prevManor = lastManor.get(id);
         if (prevManor != null && lastWorld.containsKey(id) && !lastWorld.get(id).equals(curWorld.getName())) {
@@ -134,7 +134,7 @@ public final class ManorAccessListener implements Listener {
             player.sendMessage(Messages.get("listener.deny_entry"));
             return;
         }
-        // deny-exit：非成员被困在 prev 内，离开时传送回地皮中心（成员/管理可自由出入）
+        // deny-exit：非成员被困在 prev 内，离开时传送回庄园中心（成员/管理可自由出入）
         if (prev != null && !sameManor(prev, cur)
                 && !canEnter(player, prev) && Flag.DENY_EXIT.resolveBool(prev.flags())) {
             teleportToManorCenter(player, prev);
@@ -144,7 +144,7 @@ public final class ManorAccessListener implements Listener {
         lastChunk.put(id, chunkKey);
 
         if (sameManor(prev, cur)) {
-            return; // 同一块地皮（地皮跨多 chunk）
+            return; // 同一块庄园（庄园跨多 chunk）
         }
         // 离开 prev
         if (prev != null) {
@@ -153,15 +153,15 @@ public final class ManorAccessListener implements Listener {
                 showMessage(player, prev, bye);
             }
             if (Flag.NOTIFY_LEAVE.resolveBool(prev.flags())) {
-                notifyMembers(prev, player, "§7离开了你的地皮 §f#" + prev.slot());
+                notifyMembers(prev, player, "§7离开了你的庄园 §f#" + prev.slot());
             }
-            paidManors.remove(id); // 离开地皮后下次再进要重新付费
+            paidManors.remove(id); // 离开庄园后下次再进要重新付费
         }
         // 进入 cur
         if (cur != null) {
             // 访问计数：内存 +1，定时批量刷盘（不阻塞移动事件）
             visitCounter.increment(cur.guild(), cur.slot());
-            // 入场费：成员/管理免付；访客每次进入收费地皮都要付
+            // 入场费：成员/管理免付；访客每次进入收费庄园都要付
             if (!chargeEntry(player, cur, ref)) {
                 // 余额不足 → 推回
                 event.setTo(event.getFrom());
@@ -172,7 +172,7 @@ public final class ManorAccessListener implements Listener {
                 showMessage(player, cur, hi);
             }
             if (Flag.NOTIFY_ENTER.resolveBool(cur.flags())) {
-                notifyMembers(cur, player, "§7进入了你的地皮 §f#" + cur.slot());
+                notifyMembers(cur, player, "§7进入了你的庄园 §f#" + cur.slot());
             }
             lastManor.put(id, cur);
         } else {
@@ -217,7 +217,7 @@ public final class ManorAccessListener implements Listener {
 
     /**
      * 入场费扣费。返回 true=允许进入（已付/免费/成员/管理），false=余额不足被拒。
-     * 同一地皮同一玩家只收一次（离开后重新进入再收）。
+     * 同一庄园同一玩家只收一次（离开后重新进入再收）。
      */
     private boolean chargeEntry(Player player, Manor manor, PlayerRef ref) {
         double price = Flag.PRICE.resolveDouble(manor.flags());
@@ -243,7 +243,7 @@ public final class ManorAccessListener implements Listener {
         return true;
     }
 
-    /** 传送到地皮实占范围中心（deny-exit 用）。检查安全性：岩浆/虚空则传世界出生点。 */
+    /** 传送到庄园实占范围中心（deny-exit 用）。检查安全性：岩浆/虚空则传世界出生点。 */
     private void teleportToManorCenter(Player player, Manor manor) {
         org.bukkit.Location center = lookup.manorCenter(player.getWorld(), manor);
         if (center == null) {

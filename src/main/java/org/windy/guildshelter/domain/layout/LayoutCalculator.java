@@ -6,10 +6,10 @@ import java.util.OptionalInt;
 
 /**
  * 布局单一真相源：把 {@link LayoutConfig} + {@link SpiralIndex} 的数学集中在这里。
- * 生成器、保护监听、chunk 加载管理三处共用本类，保证"生成的地皮"与"判权限的地皮"永远一致。
+ * 生成器、保护监听、chunk 加载管理三处共用本类，保证"生成的庄园"与"判权限的庄园"永远一致。
  *
- * <p>坐标系：网格格 (gx,gz) 的地皮占 chunk [gx*pitch, gx*pitch+P-1]，其后 R 个 chunk 为路沟。
- * 主城占中心的 (2*half+1)² 个格（整格连续，含路沟），对应螺旋 slot [0, base)；成员地皮用
+ * <p>坐标系：网格格 (gx,gz) 的庄园占 chunk [gx*pitch, gx*pitch+P-1]，其后 R 个 chunk 为路沟。
+ * 主城占中心的 (2*half+1)² 个格（整格连续，含路沟），对应螺旋 slot [0, base)；成员庄园用
  * 螺旋 slot base, base+1, ... 紧凑向外铺。全部纯整数，无 GIS。
  */
 public final class LayoutCalculator {
@@ -32,7 +32,7 @@ public final class LayoutCalculator {
         return config;
     }
 
-    /** 某 chunk 属于 主城 / 某成员地皮 / 路。 */
+    /** 某 chunk 属于 主城 / 某成员庄园 / 路。 */
     public Classification classify(int chunkX, int chunkZ) {
         int gx = Math.floorDiv(chunkX, pitch);
         int gz = Math.floorDiv(chunkZ, pitch);
@@ -50,14 +50,14 @@ public final class LayoutCalculator {
         return Classification.road();
     }
 
-    /** 便捷：该 chunk 若属于某成员地皮，返回其 slot。 */
+    /** 便捷：该 chunk 若属于某成员庄园，返回其 slot。 */
     public OptionalInt slotAt(int chunkX, int chunkZ) {
         Classification c = classify(chunkX, chunkZ);
         return c.isPlot() ? OptionalInt.of(c.slot()) : OptionalInt.empty();
     }
 
     /**
-     * 构造把<b>世界 chunk 坐标</b>映射到"是否路网"的 {@link RoadMask}，{@code origin} 为公会世界原点（chunk）。
+     * 构造把<b>世界 chunk 坐标</b>映射到"是否路网"的 {@link RoadMask}，{@code origin} 为公会营地原点（chunk）。
      * 内部减去 origin 还原到布局坐标后复用 {@link #classify} 的路网规则，保证与生成器/铺路一致。
      * 整地铺路时传给整地端口，用于十字路口护栏抑制：水上桥边若外侧也是路，则不架栏（见 {@link RoadMask}）。
      */
@@ -66,9 +66,9 @@ public final class LayoutCalculator {
     }
 
     /**
-     * 成员 slot 地皮的<b>四周环路</b>条带：绕地皮 footprint 铺一圈宽 {@code roadChunks} 的路框。
-     * 早期只铺右(+x)+下(+z)两条 L 形，地皮的 -x/-z 两侧路要等相邻格有成员才被铺（导致"负 z 轴没铺路"）；
-     * 改成整圈后，每块地皮认领即四周环路，与邻格 through-road 在共享边自然重合（重复铺幂等无副作用）。
+     * 成员 slot 庄园的<b>四周环路</b>条带：绕庄园 footprint 铺一圈宽 {@code roadChunks} 的路框。
+     * 早期只铺右(+x)+下(+z)两条 L 形，庄园的 -x/-z 两侧路要等相邻格有成员才被铺（导致"负 z 轴没铺路"）；
+     * 改成整圈后，每块庄园认领即四周环路，与邻格 through-road 在共享边自然重合（重复铺幂等无副作用）。
      */
     public java.util.List<ChunkRegion> roadStripsFor(int slot) {
         ChunkRegion p = plotRegion(slot);
@@ -86,7 +86,7 @@ public final class LayoutCalculator {
 
     /**
      * 绕方形 footprint [minX..maxX]×[minZ..maxZ] 外侧铺一圈宽 {@code roadChunks} 的路框，
-     * 返回四条不重叠矩形（上/下满宽含角，左/右取中段）。roadChunks=0 返回空。地皮与主城共用。
+     * 返回四条不重叠矩形（上/下满宽含角，左/右取中段）。roadChunks=0 返回空。庄园与主城共用。
      */
     private java.util.List<ChunkRegion> ringStrips(int minX, int minZ, int maxX, int maxZ) {
         int r = config.roadChunks();
@@ -100,7 +100,7 @@ public final class LayoutCalculator {
         return java.util.List.of(north, south, west, east);
     }
 
-    /** 成员 slot → 其满级地皮的整 chunk 范围（P×P）。 */
+    /** 成员 slot → 其满级庄园的整 chunk 范围（P×P）。 */
     public ChunkRegion plotRegion(int slot) {
         if (slot < 0) {
             throw new IllegalArgumentException("slot < 0: " + slot);
@@ -112,10 +112,10 @@ public final class LayoutCalculator {
     }
 
     /**
-     * 成员 slot + 庄园等级 → 当前实占范围（"半螺旋式"：锚定在满级地皮的<b>最小角</b>，
+     * 成员 slot + 庄园等级 → 当前实占范围（"角落扩张式"：锚定在满级庄园的<b>最小角</b>，
      * 从角落向 +x/+z 方向逐级向外扩，满级铺满整块；⊆ plotRegion）。
      *
-     * <p>角落锚定让玩家地皮的原点固定、只朝一个方向长，规整可预测；避免居中算法的奇偶歪斜。
+     * <p>角落锚定让玩家庄园的原点固定、只朝一个方向长，规整可预测；避免居中算法的奇偶歪斜。
      */
     public ChunkRegion activeRegion(int slot, int manorLevel) {
         ChunkRegion full = plotRegion(slot);
@@ -126,8 +126,8 @@ public final class LayoutCalculator {
     }
 
     /**
-     * 主城<b>预留(最大)</b>整 chunk 范围：中心格(cell 0)里<b>角落锚定</b>的 max×max 方块（与成员地皮 {@link #plotRegion}
-     * 同款，锚在 cell 0 最小角 (0,0)）。成员地皮一律排在 cell 0 之外；世界边界以螺旋中心为准。
+     * 主城<b>预留(最大)</b>整 chunk 范围：中心格(cell 0)里<b>角落锚定</b>的 max×max 方块（与成员庄园 {@link #plotRegion}
+     * 同款，锚在 cell 0 最小角 (0,0)）。成员庄园一律排在 cell 0 之外；世界边界以螺旋中心为准。
      */
     public ChunkRegion mainCityRegion() {
         int m = config.mainCityMaxChunks();
@@ -155,7 +155,7 @@ public final class LayoutCalculator {
     // ---- 世界边界（WorldBorder）派生 ----
 
     /**
-     * 要把 {@code reservedSlots} 个成员地皮全部圈进去时，世界边界需覆盖到的外环（格）。
+     * 要把 {@code reservedSlots} 个成员庄园全部圈进去时，世界边界需覆盖到的外环（格）。
      * {@code reservedSlots} 由上层给出 = max(已分配, 当前公会等级的名额容量)，
      * 这样边界按"当前等级能容纳多少人"画出预留空地，公会升级放开更多名额时边界随之外扩。
      */
@@ -174,7 +174,7 @@ public final class LayoutCalculator {
         return pitch * 8;
     }
 
-    /** 世界边界全宽（方块），以中心向四周覆盖到外环地皮外沿 + margin（取偏宽的安全上界）。 */
+    /** 世界边界全宽（方块），以中心向四周覆盖到外环庄园外沿 + margin（取偏宽的安全上界）。 */
     public double borderSizeBlocks(int reservedSlots) {
         int ring = borderRingCells(reservedSlots);
         int outerChunks = ring * pitch + plot + config.marginChunks();

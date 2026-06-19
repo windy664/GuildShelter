@@ -1,11 +1,11 @@
 package org.windy.guildshelter.domain.layout;
 
 /**
- * {@link LayoutCalculator#classify} 的结果：某 chunk 属于主城 / 某成员地皮 / 路。
+ * {@link LayoutCalculator#classify} 的结果：某 chunk 属于主城 / 某成员庄园 / 路。
  *
  * @param type   归类
  * @param slot   当 type==PLOT 时为成员 slot 号（0 起）；否则为 -1
- * @param border 当 type==PLOT 且该 chunk 落在地皮最外一圈时为 true（供生成器铺边框，归属不变）
+ * @param border 当 type==PLOT 且该 chunk 落在庄园最外一圈时为 true（供生成器铺边框，归属不变）
  */
 public record Classification(RegionType type, int slot, boolean border) {
 

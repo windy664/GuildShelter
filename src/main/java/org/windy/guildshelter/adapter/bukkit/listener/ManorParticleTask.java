@@ -21,8 +21,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 地皮边界粒子可视化：玩家手持木棍站在地皮上时，每 0.5 秒在地皮实占范围边缘显示一圈粒子。
- * 放下木棍或离开地皮后自动停止。进入新地皮时粒子颜色随机变化。
+ * 庄园边界粒子可视化：玩家手持木棍站在庄园上时，每 0.5 秒在庄园实占范围边缘显示一圈粒子。
+ * 放下木棍或离开庄园后自动停止。进入新庄园时粒子颜色随机变化。
  */
 public final class ManorParticleTask extends BukkitRunnable {
 
@@ -73,7 +73,7 @@ public final class ManorParticleTask extends BukkitRunnable {
             lastSlot.remove(player.getUniqueId());
             return;
         }
-        // 切换地皮时换颜色
+        // 切换庄园时换颜色
         Integer prev = lastSlot.get(player.getUniqueId());
         if (prev == null || prev != manor.slot()) {
             lastSlot.put(player.getUniqueId(), manor.slot());

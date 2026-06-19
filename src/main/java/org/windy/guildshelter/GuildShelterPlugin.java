@@ -101,7 +101,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
         return instance == null ? null : instance.claimGuard;
     }
 
-    /** 供 NeoForge 端的 flag 后端取用地皮解析;onEnable 前/未启用为 null。 */
+    /** 供 NeoForge 端的 flag 后端取用庄园解析;onEnable 前/未启用为 null。 */
     public static ManorLookup manorLookup() {
         return instance == null ? null : instance.manorLookup;
     }
@@ -112,7 +112,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
     }
 
     /**
-     * 地皮实体计数服务。caps 拦截用,亦作可复用 API 供未来"家园卡/评分"等按实体数量判断的功能取数。
+     * 庄园实体计数服务。caps 拦截用,亦作可复用 API 供未来"家园卡/评分"等按实体数量判断的功能取数。
      * onEnable 前/保护未启用为 null。
      */
     public static ManorEntityCensus entityCensus() {
@@ -134,7 +134,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
         return instance == null ? null : instance.guiLoader;
     }
 
-    /** 给新分配地皮的玩家发欢迎消息。 */
+    /** 给新分配庄园的玩家发欢迎消息。 */
     public static void sendWelcome(Player player, String guildName, int slot) {
         if (instance == null) return;
         player.sendMessage(Messages.get("success.welcome", guildName, slot));
@@ -352,7 +352,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
                 }
             }, this);
             new ManorBuffTask(lookup).runTaskTimer(this, 20L, 20L);
-            getLogger().info("地皮 Flag 执行已启用（访问/增益走 Bukkit，氛围按载体分流）。");
+            getLogger().info("庄园 Flag 执行已启用（访问/增益走 Bukkit，氛围按载体分流）。");
             new ManorParticleTask(lookup, registry, guilds).runTaskTimer(this, 10L, 10L);
             getServer().getPluginManager().registerEvents(new GuildMotdListener(registry, guilds), this);
         } else {
@@ -468,7 +468,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
                     }
                 }
             }, this);
-            getLogger().info("地皮区块卸载: " + perf.chunkUnloadInactiveMinutes() + " 分钟无上级在线卸载");
+            getLogger().info("庄园区块卸载: " + perf.chunkUnloadInactiveMinutes() + " 分钟无上级在线卸载");
         }
 
         SchematicStore schematicStore = SchematicStore.autoDetect(getDataFolder().toPath(), this);

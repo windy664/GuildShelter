@@ -41,8 +41,8 @@ import java.util.logging.Logger;
 public final class XaeroIntegration implements Listener {
 
     private static final int COLOR_GUILD = 8;   // 黄色 = 公会主城
-    private static final int COLOR_PLOT = 10;    // 淡绿 = 成员地皮
-    private static final int COLOR_EMPTY = 5;    // 灰色 = 空闲地皮
+    private static final int COLOR_PLOT = 10;    // 淡绿 = 成员庄园
+    private static final int COLOR_EMPTY = 5;    // 灰色 = 空闲庄园
 
     private final GuildWorldRegistry registry;
     private final GuildRepository guilds;
@@ -80,7 +80,7 @@ public final class XaeroIntegration implements Listener {
         }
     }
 
-    /** 玩家进入公会世界时同步 waypoint。 */
+    /** 玩家进入公会营地时同步 waypoint。 */
     @EventHandler
     public void onWorldChange(PlayerChangedWorldEvent event) {
         Player player = event.getPlayer();
@@ -92,7 +92,7 @@ public final class XaeroIntegration implements Listener {
         }
     }
 
-    /** 玩家登录时如果在公会世界则同步。 */
+    /** 玩家登录时如果在公会营地则同步。 */
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
@@ -106,7 +106,7 @@ public final class XaeroIntegration implements Listener {
     }
 
     /**
-     * 为玩家同步当前公会世界的所有 waypoint（主城 + 地皮）。
+     * 为玩家同步当前公会营地的所有 waypoint（主城 + 庄园）。
      * 写入到世界目录的 XaeroWaypoints 文件，客户端自动读取。
      */
     public void syncWaypoints(Player player, GuildWorld gw) {
@@ -149,13 +149,13 @@ public final class XaeroIntegration implements Listener {
         sb.append(String.format("公会主城 %s;%d;%d;%d;%d;false;0\n",
                 gw.guild().value(), cityX, cityY, cityZ, COLOR_GUILD));
 
-        // 地皮 waypoints
+        // 庄园 waypoints
         for (Manor manor : manors.findAll(gw.guild())) {
             int plotCenterX = layout.activeRegion(manor.slot(), manor.level()).centerBlockX() + originX;
             int plotCenterZ = layout.activeRegion(manor.slot(), manor.level()).centerBlockZ() + originZ;
             int plotY = world.getHighestBlockYAt(plotCenterX, plotCenterZ) + 1;
             int color = manor.level() > 0 ? COLOR_PLOT : COLOR_EMPTY;
-            sb.append(String.format("地皮#%d;%d;%d;%d;%d;false;0\n",
+            sb.append(String.format("庄园#%d;%d;%d;%d;%d;false;0\n",
                     manor.slot(), plotCenterX, plotY, plotCenterZ, color));
         }
 
@@ -171,7 +171,7 @@ public final class XaeroIntegration implements Listener {
         synced.remove(playerId);
     }
 
-    /** 公会世界变更时清除所有同步缓存（地皮增减后需重新生成）。 */
+    /** 公会营地变更时清除所有同步缓存（庄园增减后需重新生成）。 */
     public void invalidateAll() {
         synced.clear();
     }

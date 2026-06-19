@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 /**
- * 世界级优化：定时检查公会世界，无玩家超过 N 分钟则卸载（或卸载 chunk）。
+ * 世界级优化：定时检查公会营地，无玩家超过 N 分钟则卸载（或卸载 chunk）。
  * 玩家进入时由 WorldManager.ensureWorld() 自动重载。
  */
 public final class WorldOptimizer extends BukkitRunnable {
@@ -71,7 +71,7 @@ public final class WorldOptimizer extends BukkitRunnable {
 
     /** 卸载整个世界。 */
     private void unloadWorld(World world, GuildWorld gw) {
-        logger.info("[GuildShelter] 卸载无活跃公会世界: " + world.getName()
+        logger.info("[GuildShelter] 卸载无活跃公会营地: " + world.getName()
                 + "（无玩家 " + inactiveMinutes + " 分钟）");
         Bukkit.unloadWorld(world, true);
         registry.unregister(world.getName());

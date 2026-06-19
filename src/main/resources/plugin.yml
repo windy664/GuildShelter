@@ -23,34 +23,34 @@ permissions:
     description: 全权管理 GuildShelter（自动拥有所有 admin 子节点）
     default: op
   guildshelter.admin.build.other:
-    description: 在别人地皮建造
+    description: 在别人庄园建造
     default: op
   guildshelter.admin.build.road:
     description: 在道路建造
     default: op
   guildshelter.admin.destroy.other:
-    description: 在别人地皮破坏
+    description: 在别人庄园破坏
     default: op
   guildshelter.admin.destroy.road:
     description: 在道路破坏
     default: op
   guildshelter.admin.interact.other:
-    description: 在别人地皮交互
+    description: 在别人庄园交互
     default: op
   guildshelter.admin.interact.road:
     description: 在道路交互
     default: op
   guildshelter.admin.flag.other:
-    description: 管理别人地皮的 flag
+    description: 管理别人庄园的 flag
     default: op
   guildshelter.admin.trust.other:
-    description: 管理别人地皮的 trust/member/deny
+    description: 管理别人庄园的 trust/member/deny
     default: op
   guildshelter.admin.bypass.border:
     description: 无视世界边界
     default: op
   guildshelter.admin.bypass.entry:
-    description: 无视 deny-entry（可进入被谢客的地皮）
+    description: 无视 deny-entry（可进入被谢客的庄园）
     default: op
   guildshelter.bypass.deny:
     description: 旧版兼容节点（等效 admin.bypass.entry）

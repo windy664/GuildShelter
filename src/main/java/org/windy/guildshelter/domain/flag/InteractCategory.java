@@ -24,7 +24,7 @@ public enum InteractCategory {
         this.flag = flag;
     }
 
-    /** 该交互类对应的地皮 flag。 */
+    /** 该交互类对应的庄园 flag。 */
     public Flag flag() {
         return flag;
     }

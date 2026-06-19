@@ -67,7 +67,7 @@ public final class NeoForgeProtection {
         /*
         else if (entity instanceof ServerPlayer sp && isGuildWorld((ServerLevel) sp.level())) {
 
-            // 【WORKAROUND 补丁】：有权限且在公会世界（guild_xxx 动态维度）。
+            // 【WORKAROUND 补丁】：有权限且在公会营地（guild_xxx 动态维度）。
             // 针对 Youer/混合端 底层方块更新包丢失的 Bug 进行补发。
             // 未来如果混合端修复了此问题，请直接删除这个 else if 分支。
             scheduleSmoothResync(sp, pos);
@@ -75,7 +75,7 @@ public final class NeoForgeProtection {
         */
     }
 
-    /** 公会世界判定：维度 id path 形如 guild_xxx（WorldManager.worldName 约定）。 */
+    /** 公会营地判定：维度 id path 形如 guild_xxx（WorldManager.worldName 约定）。 */
     private static boolean isGuildWorld(ServerLevel level) {
         return level.dimension().identifier().getPath().startsWith("guild_");
     }

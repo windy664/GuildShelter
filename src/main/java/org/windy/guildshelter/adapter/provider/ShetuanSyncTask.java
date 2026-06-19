@@ -22,14 +22,14 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Logger;
 
 /**
- * Shetuan 不发任何自定义事件，所以"入会自动分地皮 / 退会释放 / 解散清理"这套生命周期没有事件可挂。
- * 这里自造一个轮子：在主线程上<b>定时 diff</b>——以 Shetuan 的社团成员名单为准，对齐本插件已分配的地皮。
+ * Shetuan 不发任何自定义事件，所以"入会自动分庄园 / 退会释放 / 解散清理"这套生命周期没有事件可挂。
+ * 这里自造一个轮子：在主线程上<b>定时 diff</b>——以 Shetuan 的社团成员名单为准，对齐本插件已分配的庄园。
  *
  * <p>每轮：
  * <ul>
  *   <li>社团世界不存在 → 建（含已装本插件前就存在的老社团，惰性补建）；</li>
- *   <li>成员无地皮 → 分配（在线则提示）；</li>
- *   <li>已有地皮的主人已不在成员名单 → 释放（退会/被踢）；</li>
+ *   <li>成员无庄园 → 分配（在线则提示）；</li>
+ *   <li>已有庄园的主人已不在成员名单 → 释放（退会/被踢）；</li>
  *   <li>库里有、Shetuan 里已无的社团世界 → 卸载并清数据（解散）。</li>
  * </ul>
  *
@@ -68,7 +68,7 @@ public final class ShetuanSyncTask extends BukkitRunnable {
         sweepDissolved(liveGuilds);
     }
 
-    /** 对齐单个社团的世界与成员地皮，返回其 GuildId。 */
+    /** 对齐单个社团的世界与成员庄园，返回其 GuildId。 */
     private GuildId syncClub(Club club) {
         GuildId guild = new GuildId(club.id().toString());
 
@@ -88,7 +88,7 @@ public final class ShetuanSyncTask extends BukkitRunnable {
                 try {
                     Manor manor = service.assignManor(guild, ref);
                     notifyIfOnline(uuid, manor);
-                    logger.info("[GuildShelter] " + display(club) + " 新成员 " + uuid + " → 地皮 #" + manor.slot());
+                    logger.info("[GuildShelter] " + display(club) + " 新成员 " + uuid + " → 庄园 #" + manor.slot());
                 } catch (GuildFullException e) {
                     logger.info("[GuildShelter] " + display(club) + " 名额已满(" + e.capacity()
                             + ")，余下成员需公会升级后再分配。");
@@ -101,7 +101,7 @@ public final class ShetuanSyncTask extends BukkitRunnable {
             if (!memberUuids.contains(manor.owner().uuid())) {
                 service.releaseManor(guild, manor.owner());
                 logger.info("[GuildShelter] " + display(club) + " 成员 " + manor.owner().uuid()
-                        + " 已退出 → 释放地皮 #" + manor.slot());
+                        + " 已退出 → 释放庄园 #" + manor.slot());
             }
         }
         return guild;

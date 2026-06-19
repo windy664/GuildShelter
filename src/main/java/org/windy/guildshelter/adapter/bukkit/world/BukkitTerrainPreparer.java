@@ -17,7 +17,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 
 /**
- * {@link TerrainPreparer} 的 Bukkit 实现：对地皮范围按列整地，主线程<b>分批</b>处理避免卡顿。
+ * {@link TerrainPreparer} 的 Bukkit 实现：对庄园范围按列整地，主线程<b>分批</b>处理避免卡顿。
  *
  * <ul>
  *   <li>CLEAR_VEGETATION：保留自然地表高度，清掉地表（实心地面）以上的草/花/雪/树等。</li>
@@ -227,7 +227,7 @@ public final class BukkitTerrainPreparer implements TerrainPreparer {
                 while (n < COLUMNS_PER_TICK && !queue.isEmpty()
                         && System.nanoTime() - tickStart < MAX_NANOS_PER_TICK) {
                     int[] c = queue.poll(); // {x, z, outDx, outDz}
-                    // 只在外侧那格是成员地皮（非路）时立墙：贴路的边自动留口，且永不踩到成员地皮。
+                    // 只在外侧那格是成员庄园（非路）时立墙：贴路的边自动留口，且永不踩到成员庄园。
                     if (!roadMask.isRoadChunk((c[0] + c[2]) >> 4, (c[1] + c[3]) >> 4)) {
                         wallColumn(world, c[0], c[1]);
                         stat[0]++;
@@ -290,7 +290,7 @@ public final class BukkitTerrainPreparer implements TerrainPreparer {
      * @return 1=铺了土径 2=架了桥 0=跳过（纯虚空列），供调用方统计。
      */
     private int pathColumn(World world, int x, int z, int outDx, int outDz, RoadMask roadMask) {
-        world.loadChunk(x >> 4, z >> 4, true); // 道路条带常在地皮远端，确保区块已生成再操作
+        world.loadChunk(x >> 4, z >> 4, true); // 道路条带常在庄园远端，确保区块已生成再操作
         int min = world.getMinHeight();
         int y = world.getHighestBlockYAt(x, z, HeightMap.WORLD_SURFACE);
         while (y > min) {

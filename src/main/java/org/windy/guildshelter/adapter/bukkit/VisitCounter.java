@@ -10,7 +10,7 @@ import java.util.logging.Logger;
 
 /**
  * 访问计数缓冲：内存累加，定时批量刷盘。
- * 避免每次进地皮都写库（高流量服务器上 DB 写入风暴）。
+ * 避免每次进庄园都写库（高流量服务器上 DB 写入风暴）。
  *
  * <p>key = "guildId:slot"，value = 累计访问次数。
  * 每 {@code flushIntervalMs} 毫秒批量 UPDATE 到 DB，然后清零。
@@ -26,7 +26,7 @@ public final class VisitCounter {
         this.logger = logger;
     }
 
-    /** 访客进入地皮时调用（内存 +1，O(1)）。 */
+    /** 访客进入庄园时调用（内存 +1，O(1)）。 */
     public void increment(GuildId guild, int slot) {
         String key = guild.value() + ":" + slot;
         buffer.computeIfAbsent(key, k -> new AtomicInteger(0)).incrementAndGet();

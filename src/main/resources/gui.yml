@@ -12,14 +12,14 @@ settings:
 
 # 菜单定义
 menus:
-  # 地皮信息面板
+  # 庄园信息面板
   manor_info:
-    title: "§8[§6地皮管理§8]"
+    title: "§8[§6庄园管理§8]"
     rows: 3
     items:
       0:  # slot 0
         material: BOOK
-        name: "§6地皮信息"
+        name: "§6庄园信息"
         lore:
           - "§7公会: §f{guild}"
           - "§7等级: §f{level}/{max_level}"

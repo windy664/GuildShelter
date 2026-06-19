@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 公会成员内存缓存：{@code guildId → Set<ownerUUID>}。
  * 启动时从 DB 全量加载，assign/release/dissolve 时同步更新。
- * 供 ClaimGuard 做"该玩家是否在本公会有地皮"判定——O(1) 哈希查找，零 DB 查询。
+ * 供 ClaimGuard 做"该玩家是否在本公会有庄园"判定——O(1) 哈希查找，零 DB 查询。
  */
 public final class GuildMemberCache implements MembershipChangeListener {
 
@@ -37,18 +37,18 @@ public final class GuildMemberCache implements MembershipChangeListener {
         members.put(guild.value(), set);
     }
 
-    /** 该玩家是否在指定公会拥有地皮。O(1)。 */
+    /** 该玩家是否在指定公会拥有庄园。O(1)。 */
     public boolean isMember(GuildId guild, UUID playerId) {
         Set<UUID> set = members.get(guild.value());
         return set != null && set.contains(playerId);
     }
 
-    /** 新分配地皮时调用。 */
+    /** 新分配庄园时调用。 */
     public void addMember(GuildId guild, UUID playerId) {
         members.computeIfAbsent(guild.value(), k -> ConcurrentHashMap.newKeySet()).add(playerId);
     }
 
-    /** 释放地皮时调用。 */
+    /** 释放庄园时调用。 */
     public void removeMember(GuildId guild, UUID playerId) {
         Set<UUID> set = members.get(guild.value());
         if (set != null) {

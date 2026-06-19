@@ -28,7 +28,7 @@ public final class ManorEnvListener implements Listener {
         this.lookup = lookup;
     }
 
-    /** 子领地优先 → 庄园 → 默认。无地皮不拦。 */
+    /** 子领地优先 → 庄园 → 默认。无庄园不拦。 */
     private boolean denied(Location loc, Flag flag) {
         return !lookup.resolveFlag(loc.getWorld(), loc.getBlockX(), loc.getBlockZ(), flag);
     }

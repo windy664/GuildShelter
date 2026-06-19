@@ -32,7 +32,7 @@ public interface GuildProvider {
     }
 
     /**
-     * 宿主插件给出的公会<b>人数上限</b>（含额外名额）。GuildShelter 据此决定发多少地皮 slot；
+     * 宿主插件给出的公会<b>人数上限</b>（含额外名额）。GuildShelter 据此决定发多少庄园 slot；
      * 宿主无人数上限概念时返回 empty，调用方退回 GuildShelter 自己的等级容量。默认 empty。
      */
     default java.util.OptionalInt memberCap(GuildId guild) {

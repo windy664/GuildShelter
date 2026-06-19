@@ -14,18 +14,18 @@ import org.windy.guildshelter.domain.port.ManorRepository;
 import org.windy.guildshelter.domain.rule.LevelRules;
 
 /**
- * PlaceholderAPI 扩展：提供地皮相关信息的占位符。
+ * PlaceholderAPI 扩展：提供庄园相关信息的占位符。
  *
  * <p>可用占位符：
  * <ul>
  *   <li>%guildshelter_guild% — 公会名</li>
- *   <li>%guildshelter_slot% — 地皮 slot 号</li>
+ *   <li>%guildshelter_slot% — 庄园 slot 号</li>
  *   <li>%guildshelter_level% — 庄园等级</li>
  *   <li>%guildshelter_max_level% — 庄园最大等级</li>
  *   <li>%guildshelter_guild_level% — 公会等级</li>
- *   <li>%guildshelter_size% — 地皮尺寸（方块）</li>
- *   <li>%guildshelter_alias% — 地皮别名</li>
- *   <li>%guildshelter_description% — 地皮描述</li>
+ *   <li>%guildshelter_size% — 庄园尺寸（方块）</li>
+ *   <li>%guildshelter_alias% — 庄园别名</li>
+ *   <li>%guildshelter_description% — 庄园描述</li>
  *   <li>%guildshelter_members% — 成员数</li>
  *   <li>%guildshelter_capacity% — 成员容量</li>
  *   <li>%guildshelter_trusted% — trusted 人数</li>

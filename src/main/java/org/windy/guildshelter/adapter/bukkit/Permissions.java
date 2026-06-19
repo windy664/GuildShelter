@@ -20,25 +20,25 @@ public final class Permissions {
     public static final String ADMIN = "guildshelter.admin";
 
     // ===== admin 细粒度（仿 PlotSquared） =====
-    /** 在别人地皮建造/破坏方块。 */
+    /** 在别人庄园建造/破坏方块。 */
     public static final String ADMIN_BUILD_OTHER = "guildshelter.admin.build.other";
     /** 在道路建造/破坏方块。 */
     public static final String ADMIN_BUILD_ROAD = "guildshelter.admin.build.road";
-    /** 在别人地皮破坏方块。 */
+    /** 在别人庄园破坏方块。 */
     public static final String ADMIN_DESTROY_OTHER = "guildshelter.admin.destroy.other";
     /** 在道路破坏方块。 */
     public static final String ADMIN_DESTROY_ROAD = "guildshelter.admin.destroy.road";
-    /** 在别人地皮交互（右键容器/按钮等）。 */
+    /** 在别人庄园交互（右键容器/按钮等）。 */
     public static final String ADMIN_INTERACT_OTHER = "guildshelter.admin.interact.other";
     /** 在道路交互。 */
     public static final String ADMIN_INTERACT_ROAD = "guildshelter.admin.interact.road";
-    /** 管理别人地皮的 flag。 */
+    /** 管理别人庄园的 flag。 */
     public static final String ADMIN_FLAG_OTHER = "guildshelter.admin.flag.other";
-    /** 管理别人地皮的 trust/member/deny。 */
+    /** 管理别人庄园的 trust/member/deny。 */
     public static final String ADMIN_TRUST_OTHER = "guildshelter.admin.trust.other";
     /** 无视世界边界。 */
     public static final String ADMIN_BYPASS_BORDER = "guildshelter.admin.bypass.border";
-    /** 无视 deny-entry/deny flag（可进入被谢客的地皮）。 */
+    /** 无视 deny-entry/deny flag（可进入被谢客的庄园）。 */
     public static final String ADMIN_BYPASS_ENTRY = "guildshelter.admin.bypass.entry";
 
     // ===== 兼容旧节点 =====

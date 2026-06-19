@@ -28,55 +28,55 @@ public interface ManorRepository {
 
     // ===== 访问统计 =====
 
-    /** 地皮被访问时调用，原子 +1（不读整个 Manor，直接 UPDATE）。 */
+    /** 庄园被访问时调用，原子 +1（不读整个 Manor，直接 UPDATE）。 */
     void incrementVisit(GuildId guild, int slot);
 
     /** 批量增加访问次数（缓冲刷盘用，原子 +count）。 */
     void incrementVisitBy(GuildId guild, int slot, int count);
 
-    /** 获取某地皮的累计访问次数。 */
+    /** 获取某庄园的累计访问次数。 */
     int getVisitCount(GuildId guild, int slot);
 
     // ===== 送花/人气 =====
 
-    /** 给地皮送花（同一玩家每天只能送一次，跨日重置）。 */
+    /** 给庄园送花（同一玩家每天只能送一次，跨日重置）。 */
     void sendFlower(GuildId guild, int slot, PlayerRef sender);
 
-    /** 获取某地皮今日已收到的花数。 */
+    /** 获取某庄园今日已收到的花数。 */
     int getTodayFlowerCount(GuildId guild, int slot);
 
-    /** 获取某地皮累计人气值（= 访问量×权重 + 花数×权重）。 */
+    /** 获取某庄园累计人气值（= 访问量×权重 + 花数×权重）。 */
     double getPopularity(GuildId guild, int slot);
 
-    /** 某玩家今天是否已给该地皮送过花。 */
+    /** 某玩家今天是否已给该庄园送过花。 */
     boolean hasSentFlowerToday(GuildId guild, int slot, PlayerRef sender);
 
     // ===== 评分系统 =====
 
-    /** 给地皮打分（1-10，同一玩家重复评分会覆盖）。 */
+    /** 给庄园打分（1-10，同一玩家重复评分会覆盖）。 */
     void rate(GuildId guild, int slot, PlayerRef rater, int score);
 
-    /** 获取某玩家对某地皮的评分（未评过返回 0）。 */
+    /** 获取某玩家对某庄园的评分（未评过返回 0）。 */
     int getRating(GuildId guild, int slot, PlayerRef rater);
 
-    /** 获取某地皮的平均评分（无评分返回 0）。 */
+    /** 获取某庄园的平均评分（无评分返回 0）。 */
     double getAverageRating(GuildId guild, int slot);
 
-    /** 获取该公会评分最高的地皮（返回 slot 列表，按平均分降序）。 */
+    /** 获取该公会评分最高的庄园（返回 slot 列表，按平均分降序）。 */
     List<Integer> getTopRatedSlots(GuildId guild, int limit);
 
-    /** 该地皮收到的评分数。 */
+    /** 该庄园收到的评分数。 */
     int getRatingCount(GuildId guild, int slot);
 
     // ===== 留言系统 =====
 
-    /** 给地皮留言。 */
+    /** 给庄园留言。 */
     void addComment(GuildId guild, int slot, PlayerRef author, String message);
 
-    /** 获取某地皮的留言列表（按时间正序）。 */
+    /** 获取某庄园的留言列表（按时间正序）。 */
     List<CommentEntry> getComments(GuildId guild, int slot, int limit);
 
-    /** 获取某玩家在某公会收到的所有未读留言（跨地皮）。 */
+    /** 获取某玩家在某公会收到的所有未读留言（跨庄园）。 */
     List<CommentEntry> getInbox(PlayerRef owner, int limit);
 
     /** 留言记录。 */
@@ -84,7 +84,7 @@ public interface ManorRepository {
 
     // ===== 合并系统 =====
 
-    /** 记录两块地皮已合并（primarySlot 吸收 absorbedSlot，absorbedSlot 的路 chunk 归 primary）。 */
+    /** 记录两块庄园已合并（primarySlot 吸收 absorbedSlot，absorbedSlot 的路 chunk 归 primary）。 */
     void merge(int primarySlot, int absorbedSlot, GuildId guild);
 
     /** 获取某 slot 被合并到的主 slot（未合并返回自身）。 */
@@ -127,7 +127,7 @@ public interface ManorRepository {
     /** 删除子领地。 */
     void deleteSub(GuildId guild, int slot, String name);
 
-    /** 获取某地皮的所有子领地。 */
+    /** 获取某庄园的所有子领地。 */
     java.util.List<SubEntry> getSubs(GuildId guild, int slot);
 
     /** 子领地记录。 */

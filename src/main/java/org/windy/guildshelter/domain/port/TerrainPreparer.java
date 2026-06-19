@@ -27,8 +27,8 @@ public interface TerrainPreparer {
     void surfaceRoad(String worldName, ChunkRegion worldRegion, RoadMask roadMask);
 
     /**
-     * 沿<b>最大主城</b>外缘建一圈围墙（栅栏/墙），只立在<b>外侧是成员地皮（非路）</b>的主城边块上：
-     * 这样不踩成员地皮、贴道路的那几段自动留口。{@code maxCityRegion} 为世界坐标（已含 origin 偏移），
+     * 沿<b>最大主城</b>外缘建一圈围墙（栅栏/墙），只立在<b>外侧是成员庄园（非路）</b>的主城边块上：
+     * 这样不踩成员庄园、贴道路的那几段自动留口。{@code maxCityRegion} 为世界坐标（已含 origin 偏移），
      * {@code roadMask} 判外侧那格是不是路。实现侧负责异步/分批；未启用或不支持则空操作。
      */
     default void encloseMainCity(String worldName, ChunkRegion maxCityRegion, RoadMask roadMask) {

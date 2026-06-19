@@ -12,8 +12,8 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * 地皮 flag 的 <b>个人增益</b> 执行（Bukkit 侧）：fly / feed / heal。每秒扫一遍在线玩家，
- * 按其所在地皮 flag 持续施加；离开地皮自动撤销（fly 只撤我们授予的，不动创造/外部飞行权限）。
+ * 庄园 flag 的 <b>个人增益</b> 执行（Bukkit 侧）：fly / feed / heal。每秒扫一遍在线玩家，
+ * 按其所在庄园 flag 持续施加；离开庄园自动撤销（fly 只撤我们授予的，不动创造/外部飞行权限）。
  */
 public final class ManorBuffTask extends BukkitRunnable {
 

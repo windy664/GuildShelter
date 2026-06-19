@@ -49,7 +49,7 @@ public final class ManorProtectionListener implements Listener {
         if (event.getAction() != Action.RIGHT_CLICK_BLOCK || block == null) {
             return; // 只管右键方块（开箱/门/拉杆/红石等）
         }
-        // 带库存的方块归 container，其余可交互方块归 use；访客按地皮对应 flag 放宽。
+        // 带库存的方块归 container，其余可交互方块归 use；访客按庄园对应 flag 放宽。
         InteractCategory cat = block.getState() instanceof InventoryHolder
                 ? InteractCategory.CONTAINER : InteractCategory.USE;
         if (!policy.allowed(event.getPlayer(), block.getX(), block.getZ(), cat)) {

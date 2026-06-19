@@ -27,7 +27,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Logger;
 
 /**
- * 把 LegendaryGuild 的生命周期事件翻译成对 {@link GuildService} 的调用，实现"入会自动有地皮"。
+ * 把 LegendaryGuild 的生命周期事件翻译成对 {@link GuildService} 的调用，实现"入会自动有庄园"。
  *
  * <p>GuildId = LegendaryGuild 公会名（事件直接携带 {@link Guild} 对象，无需反查）。
  * LegendaryGuild 以玩家名管理成员，本类用 {@link #resolveUuid(String)} 把名字解析成 UUID 后交给
@@ -75,13 +75,13 @@ public final class LegendaryGuildListener implements Listener {
             return;
         }
         GuildId guild = new GuildId(guildName);
-        // 公会世界已存在：直接分配（无 createWorld，安全同步执行）。
+        // 公会营地已存在：直接分配（无 createWorld，安全同步执行）。
         if (guilds.exists(guild)) {
             assignAndWelcome(guild, guildName, playerName);
             return;
         }
         // 惰性补建（如插件安装前已建的公会）：createWorld 不能在事件上下文同步跑（嵌套 managedBlock
-        // 死锁），整段「建世界+分地皮+欢迎」推迟到干净 tick。createGuild 幂等，重复调用返回已有。
+        // 死锁），整段「建世界+分庄园+欢迎」推迟到干净 tick。createGuild 幂等，重复调用返回已有。
         Bukkit.getScheduler().runTask(plugin, () -> {
             GuildWorld gw = service.createGuild(guild, ThreadLocalRandom.current().nextLong());
             registry.register(gw);
@@ -89,7 +89,7 @@ public final class LegendaryGuildListener implements Listener {
         });
     }
 
-    /** 分配地皮并发欢迎语（要求公会世界已存在；不触发 createWorld）。 */
+    /** 分配庄园并发欢迎语（要求公会营地已存在；不触发 createWorld）。 */
     private void assignAndWelcome(GuildId guild, String guildName, String playerName) {
         UUID uuid = resolveUuid(playerName);
         Manor manor;
@@ -100,14 +100,14 @@ public final class LegendaryGuildListener implements Listener {
             if (full != null) {
                 full.sendMessage(Messages.get("error.guild_full", e.capacity()));
             }
-            logger.info("[GuildShelter] " + guildName + " 名额已满(" + e.capacity() + ")，" + playerName + " 暂未分配地皮。");
+            logger.info("[GuildShelter] " + guildName + " 名额已满(" + e.capacity() + ")，" + playerName + " 暂未分配庄园。");
             return;
         }
         Player p = Bukkit.getPlayerExact(playerName);
         if (p != null) {
             org.windy.guildshelter.GuildShelterPlugin.sendWelcome(p, guildName, manor.slot());
         }
-        logger.info("[GuildShelter] " + guildName + " 新成员 " + playerName + " → 地皮 #" + manor.slot());
+        logger.info("[GuildShelter] " + guildName + " 新成员 " + playerName + " → 庄园 #" + manor.slot());
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -117,7 +117,7 @@ public final class LegendaryGuildListener implements Listener {
             return;
         }
         service.releaseManorAnywhere(PlayerRef.of(p.getUniqueId()));
-        logger.info("[GuildShelter] 成员退出 " + p.getName() + " → 已释放其地皮。");
+        logger.info("[GuildShelter] 成员退出 " + p.getName() + " → 已释放其庄园。");
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -127,7 +127,7 @@ public final class LegendaryGuildListener implements Listener {
             return;
         }
         service.releaseManorAnywhere(PlayerRef.of(resolveUuid(playerName)));
-        logger.info("[GuildShelter] 成员被踢 " + playerName + " → 已释放其地皮。");
+        logger.info("[GuildShelter] 成员被踢 " + playerName + " → 已释放其庄园。");
     }
 
     /** 宿主公会升级 → 跟随把 GuildShelter 公会等级 +1（仍走我们自己的等级曲线，封顶在 config max-level）。 */

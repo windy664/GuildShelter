@@ -13,7 +13,7 @@ public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, Terrain
                                  CityWallConfig cityWall) {
 
     /**
-     * 主城围墙：沿<b>最大主城</b>外缘建一圈墙，只立在外侧是成员地皮（非路）的边上（贴路自动留口、不踩地皮）。
+     * 主城围墙：沿<b>最大主城</b>外缘建一圈墙，只立在外侧是成员庄园（非路）的边上（贴路自动留口、不踩庄园）。
      *
      * @param enabled 是否启用（默认 true）
      * @param block   围墙方块 id（默认 {@code minecraft:cobblestone_wall}）
@@ -25,7 +25,7 @@ public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, Terrain
     public record MoveConfig(boolean enabled, double cost, int cooldownDays) {}
 
     /**
-     * 海洋换种子重建：首建公会世界时若主城网格 footprint 水占比过高，换随机种子重建（最多 maxAttempts 次），
+     * 海洋换种子重建：首建公会营地时若主城网格 footprint 水占比过高，换随机种子重建（最多 maxAttempts 次），
      * 直到拿到陆地为主的世界。避免整片海洋导致铺路架桥成千上万列、压垮混合端区块/光照子系统而崩服。
      *
      * @param enabled       是否启用（默认 true）
@@ -51,16 +51,16 @@ public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, Terrain
         int plotGrow = cfg.getInt("member-plot.grow-per-level", 1);
 
         LayoutConfig layout = new LayoutConfig(
-                plotMax,                                       // 地皮满级边长
+                plotMax,                                       // 庄园满级边长
                 cfg.getInt("road-chunks", 1),
                 cfg.getInt("main-city.initial-chunks", 6),
                 cfg.getInt("main-city.max-chunks", 15),
-                plotInitial,                                   // 地皮初始边长
+                plotInitial,                                   // 庄园初始边长
                 plotGrow,
                 cfg.getInt("advanced.base-y", 64),
                 cfg.getInt("advanced.margin-chunks", 2));
 
-        // 庄园物理满级 = 从初始长到满级所需级数，由地皮尺寸自动推导（避免与尺寸脱节）。
+        // 庄园物理满级 = 从初始长到满级所需级数，由庄园尺寸自动推导（避免与尺寸脱节）。
         int manorMaxLevel = plotGrow > 0 ? (plotMax - plotInitial) / plotGrow + 1 : 1;
         LevelRules levels = new LevelRules(
                 cfg.getInt("guild.max-level", 5),

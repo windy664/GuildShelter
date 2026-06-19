@@ -20,7 +20,7 @@ import org.windy.guildshelter.domain.model.Manor;
 import java.util.Map;
 
 /**
- * 地皮实体计数服务（平台中立判定，只依赖 Bukkit API，混合端也有）。<b>实时</b>扫描某地皮当前实占
+ * 庄园实体计数服务（平台中立判定，只依赖 Bukkit API，混合端也有）。<b>实时</b>扫描某庄园当前实占
  * chunk 范围内的实体并按 {@link ManorEntityClass} 归类——不持久化任何计数器。
  *
  * <p>既供实体上限 caps 做"再生成是否超限"的拦截，也作为<b>可复用 API</b> 供未来"家园卡/评分/
@@ -40,7 +40,7 @@ public final class ManorEntityCensus {
         this.registry = registry;
     }
 
-    /** 某地皮当前各类实体/方块实体计数。 */
+    /** 某庄园当前各类实体/方块实体计数。 */
     public record Census(int animals, int hostiles, int otherMobs, int vehicles,
                          int tileEntities, int droppedItems) {
         public static final Census EMPTY = new Census(0, 0, 0, 0, 0, 0);
@@ -78,7 +78,7 @@ public final class ManorEntityCensus {
         return c;
     }
 
-    /** 实时统计该地皮当前实占范围内、已加载 chunk 中的各类实体/方块实体（无缓存）。 */
+    /** 实时统计该庄园当前实占范围内、已加载 chunk 中的各类实体/方块实体（无缓存）。 */
     public Census countAt(World world, Manor manor) {
         GuildWorld gw = registry.get(world.getName());
         if (gw == null) {
@@ -122,7 +122,7 @@ public final class ManorEntityCensus {
     }
 
     /**
-     * 在该地皮再生成/放置一个 {@code cls} 类实体是否会超出其相关 cap（当前数已达上限即超）。
+     * 在该庄园再生成/放置一个 {@code cls} 类实体是否会超出其相关 cap（当前数已达上限即超）。
      * 该类未设任何 cap（自身 cap 与 mob-cap 都为 -1）→ 不扫描直接返回 false（零开销，常态）。
      */
     public boolean exceedsCap(World world, Manor manor, ManorEntityClass cls) {

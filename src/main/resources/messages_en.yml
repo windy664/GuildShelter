@@ -104,7 +104,7 @@ success:
   middle_teleported: "§6✦ §aTeleported to plot §f#%s §acenter"
   visit_teleported: "§6✦ §aWelcome to §f%s§a's camp"
   tp_teleported: "§6✦ §aTeleported to §f%s§a spawn"
-  upgraded: "§6⬆ §aManor upgraded! §f%s §7/ §f%s§a — terrain expanding..."
+  upgraded: "§6⬆ §aManor upgraded! §f%s §7/ §f%s§a — new area unlocked, build it yourself (§f/gs clear§a to flatten)"
   trust_added: "§b🤝 §f%s §ais now co-builder of plot §f#%s"
   trust_added_already: "§e⚠ §f%s §7is already a co-builder"
   trust_removed: "§c✋ §aRemoved co-builder §f%s"

@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.logging.Logger;
 
 /**
- * 地皮掉落物限制定时任务：扫描所有公会世界，清理超限地皮的多余掉落物。
+ * 庄园掉落物限制定时任务：扫描所有公会营地，清理超限庄园的多余掉落物。
  * clean 模式：超限时先清理最旧的掉落物降到阈值以下。
  * block 模式：只拦截新掉落物（在 ManorEntityListener 里做），不主动清理。
  */
@@ -54,7 +54,7 @@ public final class ManorLimitTask extends BukkitRunnable {
         }
     }
 
-    /** 清理单块地皮的超限掉落物。返回清理数量。 */
+    /** 清理单块庄园的超限掉落物。返回清理数量。 */
     private int cleanManorDrops(World world, GuildWorld gw, Manor manor) {
         org.windy.guildshelter.domain.layout.LayoutCalculator layout =
                 new org.windy.guildshelter.domain.layout.LayoutCalculator(gw.layout());

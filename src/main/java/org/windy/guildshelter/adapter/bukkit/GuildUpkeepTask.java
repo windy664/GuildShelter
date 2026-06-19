@@ -10,7 +10,7 @@ import java.util.logging.Logger;
 
 /**
  * 每日公会维护费：从公会资金中扣除，按公会等级计算。
- * 余额不足时只警告该公会世界里的玩家。
+ * 余额不足时只警告该公会营地里的玩家。
  */
 public final class GuildUpkeepTask extends BukkitRunnable {
 
@@ -42,7 +42,7 @@ public final class GuildUpkeepTask extends BukkitRunnable {
                 charged++;
             } else {
                 insufficient++;
-                // 只广播给该公会世界里的玩家
+                // 只广播给该公会营地里的玩家
                 String msg = "§e[公会营地] §c" + gw.guild().value() + " 维护费不足！"
                         + " 需要 §e" + String.format("%.0f", cost) + "§c，余额 §e"
                         + String.format("%.0f", Math.max(0, gw.funds())) + "§c。请尽快充值。";

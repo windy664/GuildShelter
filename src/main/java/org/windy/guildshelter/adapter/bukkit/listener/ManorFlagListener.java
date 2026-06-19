@@ -20,7 +20,7 @@ import org.windy.guildshelter.adapter.bukkit.ManorLookup;
 import org.windy.guildshelter.domain.flag.Flag;
 
 /**
- * 地皮 flag 的 <b>Bukkit 后端</b>（A 氛围类，除 fire-spread）：pvp / mob-spawn / explosion / mob-griefing。
+ * 庄园 flag 的 <b>Bukkit 后端</b>（A 氛围类，除 fire-spread）：pvp / mob-spawn / explosion / mob-griefing。
  * 仅在<b>纯 Bukkit 端</b>注册(NeoForge 在则由 NeoForgeFlags 处理这几个,免双重)。
  * fire-spread 因 NeoForge 26 无对应事件,拆到 {@link ManorFireListener}(两载体都注册)。
  */
@@ -32,7 +32,7 @@ public final class ManorFlagListener implements Listener {
         this.lookup = lookup;
     }
 
-    /** 某位置该 flag 是否被禁止（子领地优先 → 庄园 → 默认）。无地皮不拦。 */
+    /** 某位置该 flag 是否被禁止（子领地优先 → 庄园 → 默认）。无庄园不拦。 */
     private boolean denied(World world, int x, int z, Flag flag) {
         return !lookup.resolveFlag(world, x, z, flag);
     }
@@ -49,7 +49,7 @@ public final class ManorFlagListener implements Listener {
         }
         boolean victimIsPlayer = victim instanceof Player;
 
-        // invincible：玩家在地皮内免一切伤害
+        // invincible：玩家在庄园内免一切伤害
         if (victimIsPlayer && flagOn(victim.getLocation(), Flag.INVINCIBLE)) {
             event.setCancelled(true);
             return;
@@ -122,7 +122,7 @@ public final class ManorFlagListener implements Listener {
         }
     }
 
-    // ---- explosion(按方块剔除受保护地皮内的方块)----
+    // ---- explosion(按方块剔除受保护庄园内的方块)----
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onEntityExplode(EntityExplodeEvent event) {
         event.blockList().removeIf(b -> denied(b.getWorld(), b.getX(), b.getZ(), Flag.EXPLOSION));

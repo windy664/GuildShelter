@@ -60,7 +60,7 @@ public final class ManorPlayerListener implements Listener {
     }
 
     /**
-     * 重生在家园：庄主设了 HOME_X/Y/Z flag 后，死亡重生在地皮传送点。
+     * 重生在家园：庄主设了 HOME_X/Y/Z flag 后，死亡重生在庄园传送点。
      * 未设（全为 0）则不干预，走原版重生逻辑。
      */
     @EventHandler(priority = EventPriority.LOW)

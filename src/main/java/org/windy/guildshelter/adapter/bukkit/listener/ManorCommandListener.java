@@ -17,7 +17,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * 地皮 flag {@code blocked-cmds} 的 Bukkit 执行：当玩家站在设了此 flag 的地皮内时，
+ * 庄园 flag {@code blocked-cmds} 的 Bukkit 执行：当玩家站在设了此 flag 的庄园内时，
  * 禁止使用其中列出的命令（逗号分隔，不含 {@code /}）。
  *
  * <p>admin 持有者不受此限制。
@@ -40,7 +40,7 @@ public final class ManorCommandListener implements Listener {
         Optional<Manor> at = lookup.at(player.getWorld(),
                 player.getLocation().getBlockX(), player.getLocation().getBlockZ());
         if (at.isEmpty()) {
-            return; // 不在任何地皮上
+            return; // 不在任何庄园上
         }
         String blocked = Flag.BLOCKED_CMDS.resolveString(at.get().flags());
         if (blocked.isBlank()) {

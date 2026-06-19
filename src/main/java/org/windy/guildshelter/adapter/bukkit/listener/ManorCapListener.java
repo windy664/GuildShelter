@@ -12,7 +12,7 @@ import org.windy.guildshelter.adapter.bukkit.ManorLookup;
 import org.windy.guildshelter.domain.flag.ManorEntityClass;
 
 /**
- * 实体数量上限 caps 的执行（Bukkit 侧）：生物生成 / 载具放置时，按其分类实时统计所在地皮实体数，
+ * 实体数量上限 caps 的执行（Bukkit 侧）：生物生成 / 载具放置时，按其分类实时统计所在庄园实体数，
  * 达上限即拦下。<b>两载体都注册</b>——载具是玩家放置(Bukkit 全覆盖)，原版生物 Bukkit 也覆盖；
  * 混合端的<b>模组生物</b>另由 NeoForge 侧 {@code NeoForgeFlags} 的 FinalizeSpawn 补足
  * （对原版生物两边都查一次属幂等，且未设 cap 时零开销，无副作用）。

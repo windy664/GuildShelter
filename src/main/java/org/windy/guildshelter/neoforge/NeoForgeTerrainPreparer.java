@@ -40,7 +40,7 @@ import java.util.StringJoiner;
  * <p><b>需编译验证</b>（本项目 NeoForge API 历来以本地编译为准）：
  * <ul>
  *   <li>{@code level.getMinY()}：旧版叫 {@code getMinBuildHeight()}，按编译报错二选一。</li>
- *   <li>世界名→维度解析见 {@link #resolve(String)}：若公会世界的维度 id 不是
+ *   <li>世界名→维度解析见 {@link #resolve(String)}：若公会营地的维度 id 不是
  *       {@code <namespace>:<worldName>}，启动日志会列出已加载维度，按需调整匹配。</li>
  * </ul>
  */
@@ -317,7 +317,7 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
                 while (n < COLUMNS_PER_TICK && !queue.isEmpty()
                         && System.nanoTime() - tickStart < MAX_NANOS_PER_TICK) {
                     int[] c = queue.poll(); // {x, z, outDx, outDz}
-                    // 只在外侧那格是成员地皮（非路）时立墙：贴路的边自动留口，且永不踩到成员地皮。
+                    // 只在外侧那格是成员庄园（非路）时立墙：贴路的边自动留口，且永不踩到成员庄园。
                     if (!roadMask.isRoadChunk((c[0] + c[2]) >> 4, (c[1] + c[3]) >> 4)) {
                         wallColumn(level, sink, c[0], c[1]);
                         stat[0]++;
@@ -414,7 +414,7 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
      * @return 1=铺了土径 2=架了桥 0=跳过（纯虚空列），供调用方统计。
      */
     private int pathColumn(ServerLevel level, BlockSink sink, int x, int z, int outDx, int outDz, RoadMask roadMask) {
-        level.getChunk(x >> 4, z >> 4); // 道路条带常在地皮远端，确保区块已生成再操作
+        level.getChunk(x >> 4, z >> 4); // 道路条带常在庄园远端，确保区块已生成再操作
         int min = level.getMinY();
         int y = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
@@ -441,7 +441,7 @@ public final class NeoForgeTerrainPreparer implements TerrainPreparer {
     }
 
     /**
-     * 该方块是否<b>已经是本插件铺的路面/桥面</b>。重复铺路（升级整地、相邻地皮共享边）时撞到它即原地停，
+     * 该方块是否<b>已经是本插件铺的路面/桥面</b>。重复铺路（升级整地、相邻庄园共享边）时撞到它即原地停，
      * 避免把已铺的路当植被清掉后在下一格重铺 → 路面逐级下沉；桥面同理（否则会在木板桥上又叠一层土径）。
      */
     private boolean isAlreadyPaved(BlockState b) {

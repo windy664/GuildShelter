@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/** JDBC 实现的公会世界仓库（SQLite/MySQL 共用，upsert 语法由方言给出）。 */
+/** JDBC 实现的公会营地仓库（SQLite/MySQL 共用，upsert 语法由方言给出）。 */
 public final class JdbcGuildRepository implements GuildRepository {
 
     private final JdbcDatabase db;
@@ -37,7 +37,7 @@ public final class JdbcGuildRepository implements GuildRepository {
                 return rs.next() ? Optional.of(read(guild, rs)) : Optional.empty();
             }
         } catch (SQLException e) {
-            throw new PersistenceException("查询公会世界失败: " + guild.value(), e);
+            throw new PersistenceException("查询公会营地失败: " + guild.value(), e);
         }
     }
 
@@ -50,7 +50,7 @@ public final class JdbcGuildRepository implements GuildRepository {
                 return rs.next();
             }
         } catch (SQLException e) {
-            throw new PersistenceException("查询公会世界存在性失败: " + guild.value(), e);
+            throw new PersistenceException("查询公会营地存在性失败: " + guild.value(), e);
         }
     }
 
@@ -71,7 +71,7 @@ public final class JdbcGuildRepository implements GuildRepository {
             ps.setString(12, world.serverName());
             ps.executeUpdate();
         } catch (SQLException e) {
-            throw new PersistenceException("保存公会世界失败: " + world.guild().value(), e);
+            throw new PersistenceException("保存公会营地失败: " + world.guild().value(), e);
         }
     }
 
@@ -82,7 +82,7 @@ public final class JdbcGuildRepository implements GuildRepository {
             ps.setString(1, guild.value());
             ps.executeUpdate();
         } catch (SQLException e) {
-            throw new PersistenceException("删除公会世界失败: " + guild.value(), e);
+            throw new PersistenceException("删除公会营地失败: " + guild.value(), e);
         }
     }
 
@@ -98,7 +98,7 @@ public final class JdbcGuildRepository implements GuildRepository {
                 out.add(read(new GuildId(rs.getString("guild_id")), rs));
             }
         } catch (SQLException e) {
-            throw new PersistenceException("列举公会世界失败", e);
+            throw new PersistenceException("列举公会营地失败", e);
         }
         return out;
     }

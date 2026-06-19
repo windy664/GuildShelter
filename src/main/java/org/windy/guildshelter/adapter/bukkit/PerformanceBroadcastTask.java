@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.logging.Logger;
 
 /**
- * 性能统计排行广播：定时计算每块地皮的 tick 开销，全服广播 Top N。
+ * 性能统计排行广播：定时计算每块庄园的 tick 开销，全服广播 Top N。
  * tick 开销 = tileEntities × w1 + entities × w2 + droppedItems × w3 + chunks × w4
  */
 public final class PerformanceBroadcastTask extends BukkitRunnable {
@@ -72,7 +72,7 @@ public final class PerformanceBroadcastTask extends BukkitRunnable {
         int show = Math.min(topCount, allCosts.size());
 
         // 全服广播
-        Bukkit.broadcastMessage("§6==== §e地皮性能排行 §6(开销 Top " + show + ") §6====");
+        Bukkit.broadcastMessage("§6==== §e庄园性能排行 §6(开销 Top " + show + ") §6====");
         for (int i = 0; i < show; i++) {
             ManorCost mc = allCosts.get(i);
             String label = mc.guild + " #" + mc.slot;
@@ -81,10 +81,10 @@ public final class PerformanceBroadcastTask extends BukkitRunnable {
                     mc.census.droppedItems(), mc.cost));
         }
 
-        logger.info("[GuildShelter] 性能排行已广播（" + allCosts.size() + " 块地皮）");
+        logger.info("[GuildShelter] 性能排行已广播（" + allCosts.size() + " 块庄园）");
     }
 
-    /** 计算单块地皮的 tick 开销（供外部查询用）。 */
+    /** 计算单块庄园的 tick 开销（供外部查询用）。 */
     public double calculateCost(ManorEntityCensus.Census c, int chunks) {
         return c.tileEntities() * wTile + c.livingTotal() * wEntity
                 + c.droppedItems() * wDrop + chunks * wChunk;

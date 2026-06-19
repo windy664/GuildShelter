@@ -3,7 +3,7 @@ package org.windy.guildshelter.service;
 import org.windy.guildshelter.domain.model.GuildId;
 
 /**
- * 公会成员名额已满（已分配地皮数达到当前公会等级的容量）时抛出。
+ * 公会成员名额已满（已分配庄园数达到当前公会等级的容量）时抛出。
  * 上层应捕获并提示"公会已满，需先升级公会"，而不是当成内部错误。
  */
 public final class GuildFullException extends RuntimeException {

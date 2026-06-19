@@ -9,7 +9,7 @@ import java.util.UUID;
 
 /**
  * {@link GuildProvider} 的 Shetuan 实现。GuildId = Shetuan 社团的<b>稳定 UUID</b>（{@code Club.id()}），
- * 而非会名——社团可改名，用 UUID 作 key 改名也不丢地皮/世界。
+ * 而非会名——社团可改名，用 UUID 作 key 改名也不丢庄园/世界。
  *
  * <p>Shetuan 的查询 API 全按 UUID 走，故无需玩家在线即可解析（优于 PlayerGuild / LegendaryGuild）。
  */

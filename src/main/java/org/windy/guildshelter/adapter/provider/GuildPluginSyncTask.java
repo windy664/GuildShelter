@@ -27,7 +27,7 @@ import java.util.logging.Logger;
  * Guild(com.guild)和 Shetuan 一样不发自定义事件，所以同样用定时 diff 把生命周期补出来。
  * 结构与 {@link ShetuanSyncTask} 一致，仅 GuildId 取会名（该插件以会名为主键）。
  *
- * <p>每轮(主线程)：社团世界不存在→建；成员无地皮→分；地皮主人已不在成员名单→释放；
+ * <p>每轮(主线程)：社团世界不存在→建；成员无庄园→分；庄园主人已不在成员名单→释放；
  * 库里有、Guild 里已无的世界→解散清理。
  *
  * <p><b>解散清扫的守卫</b>：本插件的 GuildId 是会名，无法靠形状区分来源，所以只扫
@@ -94,7 +94,7 @@ public final class GuildPluginSyncTask extends BukkitRunnable {
         }
     }
 
-    /** 对齐单个公会的世界与成员地皮，返回其 GuildId。 */
+    /** 对齐单个公会的世界与成员庄园，返回其 GuildId。 */
     private GuildId syncGuild(Guild guild) {
         GuildId id = new GuildId(guild.getName());
 
@@ -111,7 +111,7 @@ public final class GuildPluginSyncTask extends BukkitRunnable {
                 try {
                     Manor manor = service.assignManor(id, ref);
                     notifyIfOnline(uuid, manor);
-                    logger.info("[GuildShelter] " + guild.getName() + " 新成员 " + uuid + " → 地皮 #" + manor.slot());
+                    logger.info("[GuildShelter] " + guild.getName() + " 新成员 " + uuid + " → 庄园 #" + manor.slot());
                 } catch (GuildFullException e) {
                     logger.info("[GuildShelter] " + guild.getName() + " 名额已满(" + e.capacity()
                             + ")，余下成员需公会升级后再分配。");
@@ -124,7 +124,7 @@ public final class GuildPluginSyncTask extends BukkitRunnable {
             if (!memberUuids.contains(manor.owner().uuid())) {
                 service.releaseManor(id, manor.owner());
                 logger.info("[GuildShelter] " + guild.getName() + " 成员 " + manor.owner().uuid()
-                        + " 已退出 → 释放地皮 #" + manor.slot());
+                        + " 已退出 → 释放庄园 #" + manor.slot());
             }
         }
         return id;
