@@ -171,6 +171,14 @@ class GuildServiceTest {
         public Optional<Manor> findByOwnerAnywhere(PlayerRef o) {
             return bySlot.values().stream().filter(m -> m.owner().equals(o)).findFirst();
         }
+        public List<Manor> findAllByOwner(GuildId g, PlayerRef o) {
+            List<Manor> out = new ArrayList<>();
+            bySlot.values().forEach(m -> { if (m.guild().equals(g) && m.owner().equals(o)) out.add(m); });
+            return out;
+        }
+        public int countByOwner(GuildId g, PlayerRef o) {
+            return (int) bySlot.values().stream().filter(m -> m.guild().equals(g) && m.owner().equals(o)).count();
+        }
         public List<Manor> findAll(GuildId g) {
             List<Manor> out = new ArrayList<>();
             bySlot.values().forEach(m -> { if (m.guild().equals(g)) out.add(m); });

@@ -37,13 +37,15 @@ public final class ClaimGuard {
     private final GuildMemberCache memberCache;
     private final CityTrustCache cityTrustCache;
     private final org.windy.guildshelter.domain.port.GuildProvider guildProvider;
+    private final RoadPermitCache roadPermitCache;
 
     private final Map<UUID, Long> lastDenyMsg = new ConcurrentHashMap<>();
 
     public ClaimGuard(GuildWorldRegistry registry, PermissionRules rules,
                       WorldCache cache, SupervisorCache supervisorCache, GuildMemberCache memberCache,
                       CityTrustCache cityTrustCache,
-                      org.windy.guildshelter.domain.port.GuildProvider guildProvider) {
+                      org.windy.guildshelter.domain.port.GuildProvider guildProvider,
+                      RoadPermitCache roadPermitCache) {
         this.registry = registry;
         this.rules = rules;
         this.cache = cache;
@@ -52,11 +54,22 @@ public final class ClaimGuard {
         this.cityTrustCache = cityTrustCache;
         this.guildProvider = guildProvider != null
                 ? guildProvider : org.windy.guildshelter.domain.port.GuildProvider.NONE;
+        this.roadPermitCache = roadPermitCache;
     }
 
-    /** 主城可建判定：会长(含副会长) 或 会长信任的会内成员。热路径，O(1)（cityTrust 缓存 + provider 角色查）。 */
-    private boolean canBuildCity(GuildId guild, PlayerRef ref) {
-        return cityTrustCache.isTrusted(guild, ref.uuid()) || guildProvider.isGuildAdmin(ref, guild);
+    /** 该玩家此刻在该营地是否持有未过期的限时路权（可在路上建造/交互）。 */
+    public boolean hasRoadPermit(GuildId guild, UUID player) {
+        return roadPermitCache != null && roadPermitCache.hasPermit(guild, player);
+    }
+
+    /**
+     * 主城可建判定：身份是【会长(含副会长) 或 会长信任的会内成员】<b>且</b>该 chunk 已被主城解锁。
+     * 主城解锁集合在 {@link GuildWorld} 上（gw 来自 registry，本就是热路径缓存，无需额外查询）。
+     */
+    private boolean canBuildCity(GuildWorld gw, PlayerRef ref, int lx, int lz) {
+        boolean identity = cityTrustCache.isTrusted(gw.guild(), ref.uuid())
+                || guildProvider.isGuildAdmin(ref, gw.guild());
+        return identity && gw.isCityUnlocked(lx, lz); // 主城锚在 cell0 原点，内部偏移即 lx/lz
     }
 
     /**
@@ -100,7 +113,7 @@ public final class ClaimGuard {
             // 非合并的原始判定：主城(会长/会长信任的会内人可建) / 道路(不可建)
             if (rules.canModify(layout, ref, inGuild, manorBySlot, lx, lz,
                     (m, p) -> ManorRoles.effectiveBuildCached(m, p, supervisorCache),
-                    p -> canBuildCity(guild, p))) {
+                    p -> canBuildCity(gw, p, lx, lz))) {
                 return true;
             }
         }
@@ -110,7 +123,9 @@ public final class ClaimGuard {
             return true;
         }
         return switch (raw.type()) {
-            case ROAD -> Permissions.hasAdminPerm(player, Permissions.ADMIN_BUILD_ROAD);
+            // 路：admin 节点 或 持有未过期【限时路权】者可建。
+            case ROAD -> Permissions.hasAdminPerm(player, Permissions.ADMIN_BUILD_ROAD)
+                    || hasRoadPermit(guild, player.getUniqueId());
             case PLOT -> Permissions.hasAdminPerm(player, Permissions.ADMIN_BUILD_OTHER);
             case MAIN_CITY -> false;
         };

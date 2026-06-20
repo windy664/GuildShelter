@@ -101,6 +101,45 @@ public final class JdbcManorRepository implements ManorRepository {
     }
 
     @Override
+    public List<Manor> findAllByOwner(GuildId guild, PlayerRef owner) {
+        String sql = "SELECT slot, level, flags, unlocked_chunks FROM manor WHERE guild_id=? AND owner_uuid=? ORDER BY slot";
+        List<Manor> result = new ArrayList<>();
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, guild.value());
+            ps.setString(2, owner.uuid().toString());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int slot = rs.getInt("slot");
+                    int level = rs.getInt("level");
+                    result.add(new Manor(slot, guild, owner, level,
+                            loadPlayers(c, "manor_cobuilder", guild, slot),
+                            loadPlayers(c, "manor_member", guild, slot),
+                            loadPlayers(c, "manor_denied", guild, slot),
+                            FlagsCsv.parse(rs.getString("flags")),
+                            UnlockedCsv.parse(rs.getString("unlocked_chunks"))));
+                }
+            }
+        } catch (SQLException e) {
+            throw new PersistenceException("按庄主列举庄园失败: " + guild.value(), e);
+        }
+        return result;
+    }
+
+    @Override
+    public int countByOwner(GuildId guild, PlayerRef owner) {
+        String sql = "SELECT COUNT(*) FROM manor WHERE guild_id=? AND owner_uuid=?";
+        try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, guild.value());
+            ps.setString(2, owner.uuid().toString());
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        } catch (SQLException e) {
+            throw new PersistenceException("统计庄主庄园数失败: " + guild.value(), e);
+        }
+    }
+
+    @Override
     public List<Manor> findAll(GuildId guild) {
         String sql = "SELECT slot, owner_uuid, level, flags, unlocked_chunks FROM manor WHERE guild_id=? ORDER BY slot";
         List<Manor> result = new ArrayList<>();

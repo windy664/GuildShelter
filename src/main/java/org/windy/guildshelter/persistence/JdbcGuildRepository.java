@@ -29,7 +29,7 @@ public final class JdbcGuildRepository implements GuildRepository {
 
     @Override
     public Optional<GuildWorld> find(GuildId guild) {
-        String sql = "SELECT world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin, terrain_mode, server_name "
+        String sql = "SELECT world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin, terrain_mode, server_name, city_unlocked, city_quota "
                 + "FROM guild_world WHERE guild_id=?";
         try (Connection c = db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, guild.value());
@@ -69,6 +69,8 @@ public final class JdbcGuildRepository implements GuildRepository {
             ps.setString(10, world.bulletin());
             ps.setString(11, world.terrainMode().name());
             ps.setString(12, world.serverName());
+            ps.setString(13, UnlockedCsv.toCsv(world.cityUnlockedChunks()));
+            ps.setInt(14, world.cityQuotaOverride());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new PersistenceException("保存公会营地失败: " + world.guild().value(), e);
@@ -88,7 +90,7 @@ public final class JdbcGuildRepository implements GuildRepository {
 
     @Override
     public List<GuildWorld> findAll() {
-        String sql = "SELECT guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin, terrain_mode, server_name "
+        String sql = "SELECT guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin, terrain_mode, server_name, city_unlocked, city_quota "
                 + "FROM guild_world";
         List<GuildWorld> out = new ArrayList<>();
         try (Connection c = db.getConnection();
@@ -112,6 +114,7 @@ public final class JdbcGuildRepository implements GuildRepository {
             mode = TerrainPrepMode.CLEAR_VEGETATION;
         }
         String serverName = rs.getString("server_name");
+        int cityQuota = rs.getObject("city_quota") == null ? -1 : rs.getInt("city_quota"); // 旧行无列→-1(按等级)
         return new GuildWorld(
                 guild,
                 rs.getString("world_name"),
@@ -124,6 +127,8 @@ public final class JdbcGuildRepository implements GuildRepository {
                 rs.getDouble("funds"),
                 rs.getString("bulletin"),
                 mode,
-                serverName != null ? serverName : "");
+                serverName != null ? serverName : "",
+                UnlockedCsv.parse(rs.getString("city_unlocked")),
+                cityQuota);
     }
 }

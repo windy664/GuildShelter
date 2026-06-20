@@ -67,7 +67,6 @@ permissions:
   # 各 /gs 玩家子命令的开关，默认全放行；服主想按等级收紧时改 default 或在权限组里改。
   guildshelter.command.home: { default: true }
   guildshelter.command.spawn: { default: true }
-  guildshelter.command.upgrade: { default: true }
   guildshelter.command.info: { default: true }
   guildshelter.command.trust: { default: true }
   guildshelter.command.untrust: { default: true }
@@ -109,3 +108,6 @@ permissions:
   guildshelter.command.citytrust: { default: true }
   guildshelter.command.cityuntrust: { default: true }
   guildshelter.command.unlock: { default: true }
+  guildshelter.command.cityunlock: { default: true }
+  guildshelter.command.claim: { default: true }
+  guildshelter.command.manors: { default: true }

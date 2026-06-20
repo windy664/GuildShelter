@@ -29,15 +29,22 @@ public final class RegionTitleListener implements Listener {
     private final GuildWorldRegistry registry;
     private final WorldCache cache;
     private final LevelRules levels;
+    private final org.windy.guildshelter.adapter.bukkit.CityTrustCache cityTrust;
+    private final org.windy.guildshelter.domain.port.GuildProvider guildProvider;
 
     /** 每个玩家上一次所在 chunk 与归类签名，用于去重。 */
     private final Map<UUID, long[]> lastChunk = new ConcurrentHashMap<>();
     private final Map<UUID, String> lastKey = new ConcurrentHashMap<>();
 
-    public RegionTitleListener(GuildWorldRegistry registry, WorldCache cache, LevelRules levels) {
+    public RegionTitleListener(GuildWorldRegistry registry, WorldCache cache, LevelRules levels,
+                               org.windy.guildshelter.adapter.bukkit.CityTrustCache cityTrust,
+                               org.windy.guildshelter.domain.port.GuildProvider guildProvider) {
         this.registry = registry;
         this.cache = cache;
         this.levels = levels;
+        this.cityTrust = cityTrust;
+        this.guildProvider = guildProvider != null
+                ? guildProvider : org.windy.guildshelter.domain.port.GuildProvider.NONE;
     }
 
     @EventHandler
@@ -75,15 +82,18 @@ public final class RegionTitleListener implements Listener {
             plotActive = manor.isUnlocked(lx - plot.minChunkX(), lz - plot.minChunkZ()); // 这一格是否已解锁
         }
 
-        String key = c.type() + ":" + c.slot() + (c.isPlot() ? ":" + plotActive : "");
+        // 主城同理算"已解锁"状态(主城锚 cell0 原点，偏移即 lx/lz)并入 key，使会长跨越主城解锁边界也重弹。
+        boolean cityUnlocked = c.isMainCity() && gw.isCityUnlocked(lx, lz);
+        String key = c.type() + ":" + c.slot()
+                + (c.isPlot() ? ":" + plotActive : "")
+                + (c.isMainCity() ? ":" + cityUnlocked : "");
         if (key.equals(lastKey.get(id))) {
             return; // 区域+解锁状态都没变，不重复弹 title
         }
         lastKey.put(id, key);
 
         switch (c.type()) {
-            case MAIN_CITY -> player.sendTitle("§6§l主城",
-                    "§e公会中心 · 公会 Lv" + gw.guildLevel(), 5, 30, 10);
+            case MAIN_CITY -> showCityTitle(player, gw, cityUnlocked);
             case ROAD -> player.sendTitle("§7§l道路", "§8公共土径", 5, 20, 10);
             case PLOT -> showPlotTitle(player, gw, manor, plotActive, c.slot());
         }
@@ -95,9 +105,9 @@ public final class RegionTitleListener implements Listener {
                 // 走进了某块庄园的未解锁区。是自己的庄园 → 标题提示 + 聊天栏给可点击的【解锁】按钮（扣额度）。
                 boolean own = manor.owner().uuid().equals(player.getUniqueId());
                 if (own) {
-                    int remain = Math.max(0, gw.layout().quotaAtLevel(manor.level(), levels.manorMaxLevel()) - manor.unlockedChunks().size());
+                    int remain = Math.max(0, manor.quotaCap(gw.layout(), levels.manorMaxLevel()) - manor.unlockedChunks().size());
                     player.sendTitle("§e§l⚠ 未解锁区", "§7剩余额度 §f" + remain
-                            + (remain > 0 ? " §7· 看聊天栏点击解锁" : " §7· §c/gs upgrade 获取额度"), 5, 40, 10);
+                            + (remain > 0 ? " §7· 看聊天栏点击解锁" : " §7· §c额度已用尽"), 5, 40, 10);
                     sendUnlockButton(player, remain);
                 } else {
                     player.sendTitle("§e§l⚠ 未解锁区", "§7庄园 #" + slot + " 的预留区 · 主人解锁后启用", 5, 40, 10);
@@ -118,6 +128,54 @@ public final class RegionTitleListener implements Listener {
         }
     }
 
+    /**
+     * 主城标题（与庄园 {@link #showPlotTitle} 同款视觉）：
+     * <ul>
+     *   <li>已解锁区 → §6§l主城 / 公会中心；</li>
+     *   <li>未解锁区 + 会长/副会长 → §e§l⚠ 主城未解锁区 / 剩余额度 N（同庄园样式）+ 聊天可点击解锁；</li>
+     *   <li>未解锁区 + 普通成员 → 仍按"主城"显示，不打扰。</li>
+     * </ul>
+     * 任一路径都<b>必发一个 title</b>（保证一定有提示）；解锁判断包 try-catch，宿主 API 异常不影响基础标题。
+     */
+    private void showCityTitle(Player player, GuildWorld gw, boolean unlocked) {
+        if (!unlocked) {
+            try {
+                var ref = org.windy.guildshelter.domain.model.PlayerRef.of(player.getUniqueId());
+                if (guildProvider.isGuildAdmin(ref, gw.guild()) || player.isOp()) {
+                    int remain = Math.max(0, gw.cityQuotaCap(levels.maxGuildLevel())
+                            - gw.cityUnlockedChunks().size());
+                    player.sendTitle("§e§l⚠ 主城未解锁区", "§7剩余额度 §f" + remain
+                            + (remain > 0 ? " §7· 看聊天栏点击解锁" : " §7· §c额度已用尽"), 5, 40, 10);
+                    sendCityUnlockButton(player, remain);
+                    return;
+                }
+            } catch (Throwable ignored) {
+                // 解锁判断/宿主 API 异常 → 落到下面的基础"主城"标题，保证仍有提示。
+            }
+        }
+        // 已解锁区 / 普通成员 / 异常兜底：基础"主城"标题。
+        player.sendTitle("§6§l主城", "§e公会中心 · 公会 Lv" + gw.guildLevel(), 5, 30, 10);
+    }
+
+    /** 聊天栏可点击【解锁主城】按钮：点击执行 /gs cityunlock。 */
+    private void sendCityUnlockButton(Player player, int remaining) {
+        net.md_5.bungee.api.chat.TextComponent line =
+                new net.md_5.bungee.api.chat.TextComponent("§6◆ 当前主城区块未解锁 · 剩余额度 §f" + remaining + " §6");
+        net.md_5.bungee.api.chat.TextComponent btn;
+        if (remaining > 0) {
+            btn = new net.md_5.bungee.api.chat.TextComponent("§a§l[ 点击解锁脚下主城区块 ]");
+            btn.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(
+                    net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, "/gs cityunlock"));
+            btn.setHoverEvent(new net.md_5.bungee.api.chat.HoverEvent(
+                    net.md_5.bungee.api.chat.HoverEvent.Action.SHOW_TEXT,
+                    new net.md_5.bungee.api.chat.ComponentBuilder("§7解锁脚下这格主城（消耗 1 主城额度）").create()));
+        } else {
+            btn = new net.md_5.bungee.api.chat.TextComponent("§c§l[ 主城额度已用尽 · 升级公会等级 ]");
+        }
+        line.addExtra(btn);
+        player.spigot().sendMessage(line);
+    }
+
     /** 在聊天栏发一条带可点击【解锁】按钮的消息：点击执行 /gs unlock 解锁脚下区块。额度为 0 时改提示升级。 */
     private void sendUnlockButton(Player player, int remaining) {
         net.md_5.bungee.api.chat.TextComponent line =
@@ -131,9 +189,8 @@ public final class RegionTitleListener implements Listener {
                     net.md_5.bungee.api.chat.HoverEvent.Action.SHOW_TEXT,
                     new net.md_5.bungee.api.chat.ComponentBuilder("§7解锁你正站着的这一格（消耗 1 额度）").create()));
         } else {
-            btn = new net.md_5.bungee.api.chat.TextComponent("§c§l[ 额度不足 · 升级庄园 ]");
-            btn.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(
-                    net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, "/gs upgrade"));
+            // 额度用尽：庄园升级由管理员授予，玩家不能自助升级（不可点击，仅提示）。
+            btn = new net.md_5.bungee.api.chat.TextComponent("§c§l[ 额度已用尽 · 等管理员提升庄园等级 ]");
         }
         line.addExtra(btn);
         player.spigot().sendMessage(line);

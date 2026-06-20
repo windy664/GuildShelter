@@ -36,6 +36,8 @@ public final class SqliteDialect implements SqlDialect {
                 "ALTER TABLE guild_world ADD COLUMN bulletin TEXT DEFAULT ''",
                 "ALTER TABLE guild_world ADD COLUMN terrain_mode TEXT DEFAULT 'CLEAR_VEGETATION'",
                 "ALTER TABLE guild_world ADD COLUMN server_name TEXT DEFAULT ''",
+                "ALTER TABLE guild_world ADD COLUMN city_unlocked TEXT", // 主城已解锁 chunk 集合(packed int CSV)
+                "ALTER TABLE guild_world ADD COLUMN city_quota INTEGER DEFAULT -1", // 主城额度覆盖(-1=按等级)
                 """
                 CREATE TABLE IF NOT EXISTS manor (
                     guild_id   TEXT NOT NULL,
@@ -137,14 +139,21 @@ public final class SqliteDialect implements SqlDialect {
                     guild_id    TEXT NOT NULL,
                     player_uuid TEXT NOT NULL,
                     PRIMARY KEY (guild_id, player_uuid)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS road_permit (
+                    guild_id    TEXT NOT NULL,
+                    player_uuid TEXT NOT NULL,
+                    expire_at   INTEGER NOT NULL,
+                    PRIMARY KEY (guild_id, player_uuid)
                 )""");
     }
 
     @Override
     public String upsertGuildWorld() {
         return """
-                INSERT INTO guild_world(guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin, terrain_mode, server_name)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO guild_world(guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin, terrain_mode, server_name, city_unlocked, city_quota)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(guild_id) DO UPDATE SET
                     world_name=excluded.world_name,
                     seed=excluded.seed,
@@ -156,7 +165,9 @@ public final class SqliteDialect implements SqlDialect {
                     funds=excluded.funds,
                     bulletin=excluded.bulletin,
                     terrain_mode=excluded.terrain_mode,
-                    server_name=excluded.server_name""";
+                    server_name=excluded.server_name,
+                    city_unlocked=excluded.city_unlocked,
+                    city_quota=excluded.city_quota""";
     }
 
     @Override

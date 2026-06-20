@@ -41,15 +41,15 @@ member-plot:
   max-level: 10         # 庄园等级数(几级几级，你定)。例:10 级 → 额度从 36 线性涨到 225
   grow-per-level: 1     # (兼容旧配置用;只在没设 max-level 时按尺寸推算级数。新配置以 max-level 为准)
 
-# 公会主城：全公会共享的中央出生广场，占【中心那一格】角落的一块方形区域，按 chunk 配置、
-# 角落锚定（出生点在角落）、随公会升级从 initial 长到 max。主城【四周自动被路环绕】——
-# 中心格里主城之外的部分全是路，再外面才是成员庄园网格。
-#   1 chunk = 16 方块。max-chunks 必须 ≤ member-plot.max-chunks(默认15)，因为主城要容在中心一格里。
-#   想要更大的主城：调大下面的 max-chunks（上限=member-plot.max-chunks）；若还嫌小，就把
-#   member-plot.max-chunks 一起调大（那会同时放大每块成员庄园）。
+# 公会主城：全公会共享的中央出生广场，占【中心那一格】角落，角落锚定（出生点在角落）、四周自动环路。
+# 和成员庄园一样采用【额度 + 解锁】，但额度跟【公会等级】、且只有【会长/副会长】能解锁：
+#   · 公会等级决定主城解锁额度上限：从 initial-chunks² 线性涨到 max-chunks²(随 guild.max-level)；
+#   · 会长走到主城想要的区块，/gs cityunlock(或走进未解锁区点聊天按钮)解锁脚下那格，须相邻、不飞地；
+#   · 建会即初始解锁 initial-chunks×initial-chunks 一小块；未解锁区只有会长/干部/主城信任者看得到提示。
+#   · max-chunks 必须 ≤ member-plot.max-chunks(主城要容在中心一格里)。
 main-city:
-  initial-chunks: 5     # 初始边长（chunk，1 级公会）→ 6 chunk = 96×96 方块
-  max-chunks: 15        # 最大边长（chunk，满级达到）→ 15 chunk = 240×240 方块（= 一块满级成员庄园大小）
+  initial-chunks: 3     # 初始解锁边长 → 初始额度 3²=9 格(建会整好这块)
+  max-chunks: 10        # 满级解锁边长 → 满级额度 10²=100 格(主城单格上限)；须 ≤ member-plot.max-chunks
 
 # 道路宽度（路面顶层会自动铺成路面块，并清掉路上的植被/树/竹子；terrain-prep=NONE 时不铺）
 road-chunks: 1          # = 16 方块
@@ -160,6 +160,32 @@ manor-move:
   enabled: true            # 是否启用搬家功能
   cost: 10000              # 搬家费用（需 Vault 经济插件，0=免费）
   cooldown-days: 7         # 搬家冷却天数（防止频繁搬家）
+
+# ====================== 庄园升级命令回调 ======================
+
+# 庄园升到「对应等级」时，由控制台执行「对应命令」（管理员 /gs admin upgrade-manor 触发）。
+# 只执行升到的那一级配的命令（不累加更低等级）。命令以控制台身份执行，故 give/cmi/lp 等任意插件命令均可挂接。
+# 占位符: %player%(庄主名) %uuid% %guild%(公会ID) %level%(新等级) %old_level%(旧等级) %slot%
+manor-upgrade-commands:
+  enabled: false           # 默认关；要用改 true 并按需配置下方 levels
+  levels:                  # 键 = 升到的目标等级，值 = 该等级要执行的命令列表（不带前导 /）
+    2:
+      - "broadcast §a%player% §f的庄园升到了 §e2 §f级！"
+    3:
+      - "give %player% diamond 8"
+    5:
+      - "lp user %player% parent add manor-vip"
+
+# ====================== 多庄园（一人多块）======================
+
+# 默认每个公会成员自动分配一块庄园。开启后玩家可用 /gs claim 认领更多块，
+# 数量上限 = 权限节点 guildshelter.manors.<N> 与 default-limit 的较大者；
+# guildshelter.manors.unlimited = 无限。多数玩家命令将作用于"脚下站的这块"。
+multi-manor:
+  enabled: false           # 默认关；关=保持一人一庄园旧行为（安全灰度）
+  default-limit: 1         # 无权限节点时每人可拥有的庄园数
+  max-probe: 64            # 权限节点 guildshelter.manors.<N> 向上探测上限（防遍历过大）
+  claim-cost: 0            # 自助认领花费（需 Vault，0=免费）
 
 # ============================ 高级（一般不用动）============================
 advanced:

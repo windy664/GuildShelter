@@ -19,6 +19,7 @@ import org.windy.guildshelter.adapter.bukkit.gui.VanillaGuiProvider;
 import org.windy.guildshelter.adapter.bukkit.gui.YamlGuiLoader;
 import org.windy.guildshelter.adapter.bukkit.XaeroIntegration;
 import org.windy.guildshelter.adapter.bukkit.ManorLimitTask;
+import org.windy.guildshelter.adapter.bukkit.ManorUpgradeCommandHook;
 import org.windy.guildshelter.adapter.bukkit.WorldOptimizer;
 import org.windy.guildshelter.adapter.bukkit.PerformanceBroadcastTask;
 import org.windy.guildshelter.adapter.bukkit.ManorChunkManager;
@@ -90,6 +91,7 @@ public final class GuildShelterPlugin extends JavaPlugin {
     private WorldCache worldCache;
     private SupervisorCache supervisorCache;
     private org.windy.guildshelter.adapter.bukkit.CityTrustCache cityTrustCache;
+    private org.windy.guildshelter.adapter.bukkit.RoadPermitCache roadPermitCache;
     private YamlGuiLoader guiLoader;
 
     public static GuildShelterPlugin get() {
@@ -127,6 +129,11 @@ public final class GuildShelterPlugin extends JavaPlugin {
     /** 主城信任缓存（命令授权、provider 解散/退会时清理）。onEnable 前为 null。 */
     public static org.windy.guildshelter.adapter.bukkit.CityTrustCache cityTrustCache() {
         return instance == null ? null : instance.cityTrustCache;
+    }
+
+    /** 限时路权缓存（命令授予/撤销）。onEnable 前为 null。 */
+    public static org.windy.guildshelter.adapter.bukkit.RoadPermitCache roadPermitCache() {
+        return instance == null ? null : instance.roadPermitCache;
     }
 
     /** YAML GUI 加载器（从 gui.yml 读菜单定义）。 */
@@ -204,6 +211,13 @@ public final class GuildShelterPlugin extends JavaPlugin {
         GuildService service = new GuildService(guilds, manors, worldManager, terrain,
                 config.layout(), config.levels(), config.terrainPrep(), getLogger());
 
+        // 庄园升级回调：升到对应等级时由控制台执行对应命令（config: manor-upgrade-commands）。
+        ManorUpgradeCommandHook upgradeHook = ManorUpgradeCommandHook.fromConfig(this);
+        if (upgradeHook != null) {
+            service.setUpgradeHook(upgradeHook);
+            getLogger().info("庄园升级命令回调已启用（manor-upgrade-commands）。");
+        }
+
         // 搬家系统
         var moveConfig = config.move();
         if (moveConfig.enabled()) {
@@ -261,6 +275,9 @@ public final class GuildShelterPlugin extends JavaPlugin {
         this.cityTrustCache = new org.windy.guildshelter.adapter.bukkit.CityTrustCache(
                 storage.cityTrust(), guilds.findAll());
 
+        // 限时路权缓存（管理员授予的临时路上建造权，惰性过期）；启动全量加载。
+        this.roadPermitCache = new org.windy.guildshelter.adapter.bukkit.RoadPermitCache(storage.roadPermit());
+
         // 成员变更回调扇出：成员缓存 + 主城信任缓存（离会自动撤信任、解散清空）。
         final GuildMemberCache mc = memberCache;
         final org.windy.guildshelter.adapter.bukkit.CityTrustCache ctc = this.cityTrustCache;
@@ -289,14 +306,15 @@ public final class GuildShelterPlugin extends JavaPlugin {
         }
 
         getServer().getPluginManager().registerEvents(
-                new RegionTitleListener(registry, this.worldCache, config.levels()), this);
+                new RegionTitleListener(registry, this.worldCache, config.levels(),
+                        this.cityTrustCache, guildProvider), this);
 
         // =========================================================================
         // 领地保护：加入极致啰嗦的启动诊断日志
         // =========================================================================
         if (getConfig().getBoolean("protection", true)) {
             this.claimGuard = new ClaimGuard(registry, new PermissionRules(), this.worldCache, this.supervisorCache,
-                    memberCache, this.cityTrustCache, guildProvider);
+                    memberCache, this.cityTrustCache, guildProvider, this.roadPermitCache);
             ManorLookup lookup = new ManorLookup(registry, manors, this.worldCache);
             this.manorLookup = lookup;
             this.interactionPolicy = new InteractionPolicy(claimGuard, lookup);

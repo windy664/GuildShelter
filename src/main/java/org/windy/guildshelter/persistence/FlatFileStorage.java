@@ -33,6 +33,7 @@ public final class FlatFileStorage implements Storage {
     private final FileGuildRepo guilds;
     private final FileManorRepo manors;
     private final FileCityTrustRepo cityTrust;
+    private final FileRoadPermitRepo roadPermit;
 
     public FlatFileStorage(Path dir, LayoutConfig fallbackLayout) {
         try {
@@ -43,6 +44,7 @@ public final class FlatFileStorage implements Storage {
         this.guilds = new FileGuildRepo(dir.resolve("guilds.tsv"), fallbackLayout);
         this.manors = new FileManorRepo(dir.resolve("manors.tsv"));
         this.cityTrust = new FileCityTrustRepo(dir.resolve("city_trust.tsv"));
+        this.roadPermit = new FileRoadPermitRepo(dir.resolve("road_permit.tsv"));
     }
 
     @Override
@@ -58,6 +60,96 @@ public final class FlatFileStorage implements Storage {
     @Override
     public org.windy.guildshelter.domain.port.CityTrustStore cityTrust() {
         return cityTrust;
+    }
+
+    @Override
+    public org.windy.guildshelter.domain.port.RoadPermitStore roadPermit() {
+        return roadPermit;
+    }
+
+    /** 限时路权：每行 {@code guild\tuuid\texpireAt}，内存 {@code guild→(uuid→expireAt)}，变更整文件重写。 */
+    static final class FileRoadPermitRepo implements org.windy.guildshelter.domain.port.RoadPermitStore {
+        private final Path file;
+        private final Map<String, Map<java.util.UUID, Long>> byGuild = new LinkedHashMap<>();
+
+        FileRoadPermitRepo(Path file) {
+            this.file = file;
+            for (String line : readLines(file)) {
+                if (line.isBlank()) {
+                    continue;
+                }
+                String[] f = line.split("\t", -1);
+                if (f.length < 3) {
+                    continue;
+                }
+                try {
+                    byGuild.computeIfAbsent(f[0], k -> new java.util.HashMap<>())
+                            .put(java.util.UUID.fromString(f[1]), Long.parseLong(f[2]));
+                } catch (IllegalArgumentException ignored) {
+                    // 坏数据跳过
+                }
+            }
+        }
+
+        @Override
+        public void grant(GuildId guild, java.util.UUID player, long expireAtMillis) {
+            byGuild.computeIfAbsent(guild.value(), k -> new java.util.HashMap<>()).put(player, expireAtMillis);
+            flush();
+        }
+
+        @Override
+        public void revoke(GuildId guild, java.util.UUID player) {
+            Map<java.util.UUID, Long> m = byGuild.get(guild.value());
+            if (m != null && m.remove(player) != null) {
+                if (m.isEmpty()) {
+                    byGuild.remove(guild.value());
+                }
+                flush();
+            }
+        }
+
+        @Override
+        public long expireAt(GuildId guild, java.util.UUID player) {
+            Map<java.util.UUID, Long> m = byGuild.get(guild.value());
+            Long e = m == null ? null : m.get(player);
+            return e == null ? 0L : e;
+        }
+
+        @Override
+        public List<Entry> loadAll() {
+            List<Entry> out = new java.util.ArrayList<>();
+            for (var ge : byGuild.entrySet()) {
+                for (var pe : ge.getValue().entrySet()) {
+                    out.add(new Entry(new GuildId(ge.getKey()), pe.getKey(), pe.getValue()));
+                }
+            }
+            return out;
+        }
+
+        @Override
+        public void purgeExpired(long nowMillis) {
+            boolean changed = false;
+            for (var it = byGuild.entrySet().iterator(); it.hasNext(); ) {
+                var ge = it.next();
+                changed |= ge.getValue().values().removeIf(e -> e < nowMillis);
+                if (ge.getValue().isEmpty()) {
+                    it.remove();
+                }
+            }
+            if (changed) {
+                flush();
+            }
+        }
+
+        private void flush() {
+            List<String> lines = new java.util.ArrayList<>();
+            for (var ge : byGuild.entrySet()) {
+                for (var pe : ge.getValue().entrySet()) {
+                    lines.add(clean(ge.getKey()) + "\t" + pe.getKey() + "\t" + pe.getValue());
+                }
+            }
+            writeLines(file, lines);
+        }
     }
 
     /** 主城信任名单：每行 {@code guild\tuuid}，内存 {@code guild→Set<UUID>} 缓存，变更整文件重写。 */
@@ -172,13 +264,18 @@ public final class FlatFileStorage implements Storage {
                     try { mode = TerrainPrepMode.valueOf(f[10]); } catch (IllegalArgumentException ignored) {}
                 }
                 String serverName = f.length > 11 ? f[11] : "";
+                Set<Integer> cityUnlocked = UnlockedCsv.parse(f.length > 12 ? f[12] : null); // 列12,旧文件无→空
+                int cityQuota = -1; // 列13,旧文件无→-1(按等级)
+                if (f.length > 13 && !f[13].isBlank()) {
+                    try { cityQuota = Integer.parseInt(f[13].trim()); } catch (NumberFormatException ignored) {}
+                }
                 byId.put(g.value(), new GuildWorld(g, f[1], Long.parseLong(f[2]),
                         Integer.parseInt(f[3]), Integer.parseInt(f[4]),
                         Integer.parseInt(f[5]), Integer.parseInt(f[6]),
                         LayoutCsv.parse(f.length > 7 ? f[7] : null, fallback),
                         f.length > 8 ? Double.parseDouble(f[8]) : 0,
                         f.length > 9 ? f[9] : "",
-                        mode, serverName));
+                        mode, serverName, cityUnlocked, cityQuota));
             }
         }
 
@@ -219,7 +316,8 @@ public final class FlatFileStorage implements Storage {
                         Integer.toString(w.guildLevel()), Integer.toString(w.allocatedSlots()),
                         LayoutCsv.toCsv(w.layout()), Double.toString(w.funds()),
                         clean(w.bulletin()), w.terrainMode().name(),
-                        clean(w.serverName())));
+                        clean(w.serverName()), UnlockedCsv.toCsv(w.cityUnlockedChunks()),
+                        Integer.toString(w.cityQuotaOverride())));
             }
             writeLines(file, lines);
         }
@@ -274,6 +372,28 @@ public final class FlatFileStorage implements Storage {
         @Override
         public Optional<Manor> findByOwnerAnywhere(PlayerRef owner) {
             return bySlot.values().stream().filter(m -> m.owner().equals(owner)).findFirst();
+        }
+
+        @Override
+        public List<Manor> findAllByOwner(GuildId guild, PlayerRef owner) {
+            List<Manor> out = new ArrayList<>();
+            for (Manor m : bySlot.values()) {
+                if (m.guild().equals(guild) && m.owner().equals(owner)) {
+                    out.add(m);
+                }
+            }
+            return out;
+        }
+
+        @Override
+        public int countByOwner(GuildId guild, PlayerRef owner) {
+            int n = 0;
+            for (Manor m : bySlot.values()) {
+                if (m.guild().equals(guild) && m.owner().equals(owner)) {
+                    n++;
+                }
+            }
+            return n;
         }
 
         @Override

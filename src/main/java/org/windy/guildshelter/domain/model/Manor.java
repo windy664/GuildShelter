@@ -1,5 +1,7 @@
 package org.windy.guildshelter.domain.model;
 
+import org.windy.guildshelter.domain.layout.LayoutConfig;
+
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -42,6 +44,33 @@ public record Manor(int slot, GuildId guild, PlayerRef owner, int level,
         denied = Set.copyOf(denied == null ? Set.of() : denied);
         flags = Map.copyOf(flags == null ? Map.of() : flags);
         unlockedChunks = Set.copyOf(unlockedChunks == null ? Set.of() : unlockedChunks);
+    }
+
+    /** 管理员授予的<b>解锁额度上限</b>存在 flags 的这个内部键（下划线前缀，不与 Flag id 冲突、不进 /gs flag 列表）。 */
+    public static final String QUOTA_FLAG = "_quota";
+
+    /** 多庄园下标记<b>默认 home</b>的内部键（下划线前缀，不进 /gs flag 列表）。值 {@code "true"} 即该玩家的默认 home。 */
+    public static final String HOME_DEFAULT_FLAG = "_home_default";
+
+    /**
+     * 该庄园当前<b>解锁额度上限</b>（最多能解锁多少个 chunk）：
+     * <ul>
+     *   <li>管理员用 {@code /gs admin quota} 设过 → 用其值；</li>
+     *   <li>没设过 → 回退按等级算 {@link LayoutConfig#quotaAtLevel}（兼容旧庄园，平滑过渡）。</li>
+     * </ul>
+     * 一律封顶 <b>chunk 上限</b> {@code plotChunks²}（单块 plotRegion 面积，解锁不可能超出它）。
+     */
+    public int quotaCap(LayoutConfig layout, int maxLevel) {
+        int cap = layout.plotChunks() * layout.plotChunks();
+        String s = flags.get(QUOTA_FLAG);
+        if (s != null) {
+            try {
+                return Math.min(Math.max(0, Integer.parseInt(s.trim())), cap);
+            } catch (NumberFormatException ignored) {
+                // 坏值 → 回退按等级
+            }
+        }
+        return Math.min(layout.quotaAtLevel(level, maxLevel), cap);
     }
 
     /** 把庄园内部偏移 (dx,dz)（均 0..plotChunks-1，<1024）打包成单个 int：高位 dx，低位 dz。 */

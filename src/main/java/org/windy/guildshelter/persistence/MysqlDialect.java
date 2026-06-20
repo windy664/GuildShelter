@@ -30,6 +30,8 @@ public final class MysqlDialect implements SqlDialect {
                 "ALTER TABLE guild_world ADD COLUMN bulletin TEXT DEFAULT ''",
                 "ALTER TABLE guild_world ADD COLUMN terrain_mode VARCHAR(32) DEFAULT 'CLEAR_VEGETATION'",
                 "ALTER TABLE guild_world ADD COLUMN server_name VARCHAR(255) DEFAULT ''",
+                "ALTER TABLE guild_world ADD COLUMN city_unlocked TEXT", // 主城已解锁 chunk 集合(packed int CSV)
+                "ALTER TABLE guild_world ADD COLUMN city_quota INT DEFAULT -1", // 主城额度覆盖(-1=按等级)
                 """
                 CREATE TABLE IF NOT EXISTS manor (
                     guild_id   VARCHAR(255) NOT NULL,
@@ -131,14 +133,21 @@ public final class MysqlDialect implements SqlDialect {
                     guild_id    VARCHAR(255) NOT NULL,
                     player_uuid VARCHAR(36) NOT NULL,
                     PRIMARY KEY (guild_id, player_uuid)
+                )""",
+                """
+                CREATE TABLE IF NOT EXISTS road_permit (
+                    guild_id    VARCHAR(255) NOT NULL,
+                    player_uuid VARCHAR(36) NOT NULL,
+                    expire_at   BIGINT NOT NULL,
+                    PRIMARY KEY (guild_id, player_uuid)
                 )""");
     }
 
     @Override
     public String upsertGuildWorld() {
         return """
-                INSERT INTO guild_world(guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin, terrain_mode, server_name)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO guild_world(guild_id, world_name, seed, origin_x, origin_z, guild_level, allocated_slots, layout_params, funds, bulletin, terrain_mode, server_name, city_unlocked, city_quota)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON DUPLICATE KEY UPDATE
                     world_name=VALUES(world_name),
                     seed=VALUES(seed),
@@ -150,7 +159,9 @@ public final class MysqlDialect implements SqlDialect {
                     funds=VALUES(funds),
                     bulletin=VALUES(bulletin),
                     terrain_mode=VALUES(terrain_mode),
-                    server_name=VALUES(server_name)""";
+                    server_name=VALUES(server_name),
+                    city_unlocked=VALUES(city_unlocked),
+                    city_quota=VALUES(city_quota)""";
     }
 
     @Override

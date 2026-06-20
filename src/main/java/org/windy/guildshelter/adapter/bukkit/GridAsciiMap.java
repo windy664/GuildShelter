@@ -72,4 +72,62 @@ public final class GridAsciiMap {
         }
         return ' ';
     }
+
+    /** 聊天栏单行最多方块数（窄一些，避免折行）。 */
+    private static final int MAX_BLOCKS_CHAT = 26;
+
+    /**
+     * <b>彩色方块版</b>（仿 HuskTowns/Towny）：1 个彩色 {@code ■} = 1 chunk，发玩家聊天栏。
+     * {@code hereX/hereZ} 为玩家当前所在 chunk（布局坐标），在图上以高亮白块标出；传 Integer.MIN_VALUE 则不标。
+     */
+    public static List<String> renderColored(LayoutCalculator layout, GuildWorld gw,
+                                             Set<Integer> occupiedSlots, int capacity, int currentCityChunks,
+                                             int hereX, int hereZ) {
+        int pitch = layout.pitchChunks();
+        int reserved = Math.max(gw.allocatedSlots(), capacity);
+        int r = layout.borderRingCells(reserved);
+        int minC = -r * pitch;
+        int maxC = (r + 1) * pitch - 1;
+        int span = maxC - minC + 1;
+        int step = Math.max(1, (span + MAX_BLOCKS_CHAT - 1) / MAX_BLOCKS_CHAT);
+
+        List<String> lines = new ArrayList<>();
+        lines.add("§6§l━━ §e" + gw.worldName() + " §7营地地图 §6§l━━");
+        lines.add("§7等级§f " + gw.guildLevel() + " §8| §7已占§a " + occupiedSlots.size()
+                + "§7/§f" + capacity + " §8| §7主城§e " + currentCityChunks + "ch"
+                + (step > 1 ? " §8| §71格=" + step + "ch" : ""));
+        for (int cz = minC; cz <= maxC; cz += step) {
+            StringBuilder sb = new StringBuilder(" ");
+            for (int cx = minC; cx <= maxC; cx += step) {
+                sb.append(block(layout, cx, cz, occupiedSlots, capacity, hereX, hereZ, step));
+            }
+            lines.add(sb.toString());
+        }
+        lines.add("§e■§7主城 §a■§7庄园 §2■§7空闲 §8■§7路 §f■§7你在此");
+        return lines;
+    }
+
+    /** 单个 chunk → 彩色方块（§颜色 + ■）。当前所在格高亮白块。 */
+    private static String block(LayoutCalculator layout, int cx, int cz, Set<Integer> occ, int capacity,
+                                int hereX, int hereZ, int step) {
+        // 当前所在格（落在该采样块覆盖的范围内即标记）
+        if (hereX != Integer.MIN_VALUE && hereX >= cx && hereX < cx + step && hereZ >= cz && hereZ < cz + step) {
+            return "§f■";
+        }
+        Classification c = layout.classify(cx, cz);
+        if (c.isMainCity()) {
+            return "§e■";   // 主城=金黄
+        }
+        if (c.isRoad()) {
+            return "§8■";   // 路=深灰
+        }
+        if (c.isPlot()) {
+            int slot = c.slot();
+            if (occ.contains(slot)) {
+                return "§a■"; // 已占庄园=亮绿
+            }
+            return slot < capacity ? "§2■" : "§0·"; // 空闲名额=暗绿 / 容量外=几乎隐形
+        }
+        return "§0·";
+    }
 }

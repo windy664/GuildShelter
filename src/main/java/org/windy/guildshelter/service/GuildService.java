@@ -140,10 +140,107 @@ public final class GuildService {
         }
         GuildWorld gw = GuildWorld.create(guild, worlds.worldName(guild), seed, currentLayout, terrainMode, serverName);
         gw = worlds.ensureWorld(gw);
+        gw = gw.withCityUnlockedChunks(initialCityUnlocked(gw)); // 初始解锁主城角落正方形（会长起点）
         guilds.save(gw);
         prepareMainCityRoads(gw); // 建会即给主城铺一圈环路（主城非成员 slot，否则四周路会"被吞"）
         buildCityWall(gw);        // 围墙（默认关）
         return gw;
+    }
+
+    /** 主城建会初始解锁的角落正方形（{@code initialCityUnlockSide²} 个 chunk，cell0 内部偏移）。 */
+    private java.util.Set<Integer> initialCityUnlocked(GuildWorld gw) {
+        int side = gw.layout().initialCityUnlockSide();
+        java.util.Set<Integer> set = new java.util.HashSet<>();
+        for (int dx = 0; dx < side; dx++) {
+            for (int dz = 0; dz < side; dz++) {
+                set.add(Manor.packOffset(dx, dz));
+            }
+        }
+        return set;
+    }
+
+    /**
+     * 会长用额度解锁主城 chunk（世界坐标）。校验：必须是主城格、未解锁、有剩余额度、与已解锁<b>相邻</b>。
+     * 通过则加入主城解锁集合、存库、整这一格。返回更新后的 {@link GuildWorld}（调用方需更新 registry），
+     * 失败返回 {@code null}（具体原因经 {@link #lastCityUnlockResult}）。
+     */
+    public GuildWorld unlockCityChunk(GuildId guild, int worldChunkX, int worldChunkZ) {
+        GuildWorld gw = guilds.find(guild).orElse(null);
+        if (gw == null) {
+            lastCityUnlockResult = UnlockResult.NO_MANOR;
+            return null;
+        }
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        int lx = worldChunkX - gw.originChunkX();
+        int lz = worldChunkZ - gw.originChunkZ();
+        if (!layout.classify(lx, lz).isMainCity()) {
+            lastCityUnlockResult = UnlockResult.NOT_YOUR_PLOT; // 不在主城范围
+            return null;
+        }
+        int dx = lx, dz = lz; // 主城锚在 cell0 原点 (0,0)，内部偏移即 lx/lz
+        if (gw.isCityUnlocked(dx, dz)) {
+            lastCityUnlockResult = UnlockResult.ALREADY_UNLOCKED;
+            return null;
+        }
+        if (gw.cityUnlockedChunks().size() >= gw.cityQuotaCap(levels.maxGuildLevel())) {
+            lastCityUnlockResult = UnlockResult.NO_QUOTA;
+            return null;
+        }
+        if (!(gw.isCityUnlocked(dx - 1, dz) || gw.isCityUnlocked(dx + 1, dz)
+                || gw.isCityUnlocked(dx, dz - 1) || gw.isCityUnlocked(dx, dz + 1))) {
+            lastCityUnlockResult = UnlockResult.NOT_ADJACENT;
+            return null;
+        }
+        java.util.Set<Integer> nu = new java.util.HashSet<>(gw.cityUnlockedChunks());
+        nu.add(Manor.packOffset(dx, dz));
+        GuildWorld updated = gw.withCityUnlockedChunks(nu);
+        guilds.save(updated);
+        if (prepMode != TerrainPrepMode.NONE) {
+            terrain.prepare(gw.worldName(),
+                    new ChunkRegion(worldChunkX, worldChunkZ, worldChunkX, worldChunkZ), prepMode, true);
+        }
+        lastCityUnlockResult = UnlockResult.SUCCESS;
+        return updated;
+    }
+
+    private volatile UnlockResult lastCityUnlockResult = UnlockResult.SUCCESS;
+
+    /** 上次 {@link #unlockCityChunk} 的结果（命令层据此给玩家提示）。 */
+    public UnlockResult lastCityUnlockResult() {
+        return lastCityUnlockResult;
+    }
+
+    /** 主城剩余可解锁额度（额度上限 − 已解锁数）。 */
+    public int cityRemainingQuota(GuildWorld gw) {
+        return Math.max(0, gw.cityQuotaCap(levels.maxGuildLevel()) - gw.cityUnlockedChunks().size());
+    }
+
+    /**
+     * 管理员<b>设置/增加</b>某公会主城的解锁额度上限（定量 set / 增量 add）。封顶主城 chunk 上限
+     * {@code mainCityMaxChunks²}，下限 0。存进 {@link GuildWorld#cityQuotaOverride}，与公会等级<b>分离</b>。
+     *
+     * @return 设置后的新额度上限并已更新 registry；公会不存在返回 -1
+     */
+    public int setCityQuota(GuildId guild, int amount, boolean add, GuildWorldRegistryUpdater registryUpdater) {
+        GuildWorld gw = guilds.find(guild).orElse(null);
+        if (gw == null) {
+            return -1;
+        }
+        int cap = gw.layout().mainCityMaxChunks() * gw.layout().mainCityMaxChunks();
+        int base = add ? gw.cityQuotaCap(levels.maxGuildLevel()) : 0;
+        int newQuota = Math.min(Math.max(0, base + amount), cap);
+        GuildWorld updated = gw.withCityQuotaOverride(newQuota);
+        guilds.save(updated);
+        if (registryUpdater != null) {
+            registryUpdater.update(updated);
+        }
+        return newQuota;
+    }
+
+    /** 让命令层把更新后的 GuildWorld 写回内存 registry（GuildService 不直接依赖 Bukkit registry）。 */
+    @FunctionalInterface
+    public interface GuildWorldRegistryUpdater {
+        void update(GuildWorld gw);
     }
 
     /**
@@ -212,26 +309,72 @@ public final class GuildService {
         return manor;
     }
 
-    /** 成员退出：释放其庄园 slot（留空缺，下次分配复用，保持螺旋紧凑）。keep flag 为 true 时跳过。 */
-    public void releaseManor(GuildId guild, PlayerRef player) {
-        manors.findByOwner(guild, player).ifPresent(m -> {
-            if (!Flag.KEEP.resolveBool(m.flags())) {
-                manors.delete(guild, m.slot());
-                MembershipChangeListener l = membershipListener;
-                if (l != null) l.onMemberReleased(guild, player.uuid());
-            }
-        });
+    /** {@link #claimManorAt} 的结果。 */
+    public enum ClaimResult {
+        /** 认领成功。 */
+        SUCCESS,
+        /** 脚下不是可认领的地皮格（路/主城/预留外）。 */
+        NOT_PLOT,
+        /** 该 slot 已被占用。 */
+        ALREADY_OWNED,
+        /** 超出公会名额上限（需公会升级扩容）。 */
+        GUILD_FULL
     }
 
-    /** 成员退出（不需事先知道公会）：找到其庄园并释放。keep flag 为 true 时跳过。 */
-    public void releaseManorAnywhere(PlayerRef player) {
-        manors.findByOwnerAnywhere(player).ifPresent(m -> {
+    /**
+     * 玩家<b>自助认领指定 slot</b> 的庄园（多庄园：站在空闲地皮格上认领额外一块）。
+     * 与 {@link #assignManor} 的区别：不走 {@code nextFreeSlot}、不因玩家已有庄园而早退——这正是多庄园所需。
+     *
+     * <p><b>每玩家可拥有数</b>由命令层用权限节点校验（需在线 Player）；此处只校验
+     * slot 合法 + 未被占 + 不超公会名额，并完成创建/整地/扩边界。
+     */
+    public ClaimResult claimManorAt(GuildId guild, PlayerRef player, int slot) {
+        GuildWorld gw = guilds.find(guild).orElse(null);
+        if (gw == null || slot < 0) {
+            return ClaimResult.NOT_PLOT;
+        }
+        if (slot >= effectiveCapacity(gw)) {
+            return ClaimResult.GUILD_FULL; // 该 slot 超出公会名额，需升级公会扩容
+        }
+        if (manors.findBySlot(guild, slot).isPresent()) {
+            return ClaimResult.ALREADY_OWNED;
+        }
+        Manor manor = Manor.create(slot, guild, player).withUnlockedChunks(initialUnlocked(gw));
+        manors.save(manor);
+
+        int newAllocated = Math.max(gw.allocatedSlots(), slot + 1);
+        if (newAllocated != gw.allocatedSlots()) {
+            gw = gw.withAllocatedSlots(newAllocated);
+            guilds.save(gw);
+            worlds.applyBorder(gw); // 边界随分配扩
+        }
+        prepareManorTerrain(gw, manor, true); // 同步整地+铺路：给认领者一块整好的起点
+        MembershipChangeListener l = membershipListener;
+        if (l != null) l.onMemberAssigned(guild, player.uuid());
+        return ClaimResult.SUCCESS;
+    }
+
+    /**
+     * 成员退出：释放其在该公会的<b>全部</b>庄园 slot（多庄园：退会要清掉所有块，否则余下变孤儿泄漏）。
+     * 留空缺，下次分配复用，保持螺旋紧凑。带 keep flag 的庄园跳过（保留）。
+     */
+    public void releaseManor(GuildId guild, PlayerRef player) {
+        boolean released = false;
+        for (Manor m : manors.findAllByOwner(guild, player)) {
             if (!Flag.KEEP.resolveBool(m.flags())) {
-                manors.delete(m.guild(), m.slot());
-                MembershipChangeListener l = membershipListener;
-                if (l != null) l.onMemberReleased(m.guild(), player.uuid());
+                manors.delete(guild, m.slot());
+                released = true;
             }
-        });
+        }
+        if (released) {
+            MembershipChangeListener l = membershipListener;
+            if (l != null) l.onMemberReleased(guild, player.uuid());
+        }
+    }
+
+    /** 成员退出（不需事先知道公会）：定位其所属公会并释放该公会内全部自有庄园。keep flag 跳过。 */
+    public void releaseManorAnywhere(PlayerRef player) {
+        manors.findByOwnerAnywhere(player).ifPresent(m -> releaseManor(m.guild(), player));
     }
 
     /** 解散公会：卸载世界、删除其全部庄园与世界记录。keep=true 的庄园也一并清除（公会都没了，保留无意义）。 */
@@ -251,8 +394,15 @@ public final class GuildService {
      * 由玩家自己开荒/建设（想要干净地基可自行 {@code /gs clear}）。这才是"自己经营自己庄园"的本意。
      */
     public boolean upgradeManor(GuildId guild, PlayerRef player) {
-        guilds.find(guild).orElseThrow(); // 校验世界存在
+        // 旧签名：升该玩家在本公会的庄园（多庄园时为 findByOwner 命中的那块）。命令层多庄园已改传 slot。
         Manor manor = manors.findByOwner(guild, player).orElseThrow();
+        return upgradeManor(guild, manor.slot());
+    }
+
+    /** 升级<b>指定 slot</b> 的庄园（多庄园寻址用）。slot 不存在抛 {@link java.util.NoSuchElementException}。 */
+    public boolean upgradeManor(GuildId guild, int slot) {
+        guilds.find(guild).orElseThrow(); // 校验世界存在
+        Manor manor = manors.findBySlot(guild, slot).orElseThrow();
         if (!levels.canUpgradeManor(manor.level())) { // 庄园只受物理满级限制，与公会等级无关
             return false;
         }
@@ -280,8 +430,15 @@ public final class GuildService {
 
     /** 清空成员当前实占范围的地表建筑（清植被式：清掉自然地面以上的方块）。供 /gs clear 用。 */
     public void clearManor(GuildId guild, PlayerRef player) {
-        GuildWorld gw = guilds.find(guild).orElseThrow();
+        // 旧签名：清该玩家的庄园（多庄园时为 findByOwner 命中的那块）。命令层多庄园已改传 slot。
         Manor manor = manors.findByOwner(guild, player).orElseThrow();
+        clearManor(guild, manor.slot());
+    }
+
+    /** 清空<b>指定 slot</b> 庄园的地表建筑（多庄园寻址：清脚下站的这块）。 */
+    public void clearManor(GuildId guild, int slot) {
+        GuildWorld gw = guilds.find(guild).orElseThrow();
+        Manor manor = manors.findBySlot(guild, slot).orElseThrow();
         LayoutCalculator layout = new LayoutCalculator(gw.layout());
         ChunkRegion active = layout.activeRegion(manor.slot(), manor.level())
                 .shift(gw.originChunkX(), gw.originChunkZ());
@@ -452,16 +609,20 @@ public final class GuildService {
         if (gw == null) {
             return UnlockResult.NO_MANOR;
         }
-        Manor manor = manors.findByOwner(guild, player).orElse(null);
-        if (manor == null) {
-            return UnlockResult.NO_MANOR;
-        }
+        // 按【脚下 chunk 所属 slot】定位庄园（多庄园正确：操作的是站立的这块，而非 owner 的第一块）。
         LayoutCalculator layout = new LayoutCalculator(gw.layout());
         int lx = worldChunkX - gw.originChunkX();
         int lz = worldChunkZ - gw.originChunkZ();
         var c = layout.classify(lx, lz);
-        if (!c.isPlot() || c.slot() != manor.slot()) {
-            return UnlockResult.NOT_YOUR_PLOT; // 站的不是自己庄园格（路/主城/别人地/预留格外）
+        if (!c.isPlot()) {
+            return UnlockResult.NOT_YOUR_PLOT; // 站的不是庄园格（路/主城/预留格外）
+        }
+        Manor manor = manors.findBySlot(guild, c.slot()).orElse(null);
+        if (manor == null) {
+            return UnlockResult.NO_MANOR; // 脚下这块尚无主
+        }
+        if (!manor.owner().equals(player)) {
+            return UnlockResult.NOT_YOUR_PLOT; // 站在别人的庄园上
         }
         ChunkRegion plot = layout.plotRegion(manor.slot());
         int dx = lx - plot.minChunkX();
@@ -469,7 +630,7 @@ public final class GuildService {
         if (manor.isUnlocked(dx, dz)) {
             return UnlockResult.ALREADY_UNLOCKED;
         }
-        if (manor.unlockedChunks().size() >= gw.layout().quotaAtLevel(manor.level(), levels.manorMaxLevel())) {
+        if (manor.unlockedChunks().size() >= manor.quotaCap(gw.layout(), levels.manorMaxLevel())) {
             return UnlockResult.NO_QUOTA;
         }
         if (!(manor.isUnlocked(dx - 1, dz) || manor.isUnlocked(dx + 1, dz)
@@ -489,7 +650,42 @@ public final class GuildService {
 
     /** 该庄园剩余可解锁额度（总额度 − 已解锁数，≥0）。 */
     public int remainingQuota(GuildWorld gw, Manor manor) {
-        return Math.max(0, gw.layout().quotaAtLevel(manor.level(), levels.manorMaxLevel()) - manor.unlockedChunks().size());
+        return Math.max(0, manor.quotaCap(gw.layout(), levels.manorMaxLevel()) - manor.unlockedChunks().size());
+    }
+
+    /**
+     * 管理员<b>设置/增加</b>某玩家庄园的解锁额度上限（定量 set / 增量 add）。一律封顶 <b>chunk 上限</b>
+     * {@code plotChunks²}，下限 0。写入庄园 flags 的额度键，{@link Manor#quotaCap} 即据此为准（覆盖按等级算）。
+     *
+     * @param add true=在当前额度上加 amount；false=直接设为 amount
+     * @return 设置后的新额度上限；庄园不存在返回 -1
+     */
+    public int setManorQuota(GuildId guild, PlayerRef player, int amount, boolean add) {
+        // 旧签名：作用于该玩家命中的那块。命令层多庄园已改传 slot。
+        Manor manor = manors.findByOwner(guild, player).orElse(null);
+        if (manor == null) {
+            return -1;
+        }
+        return setManorQuota(guild, manor.slot(), amount, add);
+    }
+
+    /** 设置/增加<b>指定 slot</b> 庄园的解锁额度上限（多庄园寻址）。庄园不存在返回 -1。 */
+    public int setManorQuota(GuildId guild, int slot, int amount, boolean add) {
+        GuildWorld gw = guilds.find(guild).orElse(null);
+        if (gw == null) {
+            return -1;
+        }
+        Manor manor = manors.findBySlot(guild, slot).orElse(null);
+        if (manor == null) {
+            return -1;
+        }
+        int cap = gw.layout().plotChunks() * gw.layout().plotChunks();
+        int base = add ? manor.quotaCap(gw.layout(), levels.manorMaxLevel()) : 0;
+        int newQuota = Math.min(Math.max(0, base + amount), cap);
+        java.util.Map<String, String> nf = new java.util.HashMap<>(manor.flags());
+        nf.put(Manor.QUOTA_FLAG, String.valueOf(newQuota));
+        manors.save(manor.withFlags(nf));
+        return newQuota;
     }
 
     /** 把庄园当前实占范围（layout 坐标）平移到世界坐标后整地，并把本格道路铺成土径。 */

@@ -58,11 +58,11 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
 
     private static final String ADMIN_PERM = Permissions.ADMIN;
     /** 受 guildshelter.command.<sub> 节点管控的玩家子命令（节点默认放行，见 plugin.yml）。 */
-    private static final Set<String> PLAYER_SUBS = Set.of("home", "spawn", "upgrade", "info",
+    private static final Set<String> PLAYER_SUBS = Set.of("home", "manors", "spawn", "info",
             "trust", "untrust", "member", "deny", "undeny", "list", "visit", "clear", "flag", "card",
             "alias", "sethome", "done", "kick", "near", "rate", "top", "middle",
             "comment", "inbox", "swap", "grant", "merge", "unmerge", "confirm", "help", "desc", "toggle", "template", "sub", "bulletin", "open", "close", "flower", "gift", "board", "move",
-            "citytrust", "cityuntrust", "unlock");
+            "citytrust", "cityuntrust", "unlock", "cityunlock", "claim");
 
     /** 需要确认的危险操作。 */
     private static final Set<String> CONFIRM_REQUIRED = Set.of(
@@ -98,6 +98,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     private final String serverName;
     private final Logger logger;
     private final org.bukkit.plugin.Plugin plugin;
+    private final org.windy.guildshelter.adapter.bukkit.MultiManorSettings multiManor;
 
     public GsCommand(WorldManager worlds, GuildRepository guilds, ManorRepository manors,
                      GuildService service, GuildWorldRegistry registry,
@@ -116,6 +117,35 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         this.serverName = serverName;
         this.logger = logger;
         this.plugin = plugin;
+        this.multiManor = org.windy.guildshelter.adapter.bukkit.MultiManorSettings.fromConfig(plugin);
+    }
+
+    /** 玩家脚下所在庄园格对应的庄园（不论归属；不在任何庄园格内返回空）。多庄园定位骨架。 */
+    private java.util.Optional<Manor> manorAt(Player player) {
+        GuildWorld gw = registry.get(player.getWorld().getName());
+        if (gw == null) {
+            return java.util.Optional.empty();
+        }
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        int lx = (player.getLocation().getBlockX() >> 4) - gw.originChunkX();
+        int lz = (player.getLocation().getBlockZ() >> 4) - gw.originChunkZ();
+        Classification c = layout.classify(lx, lz);
+        if (!c.isPlot()) {
+            return java.util.Optional.empty();
+        }
+        return manors.findBySlot(gw.guild(), c.slot());
+    }
+
+    /**
+     * 解析玩家"当前操作的自己的庄园"：多庄园开启→严格取脚下站的这块（须属于自己）；
+     * 关闭→回退 {@code findByOwnerAnywhere}（单庄园旧语义，零行为变化）。
+     * 编辑/查看类玩家命令（A 类）统一经此定位，是 Stage 1b 迁移的目标入口。
+     */
+    private java.util.Optional<Manor> currentOwnManor(Player player) {
+        if (multiManor.enabled()) {
+            return manorAt(player).filter(m -> m.owner().uuid().equals(player.getUniqueId()));
+        }
+        return manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId()));
     }
 
     /** 设置访问监听器引用（toggle titles 需要）。 */
@@ -171,9 +201,9 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         switch (sub) {
-            case "home" -> { home(sender); return true; }
+            case "home" -> { home(sender, args); return true; }
+            case "manors" -> { manorsList(sender); return true; }
             case "spawn" -> { spawn(sender); return true; }
-            case "upgrade" -> { upgrade(sender); return true; }
             case "info" -> { info(sender); return true; }
             case "trust" -> { trust(sender, args); return true; }
             case "untrust" -> { untrust(sender, args); return true; }
@@ -214,6 +244,8 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             case "citytrust" -> { cityTrust(sender, args, true); return true; }
             case "cityuntrust" -> { cityTrust(sender, args, false); return true; }
             case "unlock" -> { unlock(sender); return true; }
+            case "cityunlock" -> { cityUnlock(sender); return true; }
+            case "claim" -> { claimSelf(sender); return true; }
             case "admin" -> { /* 落到下面的管理分支 */ }
             default -> {
                 sender.sendMessage(Messages.get("usage.player_commands"));
@@ -244,6 +276,8 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             case "export" -> exportData(sender);
             case "fund" -> fund(sender, args);
             case "citywall" -> citywall(sender, args);
+            case "roadpermit" -> roadPermit(sender, args);
+            case "quota" -> quota(sender, args);
             default -> sender.sendMessage(Messages.get("usage.admin"));
         }
         return true;
@@ -252,15 +286,64 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     // ===== 玩家命令（自管模式：以"拥有庄园"判定归属公会）=====
 
     /** /gs home：传送到自己庄园（优先用 sethome 坐标，否则实占中心）。 */
-    private void home(CommandSender sender) {
+    private void home(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Messages.get("error.player_only"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
-        if (manor == null) {
+        PlayerRef ref = PlayerRef.of(player.getUniqueId());
+        Manor any = manors.findByOwnerAnywhere(ref).orElse(null);
+        if (any == null) {
             sender.sendMessage(Messages.get("error.no_manor_hint"));
             return;
+        }
+        java.util.List<Manor> mine = manors.findAllByOwner(any.guild(), ref); // 本公会我的全部庄园
+        Manor manor;
+        if (args.length >= 2 && args[1].equalsIgnoreCase("set")) {
+            // /gs home set：把【脚下站的这块】设为默认 home（清掉其它块的默认标记，保持唯一）
+            Manor here = currentOwnManor(player).orElse(null);
+            if (here == null) {
+                sender.sendMessage("§c请站在你的某块庄园内再 §f/gs home set§c。");
+                return;
+            }
+            for (Manor m : mine) {
+                java.util.Map<String, String> nf = new java.util.HashMap<>(m.flags());
+                if (m.slot() == here.slot()) {
+                    nf.put(Manor.HOME_DEFAULT_FLAG, "true");
+                } else {
+                    nf.remove(Manor.HOME_DEFAULT_FLAG);
+                }
+                if (!nf.equals(m.flags())) {
+                    manors.save(m.withFlags(nf));
+                }
+            }
+            sender.sendMessage("§a✓ 已把庄园 §f#" + here.slot() + " §a设为默认 home（/gs home 直接来这）。");
+            return;
+        }
+        if (args.length >= 2) {
+            // /gs home <slot>：去指定的那块
+            int slot;
+            try {
+                slot = Integer.parseInt(args[1]);
+            } catch (NumberFormatException e) {
+                sender.sendMessage("§cslot 必须是数字（或 §fset §c设默认），用 §f/gs manors §c查看你的庄园。");
+                return;
+            }
+            manor = mine.stream().filter(m -> m.slot() == slot).findFirst().orElse(null);
+            if (manor == null) {
+                sender.sendMessage("§c你没有 §f#" + slot + " §c这块庄园，用 §f/gs manors §c查看。");
+                return;
+            }
+        } else {
+            // 无参：优先去【标记为默认】的那块，否则最小 slot；多块时给提示
+            manor = mine.stream()
+                    .filter(m -> Boolean.parseBoolean(m.flags().getOrDefault(Manor.HOME_DEFAULT_FLAG, "false")))
+                    .findFirst()
+                    .orElseGet(() -> mine.stream().min(java.util.Comparator.comparingInt(Manor::slot)).orElse(any));
+            if (mine.size() > 1) {
+                sender.sendMessage("§7你有 §f" + mine.size() + " §7块庄园，默认去 §f#" + manor.slot()
+                        + "§7。§f/gs home <slot> §7指定，§f/gs home set §7设默认，§f/gs manors §7查看全部。");
+            }
         }
         GuildWorld gw = ensureLoadedWorld(sender, manor.guild());
         if (gw == null) {
@@ -294,6 +377,42 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("success.home_teleported", manor.slot()));
     }
 
+    /** /gs manors：列出自己在本公会的全部庄园（slot / 等级 / 锚点坐标）。多庄园模式下查看与寻址用。 */
+    private void manorsList(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Messages.get("error.player_only"));
+            return;
+        }
+        PlayerRef ref = PlayerRef.of(player.getUniqueId());
+        Manor any = manors.findByOwnerAnywhere(ref).orElse(null);
+        if (any == null) {
+            sender.sendMessage(Messages.get("error.no_manor"));
+            return;
+        }
+        GuildId guild = any.guild();
+        java.util.List<Manor> mine = manors.findAllByOwner(guild, ref).stream()
+                .sorted(java.util.Comparator.comparingInt(Manor::slot)).toList();
+        int limit = multiManor.enabled() ? multiManor.limitFor(player) : 1;
+        String cap = limit == Integer.MAX_VALUE ? "∞" : String.valueOf(limit);
+        sender.sendMessage("§6==== 我的庄园（" + mine.size() + "/" + cap + "）====");
+        GuildWorld gw = guilds.find(guild).orElse(null);
+        LayoutCalculator layout = gw != null ? new LayoutCalculator(gw.layout()) : null;
+        for (Manor m : mine) {
+            String coords = "";
+            if (gw != null) {
+                ChunkRegion active = layout.activeRegion(m.slot(), m.level())
+                        .shift(gw.originChunkX(), gw.originChunkZ());
+                coords = " §7@ §f" + (active.minBlockX() + 8) + ", " + (active.minBlockZ() + 8);
+            }
+            boolean isDefault = Boolean.parseBoolean(m.flags().getOrDefault(Manor.HOME_DEFAULT_FLAG, "false"));
+            sender.sendMessage("§e#" + m.slot() + " §7Lv§f" + m.level() + coords
+                    + (isDefault ? " §6★默认" : "") + " §7→ §f/gs home " + m.slot());
+        }
+        if (multiManor.enabled() && mine.size() < limit) {
+            sender.sendMessage("§7站在空闲地皮上 §f/gs claim §7认领更多。");
+        }
+    }
+
     /** /gs spawn：传送到自己公会的主城。 */
     private void spawn(CommandSender sender) {
         if (!(sender instanceof Player player)) {
@@ -313,29 +432,6 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("success.spawn_teleported"));
     }
 
-    /** /gs upgrade：升级自己的庄园一级（只受物理满级限制，成员自己的事）。 */
-    private void upgrade(CommandSender sender) {
-        if (!(sender instanceof Player player)) {
-            sender.sendMessage(Messages.get("error.player_only"));
-            return;
-        }
-        PlayerRef ref = PlayerRef.of(player.getUniqueId());
-        Manor manor = manors.findByOwnerAnywhere(ref).orElse(null);
-        if (manor == null) {
-            sender.sendMessage(Messages.get("error.no_manor"));
-            return;
-        }
-        int cap = levels.manorMaxLevel();
-        if (service.upgradeManor(manor.guild(), ref)) {
-            Manor now = manors.findByOwnerAnywhere(ref).orElse(manor);
-            sender.sendMessage(Messages.get("success.upgraded", now.level(), cap));
-            // 升级小特效：脚下冒经验值粒子
-            player.getWorld().spawnParticle(org.bukkit.Particle.TOTEM_OF_UNDYING,
-                    player.getLocation().add(0, 1, 0), 20, 0.5, 0.5, 0.5, 0);
-        } else {
-            sender.sendMessage(Messages.get("error.already_max_level", cap));
-        }
-    }
 
     /** /gs unlock：用额度解锁玩家当前站立的 chunk（须在自己庄园内、相邻已解锁、有剩余额度）。 */
     private void unlock(CommandSender sender) {
@@ -344,27 +440,129 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         PlayerRef ref = PlayerRef.of(player.getUniqueId());
-        Manor manor = manors.findByOwnerAnywhere(ref).orElse(null);
-        if (manor == null) {
+        // 公会取自【脚下世界】（多公会下不能用 findByOwnerAnywhere，可能取到别会）。
+        GuildWorld gw = registry.get(player.getWorld().getName());
+        if (gw == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
         }
         int cx = player.getLocation().getBlockX() >> 4;
         int cz = player.getLocation().getBlockZ() >> 4;
-        switch (service.unlockChunk(manor.guild(), ref, cx, cz)) {
+        switch (service.unlockChunk(gw.guild(), ref, cx, cz)) {
             case SUCCESS -> {
-                GuildWorld gw = guilds.find(manor.guild()).orElse(null);
-                Manor now = manors.findByOwnerAnywhere(ref).orElse(manor);
-                int remain = gw != null ? service.remainingQuota(gw, now) : 0;
+                Manor now = manorAt(player).orElse(null);
+                int remain = now != null ? service.remainingQuota(gw, now) : 0;
                 sender.sendMessage("§a✓ 已解锁脚下区块 §7— 剩余额度 §f" + remain);
                 player.getWorld().spawnParticle(org.bukkit.Particle.HAPPY_VILLAGER,
                         player.getLocation().add(0, 1, 0), 15, 0.5, 0.5, 0.5, 0);
             }
             case NOT_YOUR_PLOT -> sender.sendMessage("§c这里不是你的庄园范围，不能解锁。");
             case ALREADY_UNLOCKED -> sender.sendMessage("§e脚下这块已经解锁了。");
-            case NO_QUOTA -> sender.sendMessage("§c额度不足！§7用 §f/gs upgrade §7升级庄园获取更多额度。");
+            case NO_QUOTA -> sender.sendMessage("§c额度不足！§7庄园升级由管理员授予，达成条件后联系管理员提升等级获取更多额度。");
             case NOT_ADJACENT -> sender.sendMessage("§c只能解锁与已有领地§l相邻§r§c的区块（不能飞地）。");
             case NO_MANOR -> sender.sendMessage(Messages.get("error.no_manor"));
+        }
+    }
+
+    /** /gs cityunlock：会长(含副会长)用公会额度解锁脚下的主城 chunk（须在主城、相邻已解锁、有额度）。 */
+    private void cityUnlock(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Messages.get("error.player_only"));
+            return;
+        }
+        GuildWorld gw = registry.get(player.getWorld().getName());
+        if (gw == null) {
+            sender.sendMessage("§c只能在公会营地里解锁主城。");
+            return;
+        }
+        PlayerRef ref = PlayerRef.of(player.getUniqueId());
+        if (!service.isGuildAdmin(ref, gw.guild()) && !player.isOp()) {
+            sender.sendMessage("§c只有会长（或副会长）能解锁主城范围。");
+            return;
+        }
+        int cx = player.getLocation().getBlockX() >> 4;
+        int cz = player.getLocation().getBlockZ() >> 4;
+        GuildWorld updated = service.unlockCityChunk(gw.guild(), cx, cz);
+        switch (service.lastCityUnlockResult()) {
+            case SUCCESS -> {
+                registry.register(updated); // 更新内存注册表，使权限/提示立即生效
+                sender.sendMessage("§a✓ 已解锁脚下主城区块 §7— 剩余额度 §f" + service.cityRemainingQuota(updated));
+                player.getWorld().spawnParticle(org.bukkit.Particle.HAPPY_VILLAGER,
+                        player.getLocation().add(0, 1, 0), 15, 0.5, 0.5, 0.5, 0);
+            }
+            case NOT_YOUR_PLOT -> sender.sendMessage("§c脚下不是主城范围，不能解锁。");
+            case ALREADY_UNLOCKED -> sender.sendMessage("§e脚下这块主城已经解锁了。");
+            case NO_QUOTA -> sender.sendMessage("§c主城额度不足！§7升级公会等级可提升主城解锁额度。");
+            case NOT_ADJACENT -> sender.sendMessage("§c只能解锁与已解锁主城§l相邻§r§c的区块（不能飞地）。");
+            default -> sender.sendMessage("§c解锁失败。");
+        }
+    }
+
+    private org.windy.guildshelter.domain.port.EconomyPort economyCache;
+    private boolean economyResolved;
+
+    /** 懒加载 Vault 经济端口（认领花费等用）；无 Vault 返回 null。 */
+    private org.windy.guildshelter.domain.port.EconomyPort economy() {
+        if (!economyResolved) {
+            economyCache = org.windy.guildshelter.adapter.bukkit.VaultEconomy.tryCreate(logger);
+            economyResolved = true;
+        }
+        return economyCache;
+    }
+
+    /** /gs claim：多庄园模式下，站在空闲地皮格上自助认领额外一块庄园（数量受权限节点 guildshelter.manors.&lt;N&gt; 封顶）。 */
+    private void claimSelf(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Messages.get("error.player_only"));
+            return;
+        }
+        if (!multiManor.enabled()) {
+            sender.sendMessage("§c本服未开启多庄园自助认领。");
+            return;
+        }
+        GuildWorld gw = registry.get(player.getWorld().getName());
+        if (gw == null) {
+            sender.sendMessage("§c请站在你公会世界的空闲地皮格上认领。");
+            return;
+        }
+        // 解析脚下 slot
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        int lx = (player.getLocation().getBlockX() >> 4) - gw.originChunkX();
+        int lz = (player.getLocation().getBlockZ() >> 4) - gw.originChunkZ();
+        Classification c = layout.classify(lx, lz);
+        if (!c.isPlot()) {
+            sender.sendMessage("§c脚下不是可认领的地皮格（请站到一块空闲地皮上）。");
+            return;
+        }
+        PlayerRef ref = PlayerRef.of(player.getUniqueId());
+        // 每玩家上限（权限节点 + config 兜底）
+        int limit = multiManor.limitFor(player);
+        int owned = manors.countByOwner(gw.guild(), ref);
+        if (owned >= limit) {
+            String cap = limit == Integer.MAX_VALUE ? "∞" : String.valueOf(limit);
+            sender.sendMessage("§c你在本公会的庄园数已达上限（" + owned + "/" + cap + "）。");
+            return;
+        }
+        // 扣费（可选，需 Vault）
+        double cost = multiManor.claimCost();
+        org.windy.guildshelter.domain.port.EconomyPort eco = cost > 0 ? economy() : null;
+        if (cost > 0 && (eco == null || !eco.has(ref, cost))) {
+            sender.sendMessage("§c认领需要 " + (eco != null ? eco.format(cost) : cost) + "，余额不足。");
+            return;
+        }
+        switch (service.claimManorAt(gw.guild(), ref, c.slot())) {
+            case SUCCESS -> {
+                if (cost > 0 && eco != null) {
+                    eco.withdraw(ref, cost);
+                }
+                registry.register(guilds.find(gw.guild()).orElse(gw)); // allocatedSlots/边界可能变，刷新内存
+                sender.sendMessage("§a✓ 已认领脚下地皮 §f#" + c.slot()
+                        + (cost > 0 && eco != null ? " §7（扣除 " + eco.format(cost) + "）" : "") + "§a。");
+                logMap(gw.guild());
+            }
+            case ALREADY_OWNED -> sender.sendMessage("§e这块地皮已经有主了。");
+            case GUILD_FULL -> sender.sendMessage("§c这块超出公会名额上限，需会长升级公会扩容。");
+            case NOT_PLOT -> sender.sendMessage("§c脚下不是可认领的地皮格。");
         }
     }
 
@@ -374,7 +572,8 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.player_only"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        // 多庄园开启→看脚下站的这块（须属于自己）；关闭→旧语义查唯一庄园。Stage 1b 样板迁移点。
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -394,7 +593,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Messages.get("info.plot_line", title, manor.level(), levels.manorMaxLevel(), side, side,
                 Flag.DONE.resolveBool(manor.flags()) ? Messages.get("info.done_status") : Messages.get("info.building_status")));
         int unlocked = manor.unlockedChunks().size();
-        int quota = gw.layout().quotaAtLevel(manor.level(), levels.manorMaxLevel());
+        int quota = manor.quotaCap(gw.layout(), levels.manorMaxLevel());
         sender.sendMessage(Messages.get("info.unlock_line", unlocked, unlocked, quota, quota - unlocked));
         sender.sendMessage(Messages.get("info.trusted_line", sizeOrNone(manor.coBuilders()), sizeOrNone(manor.members()), sizeOrNone(manor.denied())));
         String desc = Flag.DESCRIPTION.resolveString(manor.flags());
@@ -428,7 +627,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("usage.trust"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -497,7 +696,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("usage.untrust"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -522,7 +721,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("usage.member"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -566,7 +765,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("usage.deny"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -635,7 +834,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("usage.undeny"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -716,13 +915,12 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.player_only"));
             return;
         }
-        PlayerRef ref = PlayerRef.of(player.getUniqueId());
-        Manor manor = manors.findByOwnerAnywhere(ref).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
         }
-        service.clearManor(manor.guild(), ref);
+        service.clearManor(manor.guild(), manor.slot()); // 按 slot：多庄园清脚下这块
         sender.sendMessage(Messages.get("success.cleared", manor.slot()));
     }
 
@@ -733,7 +931,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         PlayerRef ref = PlayerRef.of(player.getUniqueId());
-        Manor manor = manors.findByOwnerAnywhere(ref).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor_for_command"));
             return;
@@ -896,7 +1094,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.player_only"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -926,7 +1124,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.player_only"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -952,7 +1150,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.player_only"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -978,7 +1176,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("usage.kick"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -1043,7 +1241,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         helpLine(sender, "sethome"); helpLine(sender, "visit");
         sender.sendMessage(Messages.get("info.help_cat_info"));
         helpLine(sender, "info"); helpLine(sender, "card"); helpLine(sender, "near");
-        helpLine(sender, "list"); helpLine(sender, "board"); helpLine(sender, "top");
+        helpLine(sender, "list"); helpLine(sender, "manors"); helpLine(sender, "board"); helpLine(sender, "top");
         sender.sendMessage(Messages.get("info.help_cat_people"));
         helpLine(sender, "trust"); helpLine(sender, "untrust"); helpLine(sender, "member");
         helpLine(sender, "deny"); helpLine(sender, "undeny"); helpLine(sender, "kick");
@@ -1055,7 +1253,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         helpLine(sender, "comment"); helpLine(sender, "inbox"); helpLine(sender, "rate");
         helpLine(sender, "flower"); helpLine(sender, "gift"); helpLine(sender, "bulletin");
         sender.sendMessage(Messages.get("info.help_cat_advanced"));
-        helpLine(sender, "upgrade"); helpLine(sender, "clear"); helpLine(sender, "swap");
+        helpLine(sender, "unlock"); helpLine(sender, "claim"); helpLine(sender, "clear"); helpLine(sender, "swap");
         helpLine(sender, "merge"); helpLine(sender, "unmerge"); helpLine(sender, "move");
         helpLine(sender, "template"); helpLine(sender, "sub"); helpLine(sender, "confirm");
         if (isAdmin) {
@@ -1084,7 +1282,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     private static final Map<String, String> COMMAND_HELP = new java.util.LinkedHashMap<>();
     static {
         // ── 传送 ──
-        COMMAND_HELP.put("home", "传送到自己庄园（优先 sethome 坐标）");
+        COMMAND_HELP.put("home", "传送到自己庄园（/gs home <slot> 指定，/gs home set 设默认，/gs manors 查看）");
         COMMAND_HELP.put("spawn", "传送到公会主城");
         COMMAND_HELP.put("middle", "传送到庄园正中心（无视 sethome）");
         COMMAND_HELP.put("sethome", "把当前位置设为 home 传送点");
@@ -1121,8 +1319,10 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         COMMAND_HELP.put("gift <玩家>", "把手持物品送给同世界的玩家");
         COMMAND_HELP.put("bulletin <set|show|clear>", "公会公告板管理");
         // ── 高级 ──
-        COMMAND_HELP.put("upgrade", "升级庄园一级（提升解锁额度上限）");
         COMMAND_HELP.put("unlock", "用额度解锁脚下区块（须与已有领地相邻）");
+        COMMAND_HELP.put("cityunlock", "会长用公会额度解锁脚下主城区块");
+        COMMAND_HELP.put("claim", "站在空闲地皮上认领额外一块庄园（多庄园模式，数量受权限封顶）");
+        COMMAND_HELP.put("manors", "列出你的全部庄园（slot/等级/坐标）");
         COMMAND_HELP.put("clear", "清空自己庄园的地表建筑（需确认）");
         COMMAND_HELP.put("swap <玩家>", "与对方互换庄园 slot（需确认）");
         COMMAND_HELP.put("merge <slot>", "合并相邻庄园到自己的庄园（需确认）");
@@ -1137,7 +1337,10 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         COMMAND_HELP.put("admin claim <公会>", "给自己分配一块庄园");
         COMMAND_HELP.put("admin fill <公会> <数量>", "批量填充测试庄园");
         COMMAND_HELP.put("admin map <公会>", "输出网格图到控制台");
-        COMMAND_HELP.put("admin upgrade-manor <公会>", "升级自己庄园一级");
+        COMMAND_HELP.put("admin upgrade-manor <公会> <玩家> [slot]", "给指定玩家庄园升一级（多庄园用 slot 指定哪块）");
+        COMMAND_HELP.put("admin roadpermit <玩家> <公会> <时长>", "给玩家限时路权（7d/12h/30m，0=撤销）");
+        COMMAND_HELP.put("admin quota <公会> <玩家> <set|add> <数量> [slot]", "设/加玩家庄园解锁额度（多庄园用 slot 指定哪块）");
+        COMMAND_HELP.put("admin quota city <公会> <set|add> <数量>", "设/加公会主城解锁额度（与公会等级分离）");
         COMMAND_HELP.put("admin upgrade-guild <公会>", "升级公会等级（扩名额+边界）");
         COMMAND_HELP.put("admin delete <公会>", "卸载公会营地");
         COMMAND_HELP.put("admin worlds", "列出所有已加载世界");
@@ -1159,7 +1362,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.player_only"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -1208,7 +1411,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.player_only"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -1351,7 +1554,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.player_only"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null || !manor.owner().equals(PlayerRef.of(player.getUniqueId()))) {
             sender.sendMessage(Messages.get("error.only_owner_sub"));
             return;
@@ -1644,7 +1847,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.player_only"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) { sender.sendMessage(Messages.get("error.no_manor")); return; }
         long durationMs = 3600_000L; // 默认 1 小时
         if (args.length >= 2) {
@@ -1686,7 +1889,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.player_only"));
             return;
         }
-        Manor manor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+        Manor manor = currentOwnManor(player).orElse(null);
         if (manor == null) { sender.sendMessage(Messages.get("error.no_manor")); return; }
         String key = manor.guild().value() + ":" + manor.slot();
         if (openPlots.remove(key) != null) {
@@ -1850,13 +2053,13 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.only_player_regen"));
             return;
         }
-        PlayerRef ref = PlayerRef.of(player.getUniqueId());
-        Manor manor = manors.findByOwnerAnywhere(ref).orElse(null);
+        // 管理员重置【脚下所在】庄园（不论归属，与 admin 语义一致）。
+        Manor manor = manorAt(player).orElse(null);
         if (manor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
         }
-        service.clearManor(manor.guild(), ref);
+        service.clearManor(manor.guild(), manor.slot());
         sender.sendMessage(Messages.get("success.regen", manor.slot()));
     }
 
@@ -1904,6 +2107,76 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             cache.remove(guild, targetId);
             sender.sendMessage("§e已撤销 §f" + args[1] + " §e的主城建造信任。");
         }
+    }
+
+    /**
+     * /gs admin roadpermit &lt;玩家&gt; &lt;公会&gt; &lt;时长&gt;：给指定玩家在某营地授予<b>限时路权</b>（可在路上建造/交互）。
+     * 时长格式：{@code 7d}/{@code 12h}/{@code 30m}/纯数字(分钟)；用 {@code 0} 或 {@code revoke} 撤销。到期自动失效。
+     */
+    private void roadPermit(CommandSender sender, String[] args) {
+        if (args.length < 4) {
+            sender.sendMessage("§e用法: /gs admin roadpermit <玩家> <公会> <时长|0>");
+            sender.sendMessage("§7时长例: §f7d§7(天) §f12h§7(时) §f30m§7(分) §f60§7(分)；§f0§7 或 §frevoke§7 撤销");
+            return;
+        }
+        GuildId guild = new GuildId(args[3]);
+        if (guilds.find(guild).isEmpty()) {
+            sender.sendMessage(Messages.get("error.guild_not_exist", guild.value()));
+            return;
+        }
+        var cache = org.windy.guildshelter.GuildShelterPlugin.roadPermitCache();
+        if (cache == null) {
+            sender.sendMessage("§c路权功能未就绪。");
+            return;
+        }
+        org.bukkit.OfflinePlayer target = Bukkit.getOfflinePlayer(args[2]);
+        java.util.UUID targetId = target.getUniqueId();
+        String dur = args[4].toLowerCase();
+        // 撤销
+        if (dur.equals("0") || dur.equals("revoke") || dur.equals("remove")) {
+            cache.revoke(guild, targetId);
+            sender.sendMessage("§e已撤销 §f" + args[2] + " §e在 §f" + guild.value() + " §e的路权。");
+            return;
+        }
+        long millis = parseDurationMillis(dur);
+        if (millis <= 0) {
+            sender.sendMessage("§c无法识别时长: §f" + args[4] + " §7（例: 7d / 12h / 30m / 60）");
+            return;
+        }
+        long expireAt = System.currentTimeMillis() + millis;
+        cache.grant(guild, targetId, expireAt);
+        sender.sendMessage("§a已给 §f" + args[2] + " §a授予 §f" + guild.value()
+                + " §a路权，§7有效至 §f" + new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm").format(new java.util.Date(expireAt)));
+        org.bukkit.entity.Player online = target.getPlayer();
+        if (online != null) {
+            online.sendMessage("§a✓ 你获得了 §f" + guild.value() + " §a营地的限时路权（可在路上建造），§7有效至 §f"
+                    + new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm").format(new java.util.Date(expireAt)));
+        }
+    }
+
+    /** 解析时长：{@code 7d}/{@code 12h}/{@code 30m}/{@code 90s}/纯数字(分钟) → 毫秒；无法解析返回 0。 */
+    private static long parseDurationMillis(String s) {
+        if (s == null || s.isBlank()) {
+            return 0;
+        }
+        char unit = s.charAt(s.length() - 1);
+        String num = Character.isDigit(unit) ? s : s.substring(0, s.length() - 1);
+        long n;
+        try {
+            n = Long.parseLong(num.trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+        if (n <= 0) {
+            return 0;
+        }
+        return switch (unit) {
+            case 'd' -> n * 24 * 60 * 60 * 1000L;
+            case 'h' -> n * 60 * 60 * 1000L;
+            case 'm' -> n * 60 * 1000L;
+            case 's' -> n * 1000L;
+            default -> n * 60 * 1000L; // 纯数字 = 分钟
+        };
     }
 
     /** /gs admin citywall &lt;公会&gt;：给已建好的公会补铺主城环路（+ 围墙若启用），修旧世界"路被吞"。 */
@@ -2250,7 +2523,8 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         PlayerRef ref = PlayerRef.of(player.getUniqueId());
-        Manor myManor = manors.findByOwnerAnywhere(ref).orElse(null);
+        // 多庄园：交换【脚下站的这块】（确认时解析）。单庄园等价旧行为。
+        Manor myManor = currentOwnManor(player).orElse(null);
         if (myManor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -2279,10 +2553,14 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         // 但都是 upsert，不会丢数据，最多 slot 对不上需要手动修。
         int mySlot = myManor.slot();
         int theirSlot = targetManor.slot();
+        // 保留 unlockedChunks（解锁偏移相对各自 plot 原点，同形 plot 区换 slot 后仍有效）——
+        // 否则交换会清空双方的解锁/额度进度。
         Manor newMine = new Manor(theirSlot, myManor.guild(), ref, myManor.level(),
-                myManor.coBuilders(), myManor.members(), myManor.denied(), myManor.flags());
+                myManor.coBuilders(), myManor.members(), myManor.denied(), myManor.flags(),
+                myManor.unlockedChunks());
         Manor newTheirs = new Manor(mySlot, targetManor.guild(), targetRef, targetManor.level(),
-                targetManor.coBuilders(), targetManor.members(), targetManor.denied(), targetManor.flags());
+                targetManor.coBuilders(), targetManor.members(), targetManor.denied(), targetManor.flags(),
+                targetManor.unlockedChunks());
         try {
             manors.save(newMine);
             manors.save(newTheirs);
@@ -2308,29 +2586,52 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("usage.grant"));
             return;
         }
-        Manor myManor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
-        if (myManor == null) {
-            sender.sendMessage(Messages.get("error.not_in_any_world"));
-            return;
-        }
         Player target = Bukkit.getPlayer(args[1]);
         if (target == null || !target.isOnline()) {
             sender.sendMessage(Messages.get("error.player_offline", args[1]));
             return;
         }
         PlayerRef targetRef = PlayerRef.of(target.getUniqueId());
-        GuildId guild = myManor.guild();
-        // 检查目标是否已有该公会的庄园
-        if (manors.findByOwner(guild, targetRef).isPresent()) {
-            sender.sendMessage(Messages.get("error.target_has_manor", target.getName(), ""));
+        // 公会优先取 admin【脚下世界】；否则回退其自己庄园所属公会。
+        GuildWorld gw = registry.get(player.getWorld().getName());
+        GuildId guild;
+        if (gw != null) {
+            guild = gw.guild();
+        } else {
+            Manor myManor = manors.findByOwnerAnywhere(PlayerRef.of(player.getUniqueId())).orElse(null);
+            if (myManor == null) {
+                sender.sendMessage(Messages.get("error.not_in_any_world"));
+                return;
+            }
+            guild = myManor.guild();
+        }
+        if (!multiManor.enabled()) {
+            // 单庄园：一人一块，目标已有则拒。
+            if (manors.findByOwner(guild, targetRef).isPresent()) {
+                sender.sendMessage(Messages.get("error.target_has_manor", target.getName(), ""));
+                return;
+            }
+            try {
+                Manor assigned = service.assignManor(guild, targetRef);
+                sender.sendMessage(Messages.get("success.grant", target.getName()));
+                org.windy.guildshelter.GuildShelterPlugin.sendWelcome(target, guild.value(), assigned.slot());
+            } catch (GuildFullException e) {
+                sender.sendMessage(Messages.get("error.guild_full", e.capacity()));
+            }
             return;
         }
-        try {
-            Manor assigned = service.assignManor(guild, targetRef);
-            sender.sendMessage(Messages.get("success.grant", target.getName()));
-            org.windy.guildshelter.GuildShelterPlugin.sendWelcome(target, guild.value(), assigned.slot());
-        } catch (GuildFullException e) {
-            sender.sendMessage(Messages.get("error.guild_full", e.capacity()));
+        // 多庄园：管理员给目标追加一块（认领下一个空闲 slot，绕过自助上限）。
+        int slot = manors.nextFreeSlot(guild);
+        switch (service.claimManorAt(guild, targetRef, slot)) {
+            case SUCCESS -> {
+                sender.sendMessage(Messages.get("success.grant", target.getName()));
+                org.windy.guildshelter.GuildShelterPlugin.sendWelcome(target, guild.value(), slot);
+            }
+            case GUILD_FULL -> {
+                GuildWorld g2 = guilds.find(guild).orElse(null);
+                sender.sendMessage(Messages.get("error.guild_full", g2 != null ? service.effectiveCapacity(g2) : 0));
+            }
+            default -> sender.sendMessage("§c认领失败（该格已占或非地皮）。");
         }
     }
 
@@ -2345,7 +2646,8 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         PlayerRef ref = PlayerRef.of(player.getUniqueId());
-        Manor myManor = manors.findByOwnerAnywhere(ref).orElse(null);
+        // 多庄园：把目标 slot 合并进【脚下站的这块】（可合并自己相邻的两块地）。单庄园等价旧行为。
+        Manor myManor = currentOwnManor(player).orElse(null);
         if (myManor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -2410,8 +2712,8 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.player_only"));
             return;
         }
-        PlayerRef ref = PlayerRef.of(player.getUniqueId());
-        Manor myManor = manors.findByOwnerAnywhere(ref).orElse(null);
+        // 多庄园：取消【脚下站的这块】的合并。单庄园等价旧行为。
+        Manor myManor = currentOwnManor(player).orElse(null);
         if (myManor == null) {
             sender.sendMessage(Messages.get("error.no_manor"));
             return;
@@ -2770,13 +3072,20 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     }
 
     /** 升级发令玩家在该公会的庄园一级（成员自己的事，只受物理满级限制），升级后对新扩范围整地。 */
-    private void upgradeManor(CommandSender sender, String[] args) {
-        if (!(sender instanceof Player player)) {
-            sender.sendMessage(Messages.get("error.only_player_upgrade"));
+    /**
+     * /gs admin quota &lt;公会&gt; &lt;玩家&gt; &lt;set|add&gt; &lt;数量&gt;：管理员设置(定量)/增加(增量)某玩家庄园的解锁额度上限。
+     * 一律封顶 chunk 上限(满级整块 plotChunks²)。
+     */
+    private void quota(CommandSender sender, String[] args) {
+        // 主城额度：/gs admin quota city <公会> <set|add> <数量>
+        if (args.length >= 3 && args[2].equalsIgnoreCase("city")) {
+            cityQuota(sender, args);
             return;
         }
-        if (args.length < 3) {
-            sender.sendMessage(Messages.get("usage.admin_upgrade_manor"));
+        if (args.length < 6) {
+            sender.sendMessage("§e用法(庄园): /gs admin quota <公会> <玩家> <set|add> <数量> [slot]");
+            sender.sendMessage("§e用法(主城): /gs admin quota city <公会> <set|add> <数量>");
+            sender.sendMessage("§7set=直接设为该值，add=在当前额度上增加；自动封顶上限。slot 用于玩家多庄园时指定哪块");
             return;
         }
         GuildId guild = new GuildId(args[2]);
@@ -2784,18 +3093,147 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.guild_not_exist", guild.value()));
             return;
         }
-        int cap = levels.manorMaxLevel();
-        try {
-            boolean ok = service.upgradeManor(guild, PlayerRef.of(player.getUniqueId()));
-            if (ok) {
-                Manor m = service.assignManor(guild, PlayerRef.of(player.getUniqueId())); // 幂等读回当前庄园
-                sender.sendMessage(Messages.get("success.upgraded", m.level(), cap));
-            } else {
-                sender.sendMessage(Messages.get("error.already_max_level", cap));
-            }
-        } catch (NoSuchElementException e) {
-            sender.sendMessage(Messages.get("error.no_manor_in_guild", guild.value()));
+        String mode = args[4].toLowerCase();
+        boolean add;
+        if (mode.equals("set")) {
+            add = false;
+        } else if (mode.equals("add")) {
+            add = true;
+        } else {
+            sender.sendMessage("§c模式必须是 §fset §c或 §fadd§c。");
+            return;
         }
+        int amount;
+        try {
+            amount = Integer.parseInt(args[5].trim());
+        } catch (NumberFormatException e) {
+            sender.sendMessage("§c数量必须是整数: §f" + args[5]);
+            return;
+        }
+        org.bukkit.OfflinePlayer target = Bukkit.getOfflinePlayer(args[3]);
+        PlayerRef ref = PlayerRef.of(target.getUniqueId());
+        Integer slot = resolveTargetSlot(sender, guild, ref, args, 6, args[3]);
+        if (slot == null) {
+            return; // 错误信息已在 resolveTargetSlot 内发出
+        }
+        int newQuota = service.setManorQuota(guild, slot, amount, add);
+        if (newQuota < 0) {
+            sender.sendMessage("§c玩家 " + args[3] + " 在公会 " + guild.value() + " 没有庄园。");
+            return;
+        }
+        sender.sendMessage("§a✓ §f" + args[3] + " §a的庄园 §7#" + slot + " §a额度已" + (add ? "增加" : "设为")
+                + " §7→ 当前上限 §f" + newQuota + " §7格");
+        org.bukkit.entity.Player online = target.getPlayer();
+        if (online != null) {
+            online.sendMessage("§a你的庄园解锁额度上限已更新为 §f" + newQuota + " §a格，走到想要的区块 §f/gs unlock §a扩张。");
+        }
+    }
+
+    /** /gs admin quota city &lt;公会&gt; &lt;set|add&gt; &lt;数量&gt;：设置/增加某公会主城的解锁额度（与公会等级分离）。 */
+    private void cityQuota(CommandSender sender, String[] args) {
+        if (args.length < 6) {
+            sender.sendMessage("§e用法: /gs admin quota city <公会> <set|add> <数量>");
+            return;
+        }
+        GuildId guild = new GuildId(args[3]);
+        if (guilds.find(guild).isEmpty()) {
+            sender.sendMessage(Messages.get("error.guild_not_exist", guild.value()));
+            return;
+        }
+        String mode = args[4].toLowerCase();
+        boolean add;
+        if (mode.equals("set")) {
+            add = false;
+        } else if (mode.equals("add")) {
+            add = true;
+        } else {
+            sender.sendMessage("§c模式必须是 §fset §c或 §fadd§c。");
+            return;
+        }
+        int amount;
+        try {
+            amount = Integer.parseInt(args[5].trim());
+        } catch (NumberFormatException e) {
+            sender.sendMessage("§c数量必须是整数: §f" + args[5]);
+            return;
+        }
+        int newQuota = service.setCityQuota(guild, amount, add, registry::register); // 同步内存 registry
+        if (newQuota < 0) {
+            sender.sendMessage(Messages.get("error.guild_not_exist", guild.value()));
+            return;
+        }
+        sender.sendMessage("§a✓ 公会 §f" + guild.value() + " §a的主城额度已" + (add ? "增加" : "设为")
+                + " §7→ 当前上限 §f" + newQuota + " §7格（会长用 /gs cityunlock 解锁）");
+    }
+
+    /** /gs admin upgrade-manor &lt;公会&gt; &lt;玩家&gt; [slot]：管理员给指定玩家的庄园升一级（多庄园用 slot 指定哪块）。 */
+    private void upgradeManor(CommandSender sender, String[] args) {
+        if (args.length < 4) {
+            sender.sendMessage("§e用法: /gs admin upgrade-manor <公会> <玩家> [slot]");
+            return;
+        }
+        GuildId guild = new GuildId(args[2]);
+        if (guilds.find(guild).isEmpty()) {
+            sender.sendMessage(Messages.get("error.guild_not_exist", guild.value()));
+            return;
+        }
+        org.bukkit.OfflinePlayer target = Bukkit.getOfflinePlayer(args[3]);
+        PlayerRef ref = PlayerRef.of(target.getUniqueId());
+        Integer slot = resolveTargetSlot(sender, guild, ref, args, 4, args[3]);
+        if (slot == null) {
+            return; // 错误信息已在 resolveTargetSlot 内发出
+        }
+        int cap = levels.manorMaxLevel();
+        if (service.upgradeManor(guild, slot)) {
+            Manor m = manors.findBySlot(guild, slot).orElseThrow();
+            sender.sendMessage("§a✓ 已给 §f" + args[3] + " §a的庄园 §7#" + slot + " §a升级 → §fLv" + m.level()
+                    + "§7/§f" + cap + " §7(额度上限已提升)");
+            org.bukkit.entity.Player online = target.getPlayer();
+            if (online != null) {
+                online.sendMessage(Messages.get("success.upgraded", m.level(), cap));
+            }
+        } else {
+            sender.sendMessage(Messages.get("error.already_max_level", cap));
+        }
+    }
+
+    /**
+     * 解析管理员命令里"作用于某玩家的哪一块庄园"的 slot：
+     * <ul>
+     *   <li>{@code args[slotArgIdx]} 给了 slot → 校验该 slot 存在且属于该玩家；</li>
+     *   <li>没给 → 该玩家在本公会只有 1 块则用之；0 块报错；多块则列出 slot 要求指定。</li>
+     * </ul>
+     * 失败时已发提示并返回 {@code null}。
+     */
+    private Integer resolveTargetSlot(CommandSender sender, GuildId guild, PlayerRef owner,
+                                      String[] args, int slotArgIdx, String playerName) {
+        if (args.length > slotArgIdx) {
+            int slot;
+            try {
+                slot = Integer.parseInt(args[slotArgIdx]);
+            } catch (NumberFormatException e) {
+                sender.sendMessage("§cslot 必须是数字。");
+                return null;
+            }
+            Manor m = manors.findBySlot(guild, slot).orElse(null);
+            if (m == null || !m.owner().equals(owner)) {
+                sender.sendMessage("§c庄园 #" + slot + " 不存在或不属于 " + playerName + "。");
+                return null;
+            }
+            return slot;
+        }
+        java.util.List<Manor> owned = manors.findAllByOwner(guild, owner);
+        if (owned.isEmpty()) {
+            sender.sendMessage("§c玩家 " + playerName + " 在公会 " + guild.value() + " 没有庄园。");
+            return null;
+        }
+        if (owned.size() > 1) {
+            String slots = owned.stream().map(m -> "#" + m.slot())
+                    .collect(java.util.stream.Collectors.joining(" "));
+            sender.sendMessage("§e" + playerName + " 有多块庄园，请在末尾指定 slot：§f" + slots);
+            return null;
+        }
+        return owned.get(0).slot();
     }
 
     /** 测试用：给随机 UUID 批量分配 n 块庄园，把网格填出来便于观察分布（满了即停）。 */
@@ -2846,8 +3284,36 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Messages.get("error.guild_not_exist", guild.value()));
             return;
         }
-        logMap(guild);
-        sender.sendMessage(Messages.get("success.map"));
+        // 玩家执行 → 聊天栏发彩色方块地图（仿 HuskTowns）；控制台始终留 ASCII 版便于排查。
+        if (sender instanceof Player player) {
+            sendColoredMap(player, guild);
+        } else {
+            logMap(guild);
+            sender.sendMessage(Messages.get("success.map"));
+        }
+    }
+
+    /** 给玩家聊天栏发彩色方块地图；若玩家正站在该公会营地里，则在图上高亮其当前所在 chunk。 */
+    private void sendColoredMap(Player player, GuildId guild) {
+        GuildWorld gw = guilds.find(guild).orElse(null);
+        if (gw == null) {
+            return;
+        }
+        Set<Integer> occupied = new HashSet<>();
+        for (Manor m : manors.findAll(guild)) {
+            occupied.add(m.slot());
+        }
+        int capacity = service.effectiveCapacity(gw);
+        LayoutCalculator layout = new LayoutCalculator(gw.layout());
+        int cityChunks = gw.layout().cityChunksAtLevel(gw.guildLevel(), levels.maxGuildLevel());
+        int hereX = Integer.MIN_VALUE, hereZ = Integer.MIN_VALUE;
+        if (player.getWorld().getName().equals(gw.worldName())) {
+            hereX = (player.getLocation().getBlockX() >> 4) - gw.originChunkX(); // 布局坐标
+            hereZ = (player.getLocation().getBlockZ() >> 4) - gw.originChunkZ();
+        }
+        for (String line : GridAsciiMap.renderColored(layout, gw, occupied, capacity, cityChunks, hereX, hereZ)) {
+            player.sendMessage(line);
+        }
     }
 
     /** 读取当前实际庄园占用，渲染 ASCII 网格图并逐行打到控制台日志。 */
@@ -2955,17 +3421,27 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         List<String> out = new ArrayList<>();
         if (args.length == 1) {
-            for (String s : new String[]{"home", "spawn", "upgrade", "info", "trust", "untrust",
+            for (String s : new String[]{"home", "manors", "spawn", "unlock", "cityunlock", "claim", "info", "trust", "untrust",
                     "member", "deny", "undeny", "list", "visit", "clear", "flag", "card",
                     "alias", "sethome", "done", "kick", "near", "rate", "top", "middle",
                     "comment", "inbox", "swap", "grant", "merge", "unmerge", "confirm",
                     "help", "desc", "toggle", "template", "sub", "bulletin", "open", "close",
-                    "flower", "gift", "board", "move", "admin"}) {
+                    "flower", "gift", "board", "move", "admin", "citytrust", "cityuntrust"}) {
                 out.add(s);
             }
         } else if (args.length == 2) {
             String sub = args[0].toLowerCase();
             switch (sub) {
+                case "home" -> {
+                    // 补全 set + 自己的 slot（多庄园寻址）
+                    out.add("set");
+                    if (sender instanceof Player p) {
+                        PlayerRef r = PlayerRef.of(p.getUniqueId());
+                        manors.findByOwnerAnywhere(r).ifPresent(any ->
+                                manors.findAllByOwner(any.guild(), r)
+                                        .forEach(m -> out.add(String.valueOf(m.slot()))));
+                    }
+                }
                 case "flag" -> { out.add("set"); out.add("unset"); }
                 case "member" -> { out.add("add"); out.add("remove"); }
                 case "toggle" -> { out.add("titles"); }
@@ -2983,7 +3459,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                     if (sender.isOp() || Permissions.hasAdminPerm(sender, Permissions.ADMIN)) {
                         out.addAll(java.util.List.of("create", "tp", "claim", "fill", "map", "upgrade-manor",
                                 "upgrade-guild", "delete", "worlds", "whereami", "reload", "setowner",
-                                "purge", "regen", "export", "fund", "citywall"));
+                                "purge", "regen", "export", "fund", "citywall", "roadpermit", "quota"));
                     }
                 }
                 default -> {
@@ -3063,7 +3539,10 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                 String action = args[1].toLowerCase();
                 if (action.equals("create")) {
                     for (TerrainPrepMode m : TerrainPrepMode.values()) out.add(m.name());
-                } else if (action.equals("setowner")) {
+                } else if (action.equals("setowner") || action.equals("upgrade-manor")) {
+                    for (Player p : Bukkit.getOnlinePlayers()) out.add(p.getName());
+                } else if (action.equals("quota")) {
+                    out.add("city");
                     for (Player p : Bukkit.getOnlinePlayers()) out.add(p.getName());
                 } else if (action.equals("fund")) {
                     out.addAll(java.util.List.of("check", "add", "set"));
@@ -3091,7 +3570,33 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
                         default -> {}
                     }
                 }
+            } else if (sub.equals("admin")) {
+                String action = args[1].toLowerCase();
+                if (action.equals("upgrade-manor")) {
+                    out.addAll(targetSlots(args[2], args[3])); // [slot]：目标玩家在该公会的庄园
+                } else if (action.equals("quota")) {
+                    out.addAll(java.util.List.of("set", "add"));
+                }
             }
+        } else if (args.length == 7) {
+            // /gs admin quota <公会> <玩家> <set|add> <数量> [slot]
+            if (args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("quota")
+                    && !args[2].equalsIgnoreCase("city")) {
+                out.addAll(targetSlots(args[2], args[3]));
+            }
+        }
+        return out;
+    }
+
+    /** Tab 补全用：某玩家在某公会拥有的全部庄园 slot（字符串列表）。 */
+    private List<String> targetSlots(String guildArg, String playerArg) {
+        List<String> out = new ArrayList<>();
+        if (guildArg == null || guildArg.isBlank() || playerArg == null || playerArg.isBlank()) {
+            return out;
+        }
+        PlayerRef ref = PlayerRef.of(Bukkit.getOfflinePlayer(playerArg).getUniqueId());
+        for (Manor m : manors.findAllByOwner(new GuildId(guildArg), ref)) {
+            out.add(String.valueOf(m.slot()));
         }
         return out;
     }

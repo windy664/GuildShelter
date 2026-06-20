@@ -25,3 +25,8 @@
 *.log
 .DS_Store
 Thumbs.db
+
+# ==== 本地规划草稿（不入库）====
+/PLAN.md
+/PLAN_MULTI_MANOR.md
+/PLAN_OPTIMIZE.md

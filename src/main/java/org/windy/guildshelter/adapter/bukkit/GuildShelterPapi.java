@@ -89,7 +89,7 @@ public final class GuildShelterPapi extends PlaceholderExpansion {
                 yield side + "x" + side;
             }
             case "unlocked" -> String.valueOf(manor.unlockedChunks().size());
-            case "quota" -> gw != null ? String.valueOf(gw.layout().quotaAtLevel(manor.level(), levels.manorMaxLevel())) : "0";
+            case "quota" -> gw != null ? String.valueOf(manor.quotaCap(gw.layout(), levels.manorMaxLevel())) : "0";
             case "alias" -> {
                 String a = Flag.ALIAS.resolveString(manor.flags());
                 yield a.isBlank() ? manor.guild().value() + "#" + manor.slot() : a;

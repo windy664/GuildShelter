@@ -112,6 +112,27 @@ public record LayoutConfig(
     }
 
     /**
+     * 主城<b>解锁额度上限</b>（会长能解锁多少个主城 chunk）：随<b>公会等级</b>从初始额度
+     * （{@code mainCityInitialChunks²}）线性均摊到满级整块（{@code mainCityMaxChunks²}，主城单格上限）。
+     * 与庄园 {@link #quotaAtLevel} 同构，但口径是公会等级。
+     */
+    public int cityQuotaAtLevel(int guildLevel, int maxGuildLevel) {
+        int initial = mainCityInitialChunks * mainCityInitialChunks;
+        int cap = mainCityMaxChunks * mainCityMaxChunks;
+        if (maxGuildLevel <= 1 || guildLevel >= maxGuildLevel) {
+            return cap;
+        }
+        int l = Math.max(1, guildLevel);
+        long q = initial + Math.round((double) (cap - initial) * (l - 1) / (maxGuildLevel - 1));
+        return (int) Math.min(Math.max(q, initial), cap);
+    }
+
+    /** 主城建会时初始解锁的角落正方形边长 = {@code mainCityInitialChunks}。 */
+    public int initialCityUnlockSide() {
+        return mainCityInitialChunks;
+    }
+
+    /**
      * 一份合理的默认配置：庄园满级 15 chunk(240×240)、路 1 chunk、
      * 主城初始 6 chunk(96×96)成长到最大 15 chunk(240×240)、庄园初始 6 chunk(96×96)每级 +1(共 10 级)。
      */

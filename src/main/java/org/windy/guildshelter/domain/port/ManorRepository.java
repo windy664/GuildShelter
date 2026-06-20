@@ -17,6 +17,12 @@ public interface ManorRepository {
     /** 跨公会按 owner 查庄园（退出/解散时用，不需要事先知道公会）。 */
     Optional<Manor> findByOwnerAnywhere(PlayerRef owner);
 
+    /** 该玩家在该公会拥有的全部庄园（多庄园模型下用；单庄园时即 0/1 个）。 */
+    List<Manor> findAllByOwner(GuildId guild, PlayerRef owner);
+
+    /** 该玩家在该公会拥有的庄园数量（多庄园上限校验用，避免 load 整表）。 */
+    int countByOwner(GuildId guild, PlayerRef owner);
+
     List<Manor> findAll(GuildId guild);
 
     void save(Manor manor);
