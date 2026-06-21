@@ -4,6 +4,8 @@ import eu.decentsoftware.holograms.api.DHAPI;
 import org.bukkit.Location;
 
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * {@link HologramBackend} 的 DecentHolograms 实现（软依赖，JitPack {@code com.github.decentsoftware-eu:decentholograms}）。
@@ -16,6 +18,12 @@ import java.util.List;
  */
 public final class DecentHologramsBackend implements HologramBackend {
 
+    private final Logger logger;
+
+    public DecentHologramsBackend(Logger logger) {
+        this.logger = logger;
+    }
+
     @Override
     public boolean available() {
         return true;
@@ -27,6 +35,10 @@ public final class DecentHologramsBackend implements HologramBackend {
             DHAPI.createHologram(name, loc, true, lines); // saveToFile=true → DH 持久化
             return true;
         } catch (Throwable t) {
+            // 不再静默吞异常：把 DH 内部真因打出来（常见=DH 版本不支持当前 MC，如 1.26 改了 Display 实体 API，
+            // 与同服 CMI 悬浮字 BLOCK_DISPLAY/TextDisplay 报错同源）。
+            logger.log(Level.WARNING, "[GuildShelter] DecentHolograms 创建悬浮字失败 name=" + name
+                    + "（多半是 DH 版本不兼容当前 MC，需换支持该版本的 DecentHolograms）: " + t, t);
             return false;
         }
     }
@@ -49,6 +61,7 @@ public final class DecentHologramsBackend implements HologramBackend {
             DHAPI.moveHologram(name, loc);
             return true;
         } catch (Throwable t) {
+            logger.log(Level.WARNING, "[GuildShelter] DecentHolograms 移动悬浮字失败 name=" + name + ": " + t, t);
             return false;
         }
     }

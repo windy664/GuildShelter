@@ -324,10 +324,9 @@ public final class WorldManager implements WorldControl {
         double cx = layout.borderCenterBlockX() + (gw.originChunkX() << 4) + 0.5;
         double cz = layout.borderCenterBlockZ() + (gw.originChunkZ() << 4) + 0.5;
         border.setCenter(cx, cz);
-        // 边界圈住 max(已分配, 名额容量) 个 slot：容量优先用宿主人数上限(与发地一致)，否则用我们等级容量。
-        int capacity = guildProvider.memberCap(gw.guild()).orElseGet(() -> levels.maxMembers(gw.guildLevel()));
-        int reserved = Math.max(gw.allocatedSlots(), capacity);
-        border.setSize(layout.borderSizeBlocks(reserved));
+        // 自适应边界：按【实际已分配成员】逐环生长 + 1 环缓冲（保证下一个加入者已在界内）。
+        // 不再按等级/宿主上限预留满员大方框，世界紧贴实际占用（也更省加载区），且边界计算彻底脱离宿主插件。
+        border.setSize(layout.adaptiveBorderSizeBlocks(gw.allocatedSlots(), 1));
     }
 
     /** 虚空生成器：所有 chunk 为空气，用于 VOID 地形模式。 */

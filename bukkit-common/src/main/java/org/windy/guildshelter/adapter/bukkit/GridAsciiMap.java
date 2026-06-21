@@ -30,8 +30,10 @@ public final class GridAsciiMap {
     public static List<String> render(LayoutCalculator layout, GuildWorld gw,
                                       Set<Integer> occupiedSlots, int capacity, int currentCityChunks) {
         int pitch = layout.pitchChunks();
+        // 窗口按容量画(显示空闲名额 +)，但"边界半径"标签用真实自适应边界(随实际成员逐环生长 + 1 环缓冲)。
         int reserved = Math.max(gw.allocatedSlots(), capacity);
-        int r = layout.borderRingCells(reserved);          // 边界半径（格）
+        int r = layout.borderRingCells(reserved);          // 容量窗口半径（格）
+        int borderR = layout.adaptiveBorderRingCells(gw.allocatedSlots(), 1); // 真实边界半径（格）
         // 窗口(chunk)：覆盖 [-r..r] 格 → chunk [-r*pitch .. (r+1)*pitch-1]
         int minC = -r * pitch;
         int maxC = (r + 1) * pitch - 1;
@@ -42,7 +44,7 @@ public final class GridAsciiMap {
         lines.add("== 公会营地 " + gw.worldName() + " 区块图(1字符=" + (step == 1 ? "1" : step + "x" + step) + " chunk) ==");
         lines.add("  等级 " + gw.guildLevel() + " | 名额容量 " + capacity
                 + " | 已占 " + occupiedSlots.size() + " | 主城 " + currentCityChunks + " chunk"
-                + " | 边界半径 " + r + " 格");
+                + " | 边界半径 " + borderR + " 格" + (r != borderR ? "(容量窗口 " + r + ")" : ""));
         lines.add("  图例: C=主城  #=已占庄园  +=空闲名额  .=路  (空白)=未开发/容量外");
         for (int cz = minC; cz <= maxC; cz += step) {
             StringBuilder sb = new StringBuilder("  ");

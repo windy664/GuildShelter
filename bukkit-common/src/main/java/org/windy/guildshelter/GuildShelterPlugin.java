@@ -287,7 +287,7 @@ public abstract class GuildShelterPlugin extends JavaPlugin {
         // 主城悬浮字后端：检测到 DecentHolograms 才构造实现类（否则 NOOP，绝不触发 DH 类加载）。
         final org.windy.guildshelter.adapter.bukkit.holo.HologramBackend holoBackend =
                 (config.holograms().enabled() && getServer().getPluginManager().getPlugin("DecentHolograms") != null)
-                        ? new org.windy.guildshelter.adapter.bukkit.holo.DecentHologramsBackend()
+                        ? new org.windy.guildshelter.adapter.bukkit.holo.DecentHologramsBackend(getLogger())
                         : org.windy.guildshelter.adapter.bukkit.holo.HologramBackend.NOOP;
         final org.windy.guildshelter.domain.port.CityHologramStore holoStore = storage.cityHolograms();
         if (holoBackend.available()) {

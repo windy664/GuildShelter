@@ -178,6 +178,27 @@ public final class LayoutCalculator {
         return (double) outerChunks * 2 * 16;
     }
 
+    /**
+     * <b>自适应</b>世界边界全宽（方块）：按<b>实际已分配</b> {@code allocatedSlots} 的最外环 + {@code bufferRings}
+     * 环缓冲计算，边界随成员实际加入<b>逐环生长</b>；无成员（{@code allocatedSlots<=0}）时只圈主城(ring 0) + margin。
+     *
+     * <p>缓冲环保证下一个将加入的成员 plot 已在界内（避免分配后传送瞬间踩在边界沿）。与按容量预留的
+     * {@link #borderSizeBlocks} 不同：这里不预留满员大方框、不依赖宿主人数上限，世界紧贴实际占用（也更省加载区）。
+     */
+    public double adaptiveBorderSizeBlocks(int allocatedSlots, int bufferRings) {
+        int ring = adaptiveBorderRingCells(allocatedSlots, bufferRings);
+        int outerChunks = ring * pitch + plot + config.marginChunks();
+        return (double) outerChunks * 2 * 16;
+    }
+
+    /** 自适应边界覆盖到的外环（格）：实际已分配 slots 的最外环 + 缓冲环；无成员则 0（只主城）。 */
+    public int adaptiveBorderRingCells(int allocatedSlots, int bufferRings) {
+        if (allocatedSlots <= 0) {
+            return 0;
+        }
+        return SpiralIndex.ringOf(base + allocatedSlots - 1) + Math.max(0, bufferRings);
+    }
+
     public int base() {
         return base;
     }

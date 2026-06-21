@@ -3720,16 +3720,15 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         LayoutCalculator layout = new LayoutCalculator(before.layout()); // 用该世界冻结的布局
-        double oldBorder = layout.borderSizeBlocks(
-                Math.max(before.allocatedSlots(), levels.maxMembers(before.guildLevel())));
+        // 自适应边界：按实际成员算，不随等级变（升级只放开容量，不预扩边界）。前后通常相同。
+        double oldBorder = layout.adaptiveBorderSizeBlocks(before.allocatedSlots(), 1);
         boolean ok = service.upgradeGuild(guild);
         if (!ok) {
             sender.sendMessage(Messages.get("error.already_max_level", levels.maxGuildLevel()));
             return;
         }
         GuildWorld after = guilds.find(guild).orElse(before);
-        double newBorder = layout.borderSizeBlocks(
-                Math.max(after.allocatedSlots(), levels.maxMembers(after.guildLevel())));
+        double newBorder = layout.adaptiveBorderSizeBlocks(after.allocatedSlots(), 1);
         sender.sendMessage(Messages.get("success.upgrade_guild", after.guildLevel(), levels.maxGuildLevel(),
                 levels.maxMembers(before.guildLevel()), levels.maxMembers(after.guildLevel()),
                 (int) oldBorder, (int) newBorder));
