@@ -4,8 +4,26 @@ pluginManagement {
         gradlePluginPortal()
         maven { url = 'https://maven.neoforged.net/releases' }
     }
+    // 项目插件版本集中声明：各模块只写 id 'xxx' 不带版本（根不再是单插件工程，故需在此统一）。
+    // 注：idea-ext 不在此（它无标准插件标记）——改由 root build.gradle 经 buildscript classpath 应用。
+    plugins {
+        id 'net.neoforged.gradle.userdev' version '7.1.38'
+        id 'com.gradleup.shadow' version '9.0.0'   // 与 Gradle 9.4.1 兼容（8.3.x 仅 Gradle 8）
+    }
 }
 
 plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
 }
+
+rootProject.name = 'guildshelter'
+
+// 模块化拆分（PLAN_MODULES.md）：纯核心 + 共享 Bukkit 胶水 + 每载体一个薄入口。
+include 'core'            // domain · service · persistence（平台无关）
+include 'bukkit-common'   // adapter/** · events · 接缝接口+Bukkit默认实现 · 抽象引导（禁 net.neoforged）
+include 'bukkit'          // 普通版：纯 Bukkit 插件 jar
+include 'neoforge_26_2'   // 增强版：混合端(NeoForge 26.2)原生接缝 jar
+
+// Xaero 世界地图圈地的【客户端 mod】子模块（独立产物，玩家想要地图圈地才装；服务端无需）。
+// 见 PLAN_XAERO.md。与主插件只靠 guildshelter:map 字节协议对齐，无代码依赖。
+include 'xaero-client'

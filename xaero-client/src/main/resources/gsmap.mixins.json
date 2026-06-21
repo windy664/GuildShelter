@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "org.windy.guildshelter.xaeroclient.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "minVersion": "0.8",
+  "client": [
+    "GsWorldMapSessionMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

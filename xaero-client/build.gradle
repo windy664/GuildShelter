@@ -1,0 +1,30 @@
+// GuildShelter Xaero 圈地 —— 客户端 mod 子模块（NeoForge，仅客户端运行）。
+// 不含任何 Bukkit/Spigot 依赖（那些只在服务端有）；与主插件靠 guildshelter:map 字节协议对齐。
+plugins {
+    id 'java'
+    id 'net.neoforged.gradle.userdev'
+}
+
+version = '1.0.0'
+group = 'org.windy.guildshelter.xaeroclient'
+
+base {
+    archivesName = 'guildshelter-xaero-client'
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+
+repositories {
+    maven { url = 'https://maven.neoforged.net/releases' }
+}
+
+dependencies {
+    // NeoForge（neo_version 继承根 gradle.properties）
+    implementation "net.neoforged:neoforge:${neo_version}"
+    // Xaero 世界地图：仅编译期（运行期由玩家装的 Xaero 提供）。transitive=false 避免拉传递依赖。
+    compileOnly(files("${rootDir}/libs/[世界地图]xaeroworldmap-neoforge-26.2-1.41.0.jar"))
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}

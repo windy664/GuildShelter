@@ -1,8 +1,8 @@
-# ==== 构建产物 ====
-/build/
+# ==== 构建产物（根 + 所有子模块）====
+build/
 
-# ==== Gradle 缓存（保留 /gradle/ wrapper、gradlew）====
-/.gradle/
+# ==== Gradle 缓存（根 + 所有子模块；保留 /gradle/ wrapper、gradlew）====
+.gradle/
 
 # ==== IDE：IntelliJ IDEA ====
 /.idea/
@@ -14,8 +14,10 @@
 .classpath
 .project
 
-# ==== 运行时 / 本地仓库 ====
+# ==== 运行时 / 本地仓库（根 + 所有子模块的 run/runs）====
 /run/
+run/
+runs/
 /repo/
 
 # ==== 本地依赖 jar（Minecraft/NeoForge/WorldEdit/公会插件等，按需自行补齐，不入库）====

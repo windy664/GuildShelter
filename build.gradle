@@ -1,147 +1,42 @@
+// 根工程 = 父配置容器。实际产物在各子模块（PLAN_MODULES.md）。
+// 公共仓库/编码/工具链下沉到 subprojects；各模块按需声明自己的插件与依赖。
+
+// 在 root 用 apply false 声明所有项目插件 → 把它们加载进 root（父）类加载器，子项目应用时共享同一份类。
+// 这是多模块的标准做法，且关键修复了 NeoGradle 的 'settings' 扩展冲突：否则两个 userdev 子项目各自独立
+// 加载 NeoGradle，IdeaExtPlugin.class 不是同一个 → Gradle 认不出"已应用" → 向 root 重复注册 settings 冲突。
 plugins {
-    id 'java-library'
-    id 'maven-publish'
-    id 'idea'
-    id 'net.neoforged.gradle.userdev' version '7.1.38'
+    id 'net.neoforged.gradle.userdev' apply false
+    id 'com.gradleup.shadow' apply false
 }
 
-version = mod_version
-group = mod_group_id
+subprojects {
+    apply plugin: 'java-library'
 
-repositories {
-    maven { url 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/' }
-    maven { url 'https://repo.extendedclip.com/content/repositories/placeholderapi/' }
-    maven { url 'https://maven.neoforged.net/releases' }
-    maven { url 'https://jitpack.io' }
-    maven { url 'https://maven.creeperhost.net' }
-    // Modrinth Maven：WorldEdit 等模组/插件按版本 ID 直接拉
-    maven {
-        url 'https://api.modrinth.com/maven'
-        content { includeGroup 'maven.modrinth' }
-    }
-    // EngineHub Maven：WorldEdit Bukkit 平台 API（artifactId 独立，不与 Modrinth 的 mod 版冲突）
-    maven {
-        url 'https://maven.enginehub.org/repo/'
-        content { includeGroup 'com.sk89q.worldedit' }
-    }
-}
+    group = rootProject.findProperty('mod_group_id') ?: 'org.windy'
+    version = rootProject.findProperty('mod_version') ?: '1.0.1-SNAPSHOT'
 
-base {
-    archivesName = mod_id
-}
-
-java.toolchain.languageVersion = JavaLanguageVersion.of(25)
-
-// Default run configurations.
-runs {
-    configureEach {
-        systemProperty 'forge.logging.markers', 'REGISTRIES'
-        systemProperty 'forge.logging.console.level', 'debug'
-        workingDirectory project.layout.projectDirectory.dir('run').dir(name)
-        modSource project.sourceSets.main
-    }
-    client {
-        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
-    }
-    server {
-        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
-        argument '--nogui'
-    }
-    gameTestServer {
-        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
-    }
-    clientData {
-        arguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
-    }
-}
-
-configurations {
-    runtimeClasspath.extendsFrom localRuntime
-}
-
-sourceSets.main.resources {
-    srcDir('src/generated/resources')
-}
-
-dependencies {
-    // NeoForge
-    implementation "net.neoforged:neoforge:${neo_version}"
-
-    // Spigot API（org.bukkit）
-    compileOnly 'org.spigotmc:spigot-api:26.2-R0.1-SNAPSHOT'
-    // WorldEdit 模组版 API（NeoForge 平台，原生认模组方块）——Modrinth Maven，按版本 ID 锁定。
-    // ZL2VC7dm = 7.4.4-beta-01 的 fabric/neoforge 构建(worldedit-mod，支持 MC 26.2)；
-    // 同名另有 bukkit 构建(ESAHQFYo)，故用版本 ID 而非版本号消歧。全程反射调用，compileOnly 即可。
-    compileOnly 'maven.modrinth:worldedit:ZL2VC7dm'
-    // WorldEdit Bukkit 平台 API（WeSchematicStore/FaweSchematicStore 反射 bukkit.BukkitAdapter）。
-    // 走 EngineHub 而非 Modrinth：避免与上面 mod 版同坐标(maven.modrinth:worldedit)冲突。版本号仅作
-    // 反射锚定，BukkitAdapter.adapt(World) 跨 7.4.x 稳定，取 release 7.4.3 即可（全程反射，compileOnly）。
-    // transitive=false：纯反射锚定不需要 worldedit-core 等传递依赖，且能避开 EngineHub 仓库 content
-    // 过滤挡住 org.enginehub.*/com.sk89q.lib:* 传递依赖导致的解析失败。
-    compileOnly('com.sk89q.worldedit:worldedit-bukkit:7.4.3') { transitive = false }
-
-    // 公会插件 API（不在 Maven，走本地 libs）
-    compileOnly fileTree("./libs") { include '*.jar' exclude 'minecraft-server-patched*', 'neoforge-*', 'worldedit-*' }
-    compileOnly 'me.clip:placeholderapi:2.11.5'
-    compileOnly 'com.github.MilkBowl:VaultAPI:1.7.1'
-
-    // Refined Storage 2 API
-    compileOnly 'com.refinedmods.refinedstorage:refinedstorage-common-api:3.2.1'
-    compileOnly 'com.refinedmods.refinedstorage:refinedstorage-common:3.2.1'
-
-    // 持久层
-    compileOnly 'com.zaxxer:HikariCP:5.0.0'
-    compileOnly 'org.xerial:sqlite-jdbc:3.47.1.0'
-
-    // 单元测试
-    testImplementation platform('org.junit:junit-bom:5.11.4')
-    testImplementation 'org.junit.jupiter:junit-jupiter'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    testImplementation 'com.zaxxer:HikariCP:5.0.0'
-    testImplementation 'org.xerial:sqlite-jdbc:3.47.1.0'
-}
-
-tasks.withType(ProcessResources).configureEach {
-    var replaceProperties = [
-            minecraft_version      : minecraft_version,
-            minecraft_version_range: minecraft_version_range,
-            neo_version            : neo_version,
-            neo_version_range      : neo_version_range,
-            loader_version_range   : loader_version_range,
-            mod_id                 : mod_id,
-            mod_name               : mod_name,
-            mod_license            : mod_license,
-            mod_version            : mod_version,
-            mod_authors            : mod_authors,
-            mod_description        : mod_description
-    ]
-    inputs.properties replaceProperties
-    filesMatching(['META-INF/neoforge.mods.toml']) {
-        expand replaceProperties
-    }
-}
-
-publishing {
-    publications {
-        register('mavenJava', MavenPublication) {
-            from components.java
-        }
-    }
     repositories {
+        mavenCentral()
+        maven { url 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/' }
+        maven { url 'https://repo.extendedclip.com/content/repositories/placeholderapi/' }
+        maven { url 'https://maven.neoforged.net/releases' }
+        maven { url 'https://jitpack.io' }
+        maven { url 'https://maven.creeperhost.net' }
+        // Modrinth Maven：WorldEdit 等模组/插件按版本 ID 直接拉
         maven {
-            url "file://${project.projectDir}/repo"
+            url 'https://api.modrinth.com/maven'
+            content { includeGroup 'maven.modrinth' }
+        }
+        // EngineHub Maven：WorldEdit Bukkit 平台 API（artifactId 独立，不与 Modrinth 的 mod 版冲突）
+        maven {
+            url 'https://maven.enginehub.org/repo/'
+            content { includeGroup 'com.sk89q.worldedit' }
         }
     }
-}
 
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
-}
+    java.toolchain.languageVersion = JavaLanguageVersion.of(25)
 
-idea {
-    module {
-        downloadSources = true
-        // javadoc jar 又大又慢(尤其 EngineHub)、且依赖多为反射锚定用不上，关掉只留 sources。
-        downloadJavadoc = false
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
     }
 }

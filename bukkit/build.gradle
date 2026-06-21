@@ -1,0 +1,39 @@
+// 普通版载体：纯 Bukkit 插件。只有薄入口 GuildShelterBukkitPlugin + plugin.yml。
+// shadow 把 core + bukkit-common 的类与资源并进一个 jar；其余依赖运行期由服务端/插件/libraries 提供。
+
+plugins {
+    id 'com.gradleup.shadow'   // 版本见 settings.gradle pluginManagement
+}
+
+base {
+    archivesName = 'guildshelter-bukkit'
+}
+
+dependencies {
+    implementation project(':bukkit-common')   // 传递带入 core
+    compileOnly 'org.spigotmc:spigot-api:26.2-R0.1-SNAPSHOT'
+}
+
+// 资源里的 plugin.yml 用到 ${mod_version} 等占位（与原构建一致）
+processResources {
+    def props = [
+            mod_version: project.version,
+            mod_id     : rootProject.findProperty('mod_id') ?: 'guildshelter',
+            mod_name   : rootProject.findProperty('mod_name') ?: 'GuildShelter'
+    ]
+    inputs.properties props
+    filesMatching('plugin.yml') { expand props }
+}
+
+shadowJar {
+    archiveClassifier = ''
+    // 只并入自己的兄弟模块，绝不 shade Bukkit/外部 API。
+    configurations = [project.configurations.runtimeClasspath]
+    dependencies {
+        include project(':core')
+        include project(':bukkit-common')
+    }
+}
+
+build.dependsOn shadowJar
+jar.enabled = false
