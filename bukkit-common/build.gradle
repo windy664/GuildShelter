@@ -8,8 +8,12 @@ dependencies {
     // Spigot API（org.bukkit）。api：让载体模块也能见到 Bukkit 类型。
     compileOnly 'org.spigotmc:spigot-api:26.2-R0.1-SNAPSHOT'
 
-    // WorldEdit Bukkit 平台 API（we/fawe SchematicStore 反射 BukkitAdapter）。纯反射锚定，compileOnly。
+    // WorldEdit API（compileOnly，不打包、不进运行时，由服务器上的 FAWE/WE 插件提供）。
+    //   worldedit-bukkit：Bukkit 平台类（com.sk89q.worldedit.bukkit.BukkitAdapter）。
+    //   worldedit-core  ：核心类（EditSession/WorldEdit/BlockVector3/SideEffect/world.World…），
+    //                     FaweTerrainSink 直接引用需要它；transitive=false 排掉的就是它，故显式补回。
     compileOnly('com.sk89q.worldedit:worldedit-bukkit:7.4.3') { transitive = false }
+    compileOnly('com.sk89q.worldedit:worldedit-core:7.4.3') { transitive = false }
 
     // 软依赖（全程经端口适配，缺席静默）
     compileOnly 'me.clip:placeholderapi:2.11.5'

@@ -3,6 +3,10 @@ package org.windy.guildshelter.persistence;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -27,9 +31,13 @@ public final class JdbcDatabase implements AutoCloseable {
     private static final String HISTORY_TABLE = "gs_schema_history";
 
     private final HikariDataSource dataSource;
+    private final String jdbcUrl;
+    private final boolean sqlite;
 
     public JdbcDatabase(String jdbcUrl, String driverClassName, String user, String password,
                         String connectionInitSql, SqlDialect dialect) {
+        this.jdbcUrl = jdbcUrl;
+        this.sqlite = jdbcUrl != null && jdbcUrl.startsWith("jdbc:sqlite:");
         HikariConfig cfg = new HikariConfig();
         cfg.setJdbcUrl(jdbcUrl);
         if (driverClassName != null && !driverClassName.isBlank()) {
@@ -45,8 +53,7 @@ public final class JdbcDatabase implements AutoCloseable {
             cfg.setConnectionInitSql(connectionInitSql);
         }
         // SQLite 是单写者数据库，连接多反而增加锁竞争；MySQL 可以多连接。
-        boolean isSqlite = jdbcUrl != null && jdbcUrl.startsWith("jdbc:sqlite:");
-        cfg.setMaximumPoolSize(isSqlite ? 2 : 8);
+        cfg.setMaximumPoolSize(this.sqlite ? 2 : 8);
         cfg.setPoolName("GuildShelter-DB");
         this.dataSource = new HikariDataSource(cfg);
         init(dialect);
@@ -68,38 +75,86 @@ public final class JdbcDatabase implements AutoCloseable {
                     st.execute(s);
                 }
             }
-            // 2) 历史/审计表 + 读当前库版本(= 已应用的最高版本)。
+            // 2) 历史/审计表。
             ensureHistoryTable(c);
-            int current = currentVersion(c);
 
-            // 3) 基线(v1)：全新库 / 上线前的旧库(无历史→version 0)首次跑一次幂等全量 schema 拉齐，留一条历史。
-            if (current < BASELINE_VERSION) {
-                runBaselineSchema(c, dialect);
-                recordVersion(c, BASELINE_VERSION);
-                current = BASELINE_VERSION;
+            // 3) 获取跨实例迁移锁(MySQL命名锁; SQLite无操作)，防多服共享同一库时并发迁移。锁内完成全部判断与迁移。
+            if (!dialect.acquireMigrationLock(c)) {
+                throw new PersistenceException("获取数据库迁移锁超时：可能另一实例正在迁移同一数据库，"
+                        + "请等其完成后再重启本服。");
             }
+            try {
+                int current = currentVersion(c); // 锁内再读：别的实例可能刚迁完，避免重复迁移
 
-            // 4) v2+ 有序迁移：只跑库版本之后、≤target 的，每条一事务，跑完追加历史。
-            //    跨多版本老库会沿 current+1, current+2, … 逐级爬(每条都保留在代码里，故任意老版都能升上来)。
-            SortedMap<Integer, Migration> migrations = dialect.migrations();
-            int target = migrations.isEmpty() ? BASELINE_VERSION
-                    : Math.max(BASELINE_VERSION, migrations.lastKey());
-            if (current > target) {
-                // 库比插件期望新（多半是插件被降级）：绝不乱改表结构，告警后照常用现有结构启动。
-                System.err.println("[GuildShelter] 数据库 schema 版本(" + current + ") 高于本插件期望("
-                        + target + ")，疑似插件被降级；跳过迁移，不修改表结构。");
-                return;
-            }
-            for (Map.Entry<Integer, Migration> e : migrations.entrySet()) {
-                int ver = e.getKey();
-                if (ver <= current) {
-                    continue; // 已应用过
+                // 基线(v1)：全新库 / 上线前旧库(无历史→0)首次跑一次幂等全量 schema 拉齐，留一条历史。
+                if (current < BASELINE_VERSION) {
+                    runBaselineSchema(c, dialect);
+                    recordVersion(c, BASELINE_VERSION);
+                    current = BASELINE_VERSION;
                 }
-                applyMigration(c, ver, e.getValue());
-                current = ver;
+
+                // v2+ 有序迁移：只跑库版本之后、≤target 的，每条一事务，跑完追加历史。
+                // 跨多版本老库沿 current+1, current+2, … 逐级爬(每条都永久保留在代码里，故任意老版都能升上来)。
+                SortedMap<Integer, Migration> migrations = dialect.migrations();
+                int target = migrations.isEmpty() ? BASELINE_VERSION
+                        : Math.max(BASELINE_VERSION, migrations.lastKey());
+                if (current > target) {
+                    // 库比插件期望新（多半是插件被降级）：绝不乱改表结构，告警后照常用现有结构启动。
+                    System.err.println("[GuildShelter] 数据库 schema 版本(" + current + ") 高于本插件期望("
+                            + target + ")，疑似插件被降级；跳过迁移，不修改表结构。");
+                    return; // finally 仍会释放锁
+                }
+                if (current < target) {
+                    // 有待跑迁移 → SQLite 自动备份 / MySQL 强提示(无法自动备份)。备份失败则中止迁移保护数据。
+                    backupOrWarnBeforeMigrate(c, current, target);
+                }
+                for (Map.Entry<Integer, Migration> e : migrations.entrySet()) {
+                    int ver = e.getKey();
+                    if (ver <= current) {
+                        continue; // 已应用过
+                    }
+                    applyMigration(c, ver, e.getValue());
+                    current = ver;
+                }
+            } finally {
+                dialect.releaseMigrationLock(c);
             }
         } catch (SQLException e) {
             throw new PersistenceException("初始化/迁移数据库失败", e);
+        }
+    }
+
+    /** 待跑迁移前：SQLite 自动备份库文件；MySQL 无法自动备份→强提示。备份失败则抛错中止迁移(保护数据)。 */
+    private void backupOrWarnBeforeMigrate(Connection c, int from, int to) {
+        if (!sqlite) {
+            System.err.println("[GuildShelter] ⚠ 即将把数据库从 schema v" + from + " 迁移到 v" + to
+                    + "。MySQL 无法自动备份——请务必确认已有备份(建议先 mysqldump)！迁移不可逆。");
+            return;
+        }
+        // SQLite：先 WAL checkpoint 把改动落进主库文件，再整文件拷一份 .bak（拷贝即一致快照）。
+        try (Statement st = c.createStatement()) {
+            st.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+        } catch (SQLException ignore) {
+            // checkpoint 失败不致命，仍尝试备份
+        }
+        try {
+            String path = jdbcUrl.substring("jdbc:sqlite:".length());
+            int q = path.indexOf('?');
+            if (q >= 0) {
+                path = path.substring(0, q); // 去掉 ?cache= 等参数
+            }
+            Path src = Paths.get(path);
+            if (!Files.exists(src)) {
+                return; // 全新库（理论上不会有待跑迁移），无需备份
+            }
+            Path bak = src.resolveSibling(src.getFileName() + ".bak-v" + from + "-" + System.currentTimeMillis());
+            Files.copy(src, bak, StandardCopyOption.COPY_ATTRIBUTES);
+            System.err.println("[GuildShelter] 迁移前已自动备份 SQLite 数据库 → " + bak
+                    + "（从 v" + from + " 迁移到 v" + to + "）");
+        } catch (Exception e) {
+            // 备份失败 → 宁可不迁也不冒"无备份迁移"的险。
+            throw new PersistenceException("迁移前备份 SQLite 数据库失败，已中止迁移以保护数据："
+                    + e.getMessage(), e);
         }
     }
 

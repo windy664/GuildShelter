@@ -63,6 +63,15 @@ city-wall:
 # 分配/升级庄园时的整地方式: NONE(不整) | CLEAR_VEGETATION(清植被,保留起伏) | FLATTEN(铺平)
 terrain-prep: CLEAR_VEGETATION
 
+# Iris 地形引擎联动（强烈推荐）：
+#   检测到服务器装了 Iris 插件 → 公会自然世界改用 Iris 生成，专业大地形 + 性能强出几百倍。
+#   没装 Iris → 退回普通 vanilla normal 世界。
+# 软依赖，无需把 Iris 作为前置；装了就自动用，没装也能跑。
+# ⚠️ Iris 地形可能很崎岖，铺路/整地仍按实际地表施工，落差大处道路会切坡 —— 按需调 terrain-prep / road-chunks。
+iris:
+  enabled: true            # Iris 在场时是否启用（false=即使装了 Iris 也用普通地形）
+  dimension: overworld     # 用哪个 Iris 维度包名（Iris 自带 overworld；装了其它包填包名）
+
 # 存储后端：sqlite(默认,单文件免配置) | mysql(多服共享) | flatfile(不用数据库,纯文本文件)
 storage:
   type: sqlite

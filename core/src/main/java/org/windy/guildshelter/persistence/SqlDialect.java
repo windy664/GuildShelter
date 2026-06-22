@@ -1,5 +1,9 @@
 package org.windy.guildshelter.persistence;
 
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.Collections;
 import java.util.List;
 import java.util.SortedMap;
@@ -44,6 +48,48 @@ public interface SqlDialect {
      */
     default SortedMap<Integer, Migration> migrations() {
         return Collections.emptySortedMap();
+    }
+
+    // ===== 生产加固：迁移锁 + 幂等加列 =====
+
+    /**
+     * 迁移前获取<b>跨实例独占锁</b>（防多服共享同一库时并发迁移）。默认 {@code true}（无操作）：SQLite 是
+     * 本地单文件、不存在多实例共享写，无需锁。MySQL 覆盖为命名锁 {@code GET_LOCK}。返回是否获得。
+     */
+    default boolean acquireMigrationLock(Connection c) throws SQLException {
+        return true;
+    }
+
+    /** 释放迁移锁（与 {@link #acquireMigrationLock} 配对）。默认无操作。 */
+    default void releaseMigrationLock(Connection c) throws SQLException {
+    }
+
+    /** 列是否存在（走 JDBC 元数据，方言中立）。用于幂等加列，避免 MySQL 重跑迁移撞"列已存在"卡死。 */
+    default boolean columnExists(Connection c, String table, String column) throws SQLException {
+        try (ResultSet rs = c.getMetaData().getColumns(c.getCatalog(), null, table, null)) {
+            while (rs.next()) {
+                if (column.equalsIgnoreCase(rs.getString("COLUMN_NAME"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * <b>幂等加列迁移</b>：列已存在则跳过，否则 {@code ALTER TABLE ADD COLUMN}。两方言都安全可重跑——
+     * 这是堵住"MySQL DDL 不可回滚、半途失败重跑撞列已存在崩服"的关键。改表加列<b>一律用这个</b>，别裸写 ALTER。
+     *
+     * @param columnDef 列定义（类型 + 默认值），如 {@code "TEXT DEFAULT ''"} / {@code "INT DEFAULT -1"}
+     */
+    default Migration addColumn(String table, String column, String columnDef) {
+        return c -> {
+            if (!columnExists(c, table, column)) {
+                try (Statement st = c.createStatement()) {
+                    st.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + columnDef);
+                }
+            }
+        };
     }
 
     /** guild_world 的 upsert（主键 guild_id），列顺序：

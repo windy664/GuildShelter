@@ -10,6 +10,7 @@ import org.windy.guildshelter.persistence.StorageSettings;
 public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, TerrainPrepMode terrainPrep,
                                  StorageSettings storage, String proxyType, String serverName,
                                  PerformanceConfig performance, MoveConfig move, OceanReseedConfig oceanReseed,
+                                 IrisConfig iris,
                                  CityWallConfig cityWall, CityLimits cityLimits,
                                  HologramSettings holograms) {
 
@@ -42,6 +43,18 @@ public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, Terrain
      * @param sampleGrid    footprint 上的采样网格边数（gridN×gridN 个探点，默认 12）
      */
     public record OceanReseedConfig(boolean enabled, double maxWaterRatio, int maxAttempts, int sampleGrid) {}
+
+    /**
+     * 自然地形公会世界的生成开关。地貌/地表恒为原版自然生成，但<b>装饰(树/矿/花/结构)恒关</b>
+     * ——既符合"家不该有矿"，又绕开混合端地物装饰阶段的 {@code -1} 越界崩，故装饰不做成开关。
+     *
+     * Iris 地形引擎联动：检测到 Iris 插件在场且 {@code enabled} → 公会自然世界用 Iris 生成（专业地形+高性能）；
+     * 否则普通 vanilla normal 世界。软依赖，无需编译期依赖 Iris。
+     *
+     * @param enabled   是否在 Iris 存在时启用（默认 true）
+     * @param dimension Iris 维度包名（默认 {@code overworld}）
+     */
+    public record IrisConfig(boolean enabled, String dimension) {}
 
 
     /**
@@ -194,6 +207,10 @@ public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, Terrain
                 cfg.getInt("ocean-reseed.max-attempts", 8),
                 cfg.getInt("ocean-reseed.sample-grid", 12));
 
+        IrisConfig iris = new IrisConfig(
+                cfg.getBoolean("iris.enabled", true),
+                cfg.getString("iris.dimension", "overworld"));
+
         CityWallConfig cityWall = new CityWallConfig(
                 cfg.getBoolean("city-wall.enabled", false), // 主城已缩小成中心一格、四面环路，围墙暂关
                 cfg.getString("city-wall.block", "minecraft:cobblestone_wall"),
@@ -212,6 +229,6 @@ public record GuildShelterConfig(LayoutConfig layout, LevelRules levels, Terrain
                 cfg.getBoolean("main-city-holograms.enabled", true),
                 cfg.getInt("main-city-holograms.max-per-guild", 5));
 
-        return new GuildShelterConfig(layout, levels, prep, storage, proxyType, serverName, perf, move, oceanReseed, cityWall, cityLimits, holograms);
+        return new GuildShelterConfig(layout, levels, prep, storage, proxyType, serverName, perf, move, oceanReseed, iris, cityWall, cityLimits, holograms);
     }
 }

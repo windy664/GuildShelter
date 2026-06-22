@@ -400,7 +400,7 @@ usage:
   sub_setflag: "用法: /gs sub setflag <子领地名> <flag> <值>"
   toggle: "用法: /gs toggle titles"
   admin: "用法: /gs admin <create|tp|claim|fill|map|upgrade-manor|upgrade-guild|delete|worlds|whereami|reload|setowner|purge|regen|export> [公会id]"
-  admin_create: "用法: /gs admin create <公会id>"
+  admin_create: "用法: /gs admin create <公会id> [地形:NONE|CLEAR_VEGETATION|FLATTEN|VOID|FLAT]"
   admin_tp: "用法: /gs admin tp <公会id>"
   admin_claim: "用法: /gs admin claim <公会id>"
   admin_fill: "用法: /gs admin fill <公会id> <数量>"

@@ -202,7 +202,7 @@ public abstract class GuildShelterPlugin extends JavaPlugin {
             getLogger().info("跨服代理: " + config.proxyType() + "（服务器名: " + config.serverName() + "）");
         }
 
-        this.worldManager = new WorldManager(config.levels(), config.oceanReseed(), getLogger());
+        this.worldManager = new WorldManager(config.levels(), config.oceanReseed(), config.iris(), getLogger());
         this.worldManager.setBiomeSampler(bindings.biomeSampler()); // 混合端注入群系采样，纯 Bukkit 为 null
         // 整地按载体分流（接缝）
         String roadBlock = getConfig().getString("road-surface-block", "minecraft:dirt_path");

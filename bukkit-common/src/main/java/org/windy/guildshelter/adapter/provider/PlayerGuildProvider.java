@@ -70,21 +70,48 @@ public final class PlayerGuildProvider implements GuildProvider {
         return role != null && role.getRoleId() != null && role.getRoleId() <= 2;
     }
 
+    // —— memberCap 缓存 ——
+    // PlayerGuild 的 getAllGuild() 是会刷异常的坏 API（内部 SQL 拼成 nullidnull）。容量极少变（仅宿主公会
+    // 升级时变，且我们另有事件跟随），故缓存 name→cap 60s：把对宿主坏 API 的调用从"每次算容量"降到"最多 60s 一次"，
+    // 既不丢容量功能，又把宿主自己打的异常日志刷屏压到几乎没有。宿主异常时保留旧缓存并推后重试。
+    private static final long CAP_TTL_MS = 60_000L;
+    private static volatile long capCacheAt;
+    private static volatile java.util.Map<String, Integer> capCache = java.util.Collections.emptyMap();
+
     /**
-     * PlayerGuild 有公会人数上限：从全部公会里按名匹配取 getMemberMaxCount。
+     * PlayerGuild 公会人数上限：从缓存的 name→cap 取（缓存过期才打一次宿主 getAllGuild）。
      *
-     * <p>整个 getAllGuild() 包在 {@link #guard} 里：宿主 SQL/查询异常时返回空，调用方
-     * （{@code WorldManager.applyBorderTo}）即用我们自己的等级容量兜底，不至于因宿主故障建不了世界/传不了送。
+     * <p>宿主 SQL/查询异常时缓存不更新、返回空，调用方（{@code WorldManager.applyBorderTo} 等）
+     * 即用我们自己的等级容量兜底，不至于因宿主故障建不了世界/传不了送。
      */
     @Override
     public OptionalInt memberCap(GuildId guild) {
-        java.util.List<GuildInfo> all = guard("memberCap", PlayerGuildApi::getAllGuild, java.util.Collections.<GuildInfo>emptyList());
+        java.util.Map<String, Integer> caps = capCache;
+        if (System.currentTimeMillis() - capCacheAt > CAP_TTL_MS) {
+            caps = refreshCaps();
+        }
+        Integer cap = caps.get(guild.value());
+        return cap != null ? OptionalInt.of(cap) : OptionalInt.empty();
+    }
+
+    /** 刷新容量缓存（最多每 CAP_TTL_MS 真打一次宿主 API）；宿主异常则保留旧缓存并推后重试。 */
+    private static synchronized java.util.Map<String, Integer> refreshCaps() {
+        if (System.currentTimeMillis() - capCacheAt <= CAP_TTL_MS) {
+            return capCache; // 另一线程刚刷过
+        }
+        java.util.List<GuildInfo> all = guard("memberCap", PlayerGuildApi::getAllGuild, null);
+        if (all == null) {
+            capCacheAt = System.currentTimeMillis(); // 宿主异常：推后 TTL 再试，避免每次操作都戳坏 API
+            return capCache;                          // 沿用旧缓存（可能为空 → 上层用等级容量兜底）
+        }
+        java.util.Map<String, Integer> map = new java.util.HashMap<>();
         for (GuildInfo g : all) {
-            if (guild.value().equals(g.getGuildName())) {
-                Integer cap = g.getMemberMaxCount();
-                return cap != null ? OptionalInt.of(cap) : OptionalInt.empty();
+            if (g.getGuildName() != null && g.getMemberMaxCount() != null) {
+                map.put(g.getGuildName(), g.getMemberMaxCount());
             }
         }
-        return OptionalInt.empty();
+        capCache = map;
+        capCacheAt = System.currentTimeMillis();
+        return map;
     }
 }

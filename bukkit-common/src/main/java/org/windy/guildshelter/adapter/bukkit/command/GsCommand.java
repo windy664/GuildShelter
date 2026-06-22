@@ -3258,7 +3258,7 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         TerrainPrepMode terrainMode = null; // null = 用 config 默认值
         if (args.length >= 4) {
             try {
-                terrainMode = TerrainPrepMode.valueOf(args[3].toUpperCase());
+                terrainMode = TerrainPrepMode.valueOf(args[3].toUpperCase(java.util.Locale.ROOT));
             } catch (IllegalArgumentException e) {
                 sender.sendMessage(Messages.get("error.unknown_terrain", args[3]));
                 return;

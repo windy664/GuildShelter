@@ -5,6 +5,7 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.WorldBorder;
 import org.bukkit.WorldCreator;
+import org.windy.guildshelter.adapter.bukkit.GuildShelterConfig.IrisConfig;
 import org.windy.guildshelter.adapter.bukkit.GuildShelterConfig.OceanReseedConfig;
 import org.windy.guildshelter.domain.layout.LayoutCalculator;
 import org.windy.guildshelter.domain.layout.SpiralIndex;
@@ -37,16 +38,61 @@ public final class WorldManager implements WorldControl {
 
     private final LevelRules levels;
     private final OceanReseedConfig oceanReseed;
+    private final IrisConfig iris;
     private final Logger logger;
     /** 群系水域采样器（混合端注入；null = 纯 Bukkit，回退强制生成看地表液体）。见 {@link WaterBiomeSampler}。 */
     private WaterBiomeSampler biomeSampler;
     private org.windy.guildshelter.domain.port.GuildProvider guildProvider =
             org.windy.guildshelter.domain.port.GuildProvider.NONE; // 宿主人数上限来源，延迟注入
 
-    public WorldManager(LevelRules levels, OceanReseedConfig oceanReseed, Logger logger) {
+    public WorldManager(LevelRules levels, OceanReseedConfig oceanReseed,
+                        IrisConfig iris, Logger logger) {
         this.levels = levels;
         this.oceanReseed = oceanReseed;
+        this.iris = iris;
         this.logger = logger;
+    }
+
+    /**
+     * 自然地形世界的生成器：检测到 <b>Iris</b> 插件在场且启用 → 用它的专业地形生成器（性能/质量远超自写）；
+     * 否则返回 {@code null} = 普通 vanilla normal 世界（不挂生成器）。
+     *
+     * <p>软依赖：走 Bukkit 标准 {@code getDefaultWorldGenerator(worldName, dimensionId)}，无需编译期依赖 Iris。
+     * dimensionId 即 Iris 维度包名（config {@code iris.dimension}，默认 overworld）。
+     *
+     * <p>⚠️ 注意：Iris 地形可能很崎岖，后续<b>铺路/整地</b>仍按实际地表高度施工，落差大处道路会切坡——按需调
+     * {@code terrain-prep} 或道路宽度。
+     */
+    private org.bukkit.generator.ChunkGenerator irisGeneratorOrNull(String worldName) {
+        if (!irisActive()) {
+            return null;
+        }
+        try {
+            org.bukkit.generator.ChunkGenerator g = Bukkit.getPluginManager().getPlugin("Iris")
+                    .getDefaultWorldGenerator(worldName, iris.dimension());
+            if (g != null) {
+                logger.info("[GuildShelter] 检测到 Iris，使用维度 '" + iris.dimension() + "' 生成 " + worldName);
+            } else {
+                // 非异常但返回空 → 多半是 iris.dimension 维度包名写错/未安装。响亮告警（否则静默退回 normal，
+                // 在混合端还可能复发 applyBiomeDecoration 的 -1 崩）。
+                logger.warning("[GuildShelter] Iris 维度 '" + iris.dimension()
+                        + "' 返回空生成器（维度包是否存在？请检查 config 的 iris.dimension），回退普通地形。");
+            }
+            return g;
+        } catch (Throwable t) {
+            logger.warning("[GuildShelter] 调用 Iris 维度 '" + iris.dimension()
+                    + "' 失败，回退普通地形: " + t);
+            return null;
+        }
+    }
+
+    /** Iris 是否在场且启用（轻量判断，不构建生成器、不打日志）。用于 reseed 门控等。 */
+    private boolean irisActive() {
+        if (!iris.enabled()) {
+            return false;
+        }
+        org.bukkit.plugin.Plugin p = Bukkit.getPluginManager().getPlugin("Iris");
+        return p != null && p.isEnabled();
     }
 
     /** 注入群系水域采样器（混合端载体在装配时调；不调 = 纯 Bukkit 回退）。 */
@@ -78,7 +124,9 @@ public final class WorldManager implements WorldControl {
         // 种子/origin，绝不能换种子重建（会毁掉玩家已建造的存档）。
         boolean firstCreation = !worldFolderExists(gw.worldName());
         boolean naturalTerrain = mode != TerrainPrepMode.VOID && mode != TerrainPrepMode.FLAT;
-        if (oceanReseed.enabled() && firstCreation && naturalTerrain) {
+        // Iris 在场时绝不走 reseed：Iris 地形是服主选定的维度，不该为主城水占比就删了整个专业世界重建
+        // （默认 overworld 用 vanilla 群系带 IS_OCEAN 标签，会真的触发删建最多 maxAttempts 次）。直接建一次。
+        if (!irisActive() && oceanReseed.enabled() && firstCreation && naturalTerrain) {
             return createNaturalWithReseed(gw);
         }
 
@@ -99,6 +147,14 @@ public final class WorldManager implements WorldControl {
             // 超平坦：基岩+泥土x2+草方块，与 SelfHomeMain 的默认 NormalType=2 一致
             creator.generatorSettings("minecraft:bedrock,2*minecraft:dirt,minecraft:grass_block;minecraft:plains");
             logger.info("[GuildShelter] 创建超平坦世界: " + gw.worldName());
+        } else {
+            // 自然地形：有 Iris 用 Iris（专业地形+高性能），否则普通 normal 世界
+            org.bukkit.generator.ChunkGenerator irisGen = irisGeneratorOrNull(gw.worldName());
+            if (irisGen != null) {
+                creator.generator(irisGen);
+            } else {
+                logger.info("[GuildShelter] 创建自然地形世界(普通 normal): " + gw.worldName());
+            }
         }
 
         World world = Bukkit.createWorld(creator);
@@ -143,20 +199,26 @@ public final class WorldManager implements WorldControl {
         World mainWorld = Bukkit.getWorlds().get(0); // 继承主世界注册表，见 ensureWorld 修复点 1
         LayoutCalculator layout = new LayoutCalculator(gw.layout());
         int maxAttempts = Math.max(1, oceanReseed.maxAttempts());
+        org.bukkit.generator.ChunkGenerator irisGen = irisGeneratorOrNull(gw.worldName());
         World world = null;
         int[] origin = null;
         for (int attempt = 1; ; attempt++) {
-            world = Bukkit.createWorld(new WorldCreator(gw.worldName())
+            WorldCreator wc = new WorldCreator(gw.worldName())
                     .copy(mainWorld)
                     .environment(World.Environment.NORMAL)
-                    .seed(gw.seed()));
+                    .seed(gw.seed());
+            if (irisGen != null) {
+                wc.generator(irisGen);
+            }
+            world = Bukkit.createWorld(wc);
             if (world == null) {
                 throw new IllegalStateException("创建公会营地失败: " + gw.worldName());
             }
             origin = anchorOnLand(world, layout);
             double waterRatio = sampleWaterRatio(world, gw.withOrigin(origin[0], origin[1]), layout);
             logger.info("[GuildShelter] " + gw.worldName() + " 首建尝试 " + attempt + "/" + maxAttempts
-                    + " seed=" + gw.seed() + " 主城水占比=" + String.format(Locale.ROOT, "%.0f%%", waterRatio * 100));
+                    + " seed=" + gw.seed() + (irisGen != null ? " (Iris)" : " (普通)")
+                    + " 主城水占比=" + String.format(Locale.ROOT, "%.0f%%", waterRatio * 100));
 
             if (waterRatio <= oceanReseed.maxWaterRatio() || attempt >= maxAttempts) {
                 if (waterRatio > oceanReseed.maxWaterRatio()) {
@@ -172,8 +234,12 @@ public final class WorldManager implements WorldControl {
             if (!deleteWorldFolder(world.getWorldFolder())) {
                 logger.warning("[GuildShelter] 无法删除世界文件夹 " + world.getWorldFolder()
                         + "（可能文件占用），中止重建并接受当前世界。");
-                world = Bukkit.createWorld(new WorldCreator(gw.worldName())
-                        .copy(mainWorld).environment(World.Environment.NORMAL).seed(gw.seed()));
+                WorldCreator wc2 = new WorldCreator(gw.worldName())
+                        .copy(mainWorld).environment(World.Environment.NORMAL).seed(gw.seed());
+                if (irisGen != null) {
+                    wc2.generator(irisGen);
+                }
+                world = Bukkit.createWorld(wc2);
                 origin = anchorOnLand(world, layout);
                 break;
             }

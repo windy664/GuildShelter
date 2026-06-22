@@ -1,13 +1,36 @@
 package org.windy.guildshelter.persistence;
 
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 
-/** MySQL 方言：VARCHAR/BIGINT/INT 列，{@code ON DUPLICATE KEY UPDATE} upsert。 */
+/** MySQL 方言：VARCHAR/BIGINT/INT 列，{@code ON DUPLICATE KEY UPDATE} upsert；命名锁防多实例并发迁移。 */
 public final class MysqlDialect implements SqlDialect {
+
+    /** 命名锁名（同一库的所有实例共用，串行化迁移）。 */
+    private static final String MIGRATE_LOCK = "guildshelter_schema_migrate";
 
     @Override
     public List<String> preSchemaStatements() {
         return List.of();
+    }
+
+    /** GET_LOCK 命名锁：多个 Bukkit 服共享同一 MySQL 时，只有一个能进迁移；其余等待最多 60s。 */
+    @Override
+    public boolean acquireMigrationLock(Connection c) throws SQLException {
+        try (Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT GET_LOCK('" + MIGRATE_LOCK + "', 60)")) {
+            return rs.next() && rs.getInt(1) == 1; // 1=获得，0=超时未获得，NULL=出错
+        }
+    }
+
+    @Override
+    public void releaseMigrationLock(Connection c) throws SQLException {
+        try (Statement st = c.createStatement()) {
+            st.executeQuery("SELECT RELEASE_LOCK('" + MIGRATE_LOCK + "')");
+        }
     }
 
     @Override
