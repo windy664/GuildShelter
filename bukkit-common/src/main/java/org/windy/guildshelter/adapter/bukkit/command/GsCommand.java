@@ -3273,10 +3273,12 @@ public final class GsCommand implements CommandExecutor, TabCompleter {
         // Spigot 看门狗超时杀服。改为调度到下一 tick 的干净主线程任务执行，脱离命令上下文即可正常生成。
         Bukkit.getScheduler().runTask(plugin, () -> {
             try {
-                GuildWorld gw = service.createGuild(guild, seed, mode, serverName);
-                registry.register(gw);
-                sender.sendMessage(Messages.get("success.create_world", gw.worldName(), gw.seed(), gw.originChunkX(), gw.originChunkZ()));
-                logMap(guild);
+                // 异步版：Iris 世界在异步线程建、建好回主线程回调（Iris 禁止主线程 create()）；非 Iris 即同步。
+                service.createGuildAsync(guild, seed, mode, serverName, gw -> {
+                    registry.register(gw);
+                    sender.sendMessage(Messages.get("success.create_world", gw.worldName(), gw.seed(), gw.originChunkX(), gw.originChunkZ()));
+                    logMap(guild);
+                });
             } catch (RuntimeException e) {
                 sender.sendMessage(Messages.get("error.world_load_failed", worlds.worldName(guild)));
                 logger.warning("[GuildShelter] 建会失败 " + guild.value() + ": " + e);

@@ -60,11 +60,12 @@ public final class LegendaryGuildListener implements Listener {
         // 首次建会的 Bukkit.createWorld 内部 setInitialSpawn 会同步 managedBlock 等出生区块；本事件
         // 多半在宿主建会命令的执行上下文里同步触发，嵌套 managedBlock 会死锁触发看门狗。
         // 推迟到干净 tick 执行即可正常生成。
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            GuildWorld gw = service.createGuild(new GuildId(name), ThreadLocalRandom.current().nextLong());
-            registry.register(gw);
-            logger.info("[GuildShelter] 公会创建 → 已建世界: " + gw.worldName());
-        });
+        Bukkit.getScheduler().runTask(plugin, () ->
+            // 异步版：Iris 世界在异步线程建、建好回主线程回调（Iris 禁止主线程 create()）；非 Iris 即同步。
+            service.createGuildAsync(new GuildId(name), ThreadLocalRandom.current().nextLong(), gw -> {
+                registry.register(gw);
+                logger.info("[GuildShelter] 公会创建 → 已建世界: " + gw.worldName());
+            }));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -82,11 +83,11 @@ public final class LegendaryGuildListener implements Listener {
         }
         // 惰性补建（如插件安装前已建的公会）：createWorld 不能在事件上下文同步跑（嵌套 managedBlock
         // 死锁），整段「建世界+分庄园+欢迎」推迟到干净 tick。createGuild 幂等，重复调用返回已有。
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            GuildWorld gw = service.createGuild(guild, ThreadLocalRandom.current().nextLong());
-            registry.register(gw);
-            assignAndWelcome(guild, guildName, playerName);
-        });
+        Bukkit.getScheduler().runTask(plugin, () ->
+            service.createGuildAsync(guild, ThreadLocalRandom.current().nextLong(), gw -> {
+                registry.register(gw);
+                assignAndWelcome(guild, guildName, playerName);
+            }));
     }
 
     /** 分配庄园并发欢迎语（要求公会营地已存在；不触发 createWorld）。 */

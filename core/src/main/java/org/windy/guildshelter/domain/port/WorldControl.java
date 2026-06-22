@@ -31,6 +31,48 @@ public interface WorldControl {
     /** 按当前已分配 slot / 公会等级同步世界边界。 */
     void applyBorder(GuildWorld world);
 
-    /** 卸载并存盘（世界级惰性加载）。 */
+    /** 卸载公会世界（用于<b>解散/删除</b>等丢弃场景，实现可不存盘以省同步刷盘开销）。世界级惰性卸载另有它途。 */
     boolean unloadGuild(GuildId guild);
+
+    /**
+     * 异步版 {@link #ensureWorld}：对<b>禁止主线程创建</b>的引擎（如 Iris：{@code create()} 必须在异步线程，
+     * 否则抛 "cannot invoke create() on the main thread"）在异步线程建世界、建好后<b>回主线程</b>调 {@code onReady}。
+     * 不阻塞调用线程（Iris 建世界内部会 submit 回主线程，调用线程若阻塞等待会死锁）。
+     *
+     * <p>默认实现同步：直接 {@code onReady.accept(ensureWorld(world))}（非 Iris / 已加载世界走这条，行为不变）。
+     * 调用方的 {@code onReady} 内做建会后续（存库/铺路登记/注册），<b>保证在主线程执行</b>。
+     */
+    default void ensureWorldAsync(GuildWorld world, java.util.function.Consumer<GuildWorld> onReady) {
+        ensureWorldAsync(world, onReady, () -> {});
+    }
+
+    /**
+     * 带<b>失败回调</b>的异步建世界：成功回主线程调 {@code onReady}，<b>失败回主线程调 {@code onError}</b>
+     * （如 Iris 引擎建世界抛异常）。调用方据此清理在途状态（解除"建造中"标记，允许后续重试），
+     * 避免一次失败把公会永久卡在建造中。{@code onError} 同 {@code onReady} <b>保证在主线程执行</b>。
+     *
+     * <p>默认实现同步：{@code ensureWorld} 抛异常时调 {@code onError} 后<b>重抛</b>（保留原有上层日志），
+     * 否则调 {@code onReady}。Iris 等异步实现须重写本方法，在异步失败路径回主线程调 {@code onError}。
+     */
+    default void ensureWorldAsync(GuildWorld world, java.util.function.Consumer<GuildWorld> onReady,
+                                  Runnable onError) {
+        GuildWorld ready;
+        try {
+            ready = ensureWorld(world);
+        } catch (RuntimeException e) {
+            onError.run();
+            throw e;
+        }
+        onReady.accept(ready);
+    }
+
+    /**
+     * 该世界的地形是否<b>惰性生成</b>（如 Iris：异步、不预生成区块，玩家走到哪生成到哪）。
+     *
+     * <p>为 {@code true} 时，建会后<b>不应</b>立刻读地表高度铺路/锚地（会强制同步生成未生成区块，
+     * 抵消惰性生成的意义、可能卡服）——主城路/围墙应延迟到玩家首次进入该世界、区块自然加载后再补。
+     */
+    default boolean lazilyGenerated(String worldName) {
+        return false;
+    }
 }

@@ -42,6 +42,8 @@ public final class GuildService {
     private final LevelRules levels;
     private final TerrainPrepMode prepMode;
     private volatile MembershipChangeListener membershipListener; // 可选，延迟注入
+    private volatile org.windy.guildshelter.domain.port.DeferredPrep deferredPrep =
+            org.windy.guildshelter.domain.port.DeferredPrep.NONE; // 惰性世界延迟铺路接缝，可选
     private volatile GuildProvider guildProvider = GuildProvider.NONE; // 宿主角色/容量来源，延迟注入
     private volatile org.windy.guildshelter.domain.port.ManorUpgradeHook upgradeHook; // 升级扩展回调，可选
 
@@ -53,6 +55,15 @@ public final class GuildService {
     private ModDataMoverRegistry modDataMovers;
     private java.nio.file.Path worldContainer; // Bukkit worlds 根目录
     private java.util.List<String> lastMoveModResults = java.util.List.of(); // 最近一次搬家的 mod 数据结果
+
+    /**
+     * 正在异步建世界的公会 → 各自待回调队列。建会即入会会让 onGuildCreate + onPlayerJoin 同 tick
+     * 各触发一次 {@link #createGuildAsync}，若都去建世界，两个异步线程会抢建同一世界（Iris 引擎打架）。
+     * 同一公会只让首个真正建，其余把 onDone 挂这里，建好后一并回调。<b>仅主线程访问</b>（建会入口与
+     * onReady/onError 均在主线程），故用普通 HashMap。
+     */
+    private final java.util.Map<GuildId, java.util.List<java.util.function.Consumer<GuildWorld>>> creating =
+            new java.util.HashMap<>();
 
     public GuildService(GuildRepository guilds, ManorRepository manors, WorldControl worlds,
                         TerrainPreparer terrain, LayoutConfig currentLayout, LevelRules levels,
@@ -100,6 +111,17 @@ public final class GuildService {
         this.membershipListener = listener;
     }
 
+    /** 注册惰性世界延迟铺路接缝（Bukkit 适配层注入；不注入则惰性世界建会后不补主城路，直到接上）。 */
+    public void setDeferredPrep(org.windy.guildshelter.domain.port.DeferredPrep prep) {
+        this.deferredPrep = prep != null ? prep : org.windy.guildshelter.domain.port.DeferredPrep.NONE;
+    }
+
+    /** 补铺某惰性世界建会时延迟的主城路 + 围墙（平台侧在玩家首次进入该世界后回调）。幂等。 */
+    public void runDeferredCityPrep(GuildWorld gw) {
+        prepareMainCityRoads(gw);
+        buildCityWall(gw);
+    }
+
     /** 注入宿主公会 provider（角色/人数上限来源）；未注入时为 {@link GuildProvider#NONE}。 */
     public void setGuildProvider(GuildProvider provider) {
         this.guildProvider = provider != null ? provider : GuildProvider.NONE;
@@ -133,7 +155,7 @@ public final class GuildService {
         return createGuild(guild, seed, terrainMode, "");
     }
 
-    /** 建会（指定地形模式+服务器名）：跨服模式下标记世界所在服务器。 */
+    /** 建会（指定地形模式+服务器名）：跨服模式下标记世界所在服务器。<b>同步版</b>，Iris 世界请用 {@link #createGuildAsync}。 */
     public GuildWorld createGuild(GuildId guild, long seed, TerrainPrepMode terrainMode, String serverName) {
         Optional<GuildWorld> existing = guilds.find(guild);
         if (existing.isPresent()) {
@@ -141,10 +163,71 @@ public final class GuildService {
         }
         GuildWorld gw = GuildWorld.create(guild, worlds.worldName(guild), seed, currentLayout, terrainMode, serverName);
         gw = worlds.ensureWorld(gw);
+        return finishCreate(guild, gw);
+    }
+
+    /** 建会异步版（默认地形模式 + 无服务器名）：事件监听/同步任务用。见 {@link #createGuildAsync(GuildId, long, TerrainPrepMode, String, java.util.function.Consumer)}。 */
+    public void createGuildAsync(GuildId guild, long seed, java.util.function.Consumer<GuildWorld> onDone) {
+        createGuildAsync(guild, seed, prepMode, "", onDone);
+    }
+
+    /**
+     * 建会<b>异步版</b>：对禁止主线程创建的引擎（Iris）在异步线程建世界、建好后回主线程跑建会后续，
+     * 完成后回主线程调 {@code onDone}（参数为最终 {@link GuildWorld}）。非 Iris / 已有世界即同步在调用线程完成。
+     *
+     * <p>所有入口（事件监听/命令/同步任务）建会都应走此方法：避免 Iris {@code create()} 在主线程抛
+     * "cannot invoke create() on the main thread"。已存在的公会直接回调返回。
+     */
+    public void createGuildAsync(GuildId guild, long seed, TerrainPrepMode terrainMode, String serverName,
+                                 java.util.function.Consumer<GuildWorld> onDone) {
+        Optional<GuildWorld> existing = guilds.find(guild);
+        if (existing.isPresent()) {
+            onDone.accept(existing.get());
+            return;
+        }
+        // 在途去重：同一公会已在建世界 → 只把本次 onDone 挂进队列，等首个建好后一并回调，
+        // 绝不再起第二次异步建（否则两个 Iris 引擎抢建同一世界）。
+        java.util.List<java.util.function.Consumer<GuildWorld>> queued = creating.get(guild);
+        if (queued != null) {
+            queued.add(onDone);
+            return;
+        }
+        java.util.List<java.util.function.Consumer<GuildWorld>> queue = new java.util.ArrayList<>();
+        queue.add(onDone);
+        creating.put(guild, queue);
+
+        GuildWorld gw0 = GuildWorld.create(guild, worlds.worldName(guild), seed, currentLayout, terrainMode, serverName);
+        worlds.ensureWorldAsync(gw0,
+                gw -> {
+                    GuildWorld finished = finishCreate(guild, gw);
+                    // 取出并清空在途队列：建好后注册的迟到者(理论上 find 已能命中)不会再进队列。
+                    java.util.List<java.util.function.Consumer<GuildWorld>> callbacks = creating.remove(guild);
+                    if (callbacks != null) {
+                        for (java.util.function.Consumer<GuildWorld> cb : callbacks) {
+                            try {
+                                cb.accept(finished);
+                            } catch (RuntimeException ex) {
+                                logger.warning("[GuildShelter] 建会回调异常(" + guild.value() + "): " + ex);
+                            }
+                        }
+                    }
+                },
+                // 建世界失败：解除在途标记，后续(如修好 Iris 包后重新加入)可重试。回调不触发，与旧行为一致。
+                () -> creating.remove(guild));
+    }
+
+    /** 建会后续（世界已建好后）：初始解锁主城角落 + 存库 + 铺主城路/围墙（惰性世界则登记延迟）。须在主线程。 */
+    private GuildWorld finishCreate(GuildId guild, GuildWorld gw) {
         gw = gw.withCityUnlockedChunks(initialCityUnlocked(gw)); // 初始解锁主城角落正方形（会长起点）
         guilds.save(gw);
-        prepareMainCityRoads(gw); // 建会即给主城铺一圈环路（主城非成员 slot，否则四周路会"被吞"）
-        buildCityWall(gw);        // 围墙（默认关）
+        if (worlds.lazilyGenerated(gw.worldName())) {
+            // Iris 等惰性世界：建会时主城区块还没生成，立刻铺路会强制同步生成。登记延迟，
+            // 玩家首次进入该世界、区块自然加载后再补铺主城路+围墙（见 DeferredPrep）。
+            deferredPrep.markGuildPending(guild, gw.worldName());
+        } else {
+            prepareMainCityRoads(gw); // 建会即给主城铺一圈环路（主城非成员 slot，否则四周路会"被吞"）
+            buildCityWall(gw);        // 围墙（默认关）
+        }
         return gw;
     }
 

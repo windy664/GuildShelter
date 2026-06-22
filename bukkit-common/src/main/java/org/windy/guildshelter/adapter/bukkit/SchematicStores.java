@@ -29,27 +29,19 @@ public final class SchematicStores {
             // 用反射创建 NeoForge 实现（避免纯 Bukkit 端加载到 NeoForge 类）
             return new NeoForgeSchematicStoreAdapter(dataDir, plugin);
         } catch (ClassNotFoundException ignored) {}
-        // 2. FAWE
-        if (plugin.getServer().getPluginManager().getPlugin("FastAsyncWorldEdit") != null) {
+        // 2. FAWE 或普通 WorldEdit（Bukkit 平台，二者 API 通用 → 同一 WorldEditSchematicStore）。
+        //    经 Class.forName 实例化做惰性隔离：WE 不在场时本类不加载，避免 NoClassDefFound。
+        if (plugin.getServer().getPluginManager().getPlugin("FastAsyncWorldEdit") != null
+                || plugin.getServer().getPluginManager().getPlugin("WorldEdit") != null) {
             try {
-                return (SchematicStore) Class.forName("org.windy.guildshelter.adapter.fawe.FaweSchematicStore")
+                return (SchematicStore) Class.forName("org.windy.guildshelter.adapter.worldedit.WorldEditSchematicStore")
                         .getConstructor(Path.class, org.bukkit.plugin.Plugin.class)
                         .newInstance(dataDir.resolve("schematics"), plugin);
             } catch (Exception e) {
-                plugin.getLogger().warning("[GuildShelter] FAWE 加载失败: " + e.getMessage());
+                plugin.getLogger().warning("[GuildShelter] WorldEdit/FAWE schematic 后端加载失败: " + e.getMessage());
             }
         }
-        // 3. 普通 WorldEdit
-        if (plugin.getServer().getPluginManager().getPlugin("WorldEdit") != null) {
-            try {
-                return (SchematicStore) Class.forName("org.windy.guildshelter.adapter.worldedit.WeSchematicStore")
-                        .getConstructor(Path.class, org.bukkit.plugin.Plugin.class)
-                        .newInstance(dataDir.resolve("schematics"), plugin);
-            } catch (Exception e) {
-                plugin.getLogger().warning("[GuildShelter] WorldEdit 加载失败: " + e.getMessage());
-            }
-        }
-        return null; // 无 WorldEdit 插件
+        return null; // 无 WorldEdit/FAWE 插件
     }
 
     /**

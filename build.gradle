@@ -17,10 +17,15 @@ subprojects {
 
     repositories {
         mavenCentral()
+        // JitPack 放最前 + 只服务 com.github.*：这样 GitHub 系依赖（Iris/Vault/DecentHolograms）只走 JitPack，
+        // 不会被 neoforged 等仓库逐一探测——避免某个仓库网络 reset 把 com.github 解析整个拖垮（曾因此 Iris 解析失败）。
+        maven {
+            url 'https://jitpack.io'
+            content { includeGroupByRegex 'com\\.github\\..*' }
+        }
         maven { url 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/' }
         maven { url 'https://repo.extendedclip.com/content/repositories/placeholderapi/' }
         maven { url 'https://maven.neoforged.net/releases' }
-        maven { url 'https://jitpack.io' }
         maven { url 'https://maven.creeperhost.net' }
         // Modrinth Maven：WorldEdit 等模组/插件按版本 ID 直接拉
         maven {

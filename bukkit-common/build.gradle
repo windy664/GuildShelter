@@ -20,6 +20,12 @@ dependencies {
     compileOnly 'com.github.MilkBowl:VaultAPI:1.7.1'
     compileOnly 'com.github.decentsoftware-eu:decentholograms:2.9.10'
 
+    // Iris 维度引擎 API：用 IrisToolbelt.createWorld() 走 Iris 自己的异步建世界管线，避开 Bukkit.createWorld
+    //   的同步出生区块预生成（卡服根因）。
+    //   ★ 走本地 libs/ 的 Iris jar（下面 fileTree 已 include '*.jar' 自动收进编译 classpath）：
+    //     Iris 在 JitPack 上构建失败（其某模块坏）拉不到，故不走 Maven/JitPack。
+    //     libs/ 已被 .gitignore 忽略 → 这份 GPL-3.0 的 jar 不会提交进仓库，仅本地编译用，无侵权问题。
+
     // Refined Storage 2 API（搬家时的 mod 数据搬运，反射）
     compileOnly 'com.refinedmods.refinedstorage:refinedstorage-common-api:3.2.1'
     compileOnly 'com.refinedmods.refinedstorage:refinedstorage-common:3.2.1'

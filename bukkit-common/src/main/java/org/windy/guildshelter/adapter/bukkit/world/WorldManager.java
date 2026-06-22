@@ -44,6 +44,8 @@ public final class WorldManager implements WorldControl {
     private WaterBiomeSampler biomeSampler;
     private org.windy.guildshelter.domain.port.GuildProvider guildProvider =
             org.windy.guildshelter.domain.port.GuildProvider.NONE; // 宿主人数上限来源，延迟注入
+    /** 插件引用（异步建 Iris 世界的调度器需要；setter 注入，未注入则 Iris 异步路径退化为同步并告警）。 */
+    private org.bukkit.plugin.Plugin plugin;
 
     public WorldManager(LevelRules levels, OceanReseedConfig oceanReseed,
                         IrisConfig iris, Logger logger) {
@@ -53,40 +55,65 @@ public final class WorldManager implements WorldControl {
         this.logger = logger;
     }
 
-    /**
-     * 自然地形世界的生成器：检测到 <b>Iris</b> 插件在场且启用 → 用它的专业地形生成器（性能/质量远超自写）；
-     * 否则返回 {@code null} = 普通 vanilla normal 世界（不挂生成器）。
-     *
-     * <p>软依赖：走 Bukkit 标准 {@code getDefaultWorldGenerator(worldName, dimensionId)}，无需编译期依赖 Iris。
-     * dimensionId 即 Iris 维度包名（config {@code iris.dimension}，默认 overworld）。
-     *
-     * <p>⚠️ 注意：Iris 地形可能很崎岖，后续<b>铺路/整地</b>仍按实际地表高度施工，落差大处道路会切坡——按需调
-     * {@code terrain-prep} 或道路宽度。
-     */
-    private org.bukkit.generator.ChunkGenerator irisGeneratorOrNull(String worldName) {
-        if (!irisActive()) {
-            return null;
-        }
-        try {
-            org.bukkit.generator.ChunkGenerator g = Bukkit.getPluginManager().getPlugin("Iris")
-                    .getDefaultWorldGenerator(worldName, iris.dimension());
-            if (g != null) {
-                logger.info("[GuildShelter] 检测到 Iris，使用维度 '" + iris.dimension() + "' 生成 " + worldName);
-            } else {
-                // 非异常但返回空 → 多半是 iris.dimension 维度包名写错/未安装。响亮告警（否则静默退回 normal，
-                // 在混合端还可能复发 applyBiomeDecoration 的 -1 崩）。
-                logger.warning("[GuildShelter] Iris 维度 '" + iris.dimension()
-                        + "' 返回空生成器（维度包是否存在？请检查 config 的 iris.dimension），回退普通地形。");
-            }
-            return g;
-        } catch (Throwable t) {
-            logger.warning("[GuildShelter] 调用 Iris 维度 '" + iris.dimension()
-                    + "' 失败，回退普通地形: " + t);
-            return null;
-        }
+    /** 注入插件（装配时调；异步建 Iris 世界用其调度器）。 */
+    public void setPlugin(org.bukkit.plugin.Plugin plugin) {
+        this.plugin = plugin;
     }
 
-    /** Iris 是否在场且启用（轻量判断，不构建生成器、不打日志）。用于 reseed 门控等。 */
+    @Override
+    public boolean lazilyGenerated(String worldName) {
+        // Iris 异步生成、不预生成区块 → 视为惰性世界，建会后延迟铺路/锚地。
+        return irisActive();
+    }
+
+    @Override
+    public void ensureWorldAsync(GuildWorld gw, java.util.function.Consumer<GuildWorld> onReady, Runnable onError) {
+        boolean naturalTerrain = gw.terrainMode() != TerrainPrepMode.VOID && gw.terrainMode() != TerrainPrepMode.FLAT;
+        boolean irisFirstBuild = naturalTerrain && irisActive()
+                && Bukkit.getWorld(gw.worldName()) == null && !worldFolderExists(gw.worldName());
+        if (!irisFirstBuild) {
+            // 非 Iris / 已存在世界：同步，行为不变。失败也回调 onError 解除在途，避免卡死建造中。
+            final GuildWorld ready;
+            try {
+                ready = ensureWorld(gw);
+            } catch (RuntimeException e) {
+                onError.run();
+                throw e;
+            }
+            onReady.accept(ready);
+            return;
+        }
+        if (plugin == null) {
+            // 没注入 plugin 无法异步调度；退回同步会在主线程触发 Iris "cannot create on main thread"。明确告警并中止。
+            logger.severe("[GuildShelter] 建 Iris 世界需异步调度但未注入 plugin，跳过: " + gw.worldName());
+            onError.run();
+            return;
+        }
+        // 照搬 Iris 命令做法：在【异步线程】调 IrisToolbelt...create()（Iris 内部自己 submit 回主线程做 addLevel）。
+        // 建好后回主线程设出生点 + 边界 + onReady（建会后续）。绝不在主线程阻塞等待（会与 Iris 的主线程任务死锁）。
+        logger.info("[GuildShelter] 使用 Iris 异步管线创建世界(维度 '" + iris.dimension() + "'): " + gw.worldName());
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            final World w;
+            try {
+                w = org.windy.guildshelter.adapter.bukkit.world.iris.IrisWorldCreator.create(
+                        gw.worldName(), iris.dimension(), gw.seed());
+            } catch (Throwable t) {
+                logger.severe("[GuildShelter] Iris 建世界失败，建会中止: " + t);
+                Bukkit.getScheduler().runTask(plugin, onError); // 回主线程解除在途，允许修好后重试
+                return;
+            }
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                LayoutCalculator layout = new LayoutCalculator(gw.layout());
+                // Iris 固定原点 0,0；出生点只存坐标（不加载区块），真正落点由玩家传送时 safeSpawn 处理。
+                w.setSpawnLocation(new Location(w, layout.spawnBlockX() + 0.5, 80, layout.spawnBlockZ() + 0.5));
+                GuildWorld anchored = gw.withOrigin(0, 0);
+                applyBorderTo(w, anchored);
+                onReady.accept(anchored);
+            });
+        });
+    }
+
+    /** Iris 是否在场且启用（轻量判断，不构建生成器、不打日志）。用于建世界路径选择与 reseed 门控。 */
     private boolean irisActive() {
         if (!iris.enabled()) {
             return false;
@@ -130,34 +157,32 @@ public final class WorldManager implements WorldControl {
             return createNaturalWithReseed(gw);
         }
 
-        // 修复点 1：获取主世界（通常是列表第一个，下标为0）作为模板，继承其群系和注册表数据。
-        // 这是为了防止混合端（NeoForge）在新世界生成自然地形时因为找不到注册表映射而导致 IndexOutOfBoundsException (-1)
-        World mainWorld = Bukkit.getWorlds().get(0);
-
-        WorldCreator creator = new WorldCreator(gw.worldName())
-                .copy(mainWorld) // <--- 关键修复：继承主世界的注册表
-                .environment(World.Environment.NORMAL)
-                .seed(gw.seed());
-
-        // 按地形模式选生成器
-        if (mode == TerrainPrepMode.VOID) {
-            creator.generator(new VoidChunkGenerator());
-            logger.info("[GuildShelter] 创建虚空世界: " + gw.worldName());
-        } else if (mode == TerrainPrepMode.FLAT) {
-            // 超平坦：基岩+泥土x2+草方块，与 SelfHomeMain 的默认 NormalType=2 一致
-            creator.generatorSettings("minecraft:bedrock,2*minecraft:dirt,minecraft:grass_block;minecraft:plains");
-            logger.info("[GuildShelter] 创建超平坦世界: " + gw.worldName());
-        } else {
-            // 自然地形：有 Iris 用 Iris（专业地形+高性能），否则普通 normal 世界
-            org.bukkit.generator.ChunkGenerator irisGen = irisGeneratorOrNull(gw.worldName());
-            if (irisGen != null) {
-                creator.generator(irisGen);
+        // Iris 首建必须走异步的 ensureWorldAsync（Iris 禁止主线程 create()）。同步 ensureWorld 到这说明调用方
+        // 没走异步路径——明确报错而非在主线程调 Iris（那会抛 "cannot create on main thread" 且更难定位）。
+        if (naturalTerrain && irisActive() && Bukkit.getWorld(gw.worldName()) == null && !worldFolderExists(gw.worldName())) {
+            throw new IllegalStateException("Iris 世界须经 ensureWorldAsync 异步创建，不能同步 ensureWorld: " + gw.worldName());
+        }
+        World world;
+        {
+            // 修复点 1：获取主世界（通常是列表第一个，下标为0）作为模板，继承其群系和注册表数据。
+            // 防止混合端（NeoForge）在新世界生成自然地形时因找不到注册表映射而 IndexOutOfBoundsException(-1)。
+            World mainWorld = Bukkit.getWorlds().get(0);
+            WorldCreator creator = new WorldCreator(gw.worldName())
+                    .copy(mainWorld) // 继承主世界的注册表
+                    .environment(World.Environment.NORMAL)
+                    .seed(gw.seed());
+            if (mode == TerrainPrepMode.VOID) {
+                creator.generator(new VoidChunkGenerator());
+                logger.info("[GuildShelter] 创建虚空世界: " + gw.worldName());
+            } else if (mode == TerrainPrepMode.FLAT) {
+                // 超平坦：基岩+泥土x2+草方块，与 SelfHomeMain 的默认 NormalType=2 一致
+                creator.generatorSettings("minecraft:bedrock,2*minecraft:dirt,minecraft:grass_block;minecraft:plains");
+                logger.info("[GuildShelter] 创建超平坦世界: " + gw.worldName());
             } else {
                 logger.info("[GuildShelter] 创建自然地形世界(普通 normal): " + gw.worldName());
             }
+            world = Bukkit.createWorld(creator);
         }
-
-        World world = Bukkit.createWorld(creator);
         if (world == null) {
             throw new IllegalStateException("创建公会营地失败: " + gw.worldName());
         }
@@ -180,6 +205,12 @@ public final class WorldManager implements WorldControl {
         } else if (mode == TerrainPrepMode.FLAT) {
             origin = new int[]{0, 0};
             world.setSpawnLocation(new Location(world, 0.5, 4, 0.5));
+        } else if (irisActive()) {
+            // Iris：惰性生成，建世界时绝不锚地/强制生成出生点（那会同步生成大批未生成区块）。
+            // 用固定原点；出生点只存坐标(setSpawnLocation 不加载区块)，真正落点由玩家传送时的 safeSpawn 处理。
+            origin = new int[]{0, 0};
+            LayoutCalculator layout = new LayoutCalculator(gw.layout());
+            world.setSpawnLocation(new Location(world, layout.spawnBlockX() + 0.5, 80, layout.spawnBlockZ() + 0.5));
         } else {
             origin = anchorOnLand(world, new LayoutCalculator(gw.layout()));
             world.setSpawnLocation(safeSpawn(world, gw.withOrigin(origin[0], origin[1])));
@@ -196,28 +227,24 @@ public final class WorldManager implements WorldControl {
      * 压垮混合端区块/光照子系统而崩服。返回带<b>最终种子 + 锚定 origin</b> 的记录，调用方负责持久化。
      */
     private GuildWorld createNaturalWithReseed(GuildWorld gw) {
+        // 仅非 Iris 普通 normal 世界到这（Iris 在 ensureWorld 被 !irisActive() 门控挡在外）。
         World mainWorld = Bukkit.getWorlds().get(0); // 继承主世界注册表，见 ensureWorld 修复点 1
         LayoutCalculator layout = new LayoutCalculator(gw.layout());
         int maxAttempts = Math.max(1, oceanReseed.maxAttempts());
-        org.bukkit.generator.ChunkGenerator irisGen = irisGeneratorOrNull(gw.worldName());
         World world = null;
         int[] origin = null;
         for (int attempt = 1; ; attempt++) {
-            WorldCreator wc = new WorldCreator(gw.worldName())
+            world = Bukkit.createWorld(new WorldCreator(gw.worldName())
                     .copy(mainWorld)
                     .environment(World.Environment.NORMAL)
-                    .seed(gw.seed());
-            if (irisGen != null) {
-                wc.generator(irisGen);
-            }
-            world = Bukkit.createWorld(wc);
+                    .seed(gw.seed()));
             if (world == null) {
                 throw new IllegalStateException("创建公会营地失败: " + gw.worldName());
             }
             origin = anchorOnLand(world, layout);
             double waterRatio = sampleWaterRatio(world, gw.withOrigin(origin[0], origin[1]), layout);
             logger.info("[GuildShelter] " + gw.worldName() + " 首建尝试 " + attempt + "/" + maxAttempts
-                    + " seed=" + gw.seed() + (irisGen != null ? " (Iris)" : " (普通)")
+                    + " seed=" + gw.seed()
                     + " 主城水占比=" + String.format(Locale.ROOT, "%.0f%%", waterRatio * 100));
 
             if (waterRatio <= oceanReseed.maxWaterRatio() || attempt >= maxAttempts) {
@@ -234,12 +261,8 @@ public final class WorldManager implements WorldControl {
             if (!deleteWorldFolder(world.getWorldFolder())) {
                 logger.warning("[GuildShelter] 无法删除世界文件夹 " + world.getWorldFolder()
                         + "（可能文件占用），中止重建并接受当前世界。");
-                WorldCreator wc2 = new WorldCreator(gw.worldName())
-                        .copy(mainWorld).environment(World.Environment.NORMAL).seed(gw.seed());
-                if (irisGen != null) {
-                    wc2.generator(irisGen);
-                }
-                world = Bukkit.createWorld(wc2);
+                world = Bukkit.createWorld(new WorldCreator(gw.worldName())
+                        .copy(mainWorld).environment(World.Environment.NORMAL).seed(gw.seed()));
                 origin = anchorOnLand(world, layout);
                 break;
             }
@@ -435,6 +458,9 @@ public final class WorldManager implements WorldControl {
         if (world == null) {
             return true;
         }
-        return Bukkit.unloadWorld(world, true);
+        // 不存盘卸载：本方法两个调用方(公会解散 / admin delete)都是【丢弃】公会，世界记录都删了，
+        // 再 save=true 同步刷全部已加载区块纯属浪费(Iris 大世界尤其卡主线程)。save=false 直接卸。
+        // 注：惰性卸载(WorldOptimizer)用自己的 save=true 路径，不经此方法。
+        return Bukkit.unloadWorld(world, false);
     }
 }

@@ -204,6 +204,7 @@ public abstract class GuildShelterPlugin extends JavaPlugin {
 
         this.worldManager = new WorldManager(config.levels(), config.oceanReseed(), config.iris(), getLogger());
         this.worldManager.setBiomeSampler(bindings.biomeSampler()); // 混合端注入群系采样，纯 Bukkit 为 null
+        this.worldManager.setPlugin(this); // 异步建 Iris 世界用其调度器
         // 整地按载体分流（接缝）
         String roadBlock = getConfig().getString("road-surface-block", "minecraft:dirt_path");
         String bridgeBlock = getConfig().getString("road-bridge-block", "auto");
@@ -211,6 +212,10 @@ public abstract class GuildShelterPlugin extends JavaPlugin {
         var wall = config.cityWall();
         TerrainPreparer terrain = bindings.terrain(this, roadBlock, bridgeBlock, bridgeRail,
                 wall.enabled(), wall.block(), wall.height());
+        // Iris 世界：套一层异步预生成装饰器——铺路/围墙/整地前先用 Iris 自己的多线程预生成器把区域生成好，
+        // 避免在主线程同步 getChunk/loadChunk 触发 Iris 重型生成（建会后卡顿的根因）。非 Iris 原样返回。
+        terrain = org.windy.guildshelter.adapter.bukkit.world.IrisPregenTerrainPreparer.wrap(
+                this, terrain, config.iris().enabled());
         getLogger().info("整地：" + (bindings.isHybrid() ? "NeoForge 原生端（混合端）。" : "Bukkit 高度图端。"));
 
         GuildService service = new GuildService(guilds, manors, worldManager, terrain,
@@ -314,6 +319,12 @@ public abstract class GuildShelterPlugin extends JavaPlugin {
                 holoStore.clear(g);
             }
         });
+
+        // 惰性世界(Iris)延迟铺路：建会时不强制生成主城区块，玩家首次进入该世界后再补铺主城路/围墙。
+        var deferredCityPrep = new org.windy.guildshelter.adapter.bukkit.world.DeferredCityPrepListener(
+                this, service, registry);
+        service.setDeferredPrep(deferredCityPrep);
+        getServer().getPluginManager().registerEvents(deferredCityPrep, this);
 
         GsCommand command = new GsCommand(worldManager, guilds, manors, service, registry,
                 config.levels(), entityCensus, this.mergeRegistry, proxyChannel, config.serverName(), getLogger(), this);

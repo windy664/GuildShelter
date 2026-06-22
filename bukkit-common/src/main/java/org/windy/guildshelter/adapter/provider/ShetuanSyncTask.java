@@ -73,9 +73,13 @@ public final class ShetuanSyncTask extends BukkitRunnable {
         GuildId guild = new GuildId(club.id().toString());
 
         if (!guilds.exists(guild)) {
-            GuildWorld gw = service.createGuild(guild, ThreadLocalRandom.current().nextLong());
-            registry.register(gw);
-            logger.info("[GuildShelter] 社团 " + display(club) + " → 已建世界 " + gw.worldName());
+            // 异步建世界（Iris 禁止主线程 create()）。本轮只建世界、跳过成员同步——世界建好(存库)在回调里完成，
+            // 本轮 guilds.find 还查不到；下一轮（periodTicks 后）世界就绪，再正常同步成员。guild 仍计入存活名单。
+            service.createGuildAsync(guild, ThreadLocalRandom.current().nextLong(), gw -> {
+                registry.register(gw);
+                logger.info("[GuildShelter] 社团 " + display(club) + " → 已建世界 " + gw.worldName());
+            });
+            return guild;
         }
 
         Set<UUID> memberUuids = new HashSet<>();

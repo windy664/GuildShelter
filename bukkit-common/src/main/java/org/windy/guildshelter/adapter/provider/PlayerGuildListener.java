@@ -58,11 +58,12 @@ public final class PlayerGuildListener implements Listener {
         // 首次建会的 Bukkit.createWorld 内部 setInitialSpawn 会同步 managedBlock 等出生区块；本事件
         // 多半在宿主 /guild create 的命令执行上下文里同步触发，嵌套 managedBlock 会死锁触发看门狗。
         // 推迟到干净 tick 执行即可正常生成。
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            GuildWorld gw = service.createGuild(new GuildId(name), ThreadLocalRandom.current().nextLong());
-            registry.register(gw);
-            logger.info("[GuildShelter] 公会创建 → 已建世界: " + gw.worldName());
-        });
+        Bukkit.getScheduler().runTask(plugin, () ->
+            // 异步版：Iris 世界在异步线程建、建好回主线程回调（Iris 禁止主线程 create()）；非 Iris 即同步。
+            service.createGuildAsync(new GuildId(name), ThreadLocalRandom.current().nextLong(), gw -> {
+                registry.register(gw);
+                logger.info("[GuildShelter] 公会创建 → 已建世界: " + gw.worldName());
+            }));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -84,11 +85,11 @@ public final class PlayerGuildListener implements Listener {
         }
         // 惰性补建（如插件安装前已建的公会）：createWorld 不能在事件上下文同步跑（嵌套 managedBlock
         // 死锁），整段「建世界+分庄园+欢迎」推迟到干净 tick。createGuild 幂等，重复调用返回已有。
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            GuildWorld gw = service.createGuild(guild, ThreadLocalRandom.current().nextLong());
-            registry.register(gw);
-            assignAndWelcome(guild, guildName, uuid);
-        });
+        Bukkit.getScheduler().runTask(plugin, () ->
+            service.createGuildAsync(guild, ThreadLocalRandom.current().nextLong(), gw -> {
+                registry.register(gw);
+                assignAndWelcome(guild, guildName, uuid);
+            }));
     }
 
     /** 分配庄园并发欢迎语（要求公会营地已存在；不触发 createWorld）。 */
@@ -150,11 +151,16 @@ public final class PlayerGuildListener implements Listener {
             return;
         }
         GuildId guild = new GuildId(guildName);
-        guilds.find(guild).ifPresent(gw -> registry.unregister(gw.worldName()));
-        service.dissolveGuild(guild); // 主城信任缓存经 MembershipChangeListener.onGuildDissolved 自动清理
-        var mr = org.windy.guildshelter.GuildShelterPlugin.mergeRegistry();
-        if (mr != null) mr.removeGuild(guild);
-        logger.info("[GuildShelter] 公会解散 " + guildName + " → 已卸载世界并清理数据。");
+        // 卸载世界(Bukkit.unloadWorld)是重活，且本事件多在宿主 /guild disband 的命令上下文里同步触发；
+        // 在那个上下文里直接卸 Iris 这类重型世界会嵌套 managedBlock → 死锁卡主线程(与建会同理，见
+        // createworld-deadlock)。整段「反注册+卸世界+清数据」推迟到干净 tick 执行。
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            guilds.find(guild).ifPresent(gw -> registry.unregister(gw.worldName()));
+            service.dissolveGuild(guild); // 主城信任缓存经 MembershipChangeListener.onGuildDissolved 自动清理
+            var mr = org.windy.guildshelter.GuildShelterPlugin.mergeRegistry();
+            if (mr != null) mr.removeGuild(guild);
+            logger.info("[GuildShelter] 公会解散 " + guildName + " → 已卸载世界并清理数据。");
+        });
     }
 
     private String resolveGuildName(UUID uuid) {

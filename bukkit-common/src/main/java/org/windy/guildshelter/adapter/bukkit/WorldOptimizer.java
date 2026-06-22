@@ -42,6 +42,10 @@ public final class WorldOptimizer extends BukkitRunnable {
         long now = System.currentTimeMillis();
         long thresholdMs = (long) inactiveMinutes * 60 * 1000;
 
+        // 整世界卸载会在主线程同步刷盘(Iris 大世界尤重)，一次 run 至多卸一个，把冻结摊到多个 tick；
+        // 没卸完的下一轮接着卸。chunk 模式是轻量的 unloadChunkRequest(异步排队)，不受此限。
+        boolean unloadedWorld = false;
+
         for (GuildWorld gw : guilds.findAll()) {
             World world = Bukkit.getWorld(gw.worldName());
             if (world == null) continue; // 已卸载
@@ -63,8 +67,9 @@ public final class WorldOptimizer extends BukkitRunnable {
             // 超时，执行卸载
             if ("chunk".equals(mode)) {
                 unloadChunks(world, gw);
-            } else {
+            } else if (!unloadedWorld) {
                 unloadWorld(world, gw);
+                unloadedWorld = true; // 本轮只卸这一个，其余下轮再卸
             }
         }
     }
